@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-<title>MOB Side Action – Fixed Floor</title>
+<title>MOB Side Action – Tile&Attack Fix</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
   :root{
@@ -118,25 +118,23 @@
   const DPR = Math.max(1, Math.floor(devicePixelRatio || 1));
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d', { alpha:false, desynchronized:true });
+  ctx.imageSmoothingEnabled = false; // タイルの継ぎ目防止
 
-  // === 可変ステージ床（端末の画面高さに追従） ===
-  let stageFloorY = 620; // デフォ
-  function updateStageGeometry(){
+  // === 可変ステージ床（画面高さ追従） ===
+  let stageFloorY = 620;
+  function fitCanvas(){
     const rect = canvas.getBoundingClientRect();
     const cssW = rect.width, cssH = rect.height;
     canvas.width = Math.round(cssW * DPR);
     canvas.height = Math.round(cssH * DPR);
     ctx.setTransform(DPR,0,0,DPR,0,0);
-
-    // 画面下から少し上に床を置く（UIに被らない余白 120px）
-    // 最低でも画面高の60%より下に固定して見えるようにする
-    const desired = Math.max(Math.floor(cssH * 0.6), cssH - 140);
-    stageFloorY = desired;
-    // プレースホルダで開始位置が床より上に来るようにも使う
+    // 下から140pxの位置 or 画面高の60% のどちらか低い方（常に見える）
+    stageFloorY = Math.min(Math.floor(cssH - 140), Math.floor(cssH * 0.8));
   }
-  updateStageGeometry(); addEventListener('resize', updateStageGeometry);
+  fitCanvas();
+  addEventListener('resize', fitCanvas);
 
-  // ---- 画像ローダ（なければ色板） ----
+  // ---- 画像ローダ（無い時は色板） ----
   const images = {};
   const wanted = [
     'M1-1.png','M1-2.png','M1-3.png','M1-4.png',
@@ -153,8 +151,7 @@
         const c=document.createElement('canvas'); c.width=64; c.height=64;
         const x=c.getContext('2d');
         x.fillStyle='#111'; x.fillRect(0,0,64,64);
-        x.fillStyle=tint; x.fillRect(4,4,56,56);
-        x.fillStyle='#0008'; x.fillRect(4,40,56,20);
+        x.fillStyle=tint; x.fillRect(0,0,64,64);
         images[name]=c; res();
       };
       img.src = name;
@@ -207,13 +204,24 @@
   const btnAtk2 = document.getElementById('btnAtk2');
   const btnSkill = document.getElementById('btnSkill');
   let skillPressStart = 0, skillHolding=false;
-  function press(el, down, up){
+
+  // ====== 攻撃の即発動修正（初段はbeginAttack、硬直中はキュー） ======
+  function onPressA(){
+    if (player.actionLockT<=0 || !activeHit){ beginAttack('A1'); }
+    else { pushInput('A'); }
+  }
+  function onPressB(){
+    if (player.actionLockT<=0 || !activeHit){ beginAttack('B1'); }
+    else { pushInput('B'); }
+  }
+
+  const press = (el, down, up)=>{
     el.addEventListener('pointerdown', e=>{ e.preventDefault(); el.setPointerCapture(e.pointerId); down(); });
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', up);
-  }
-  press(btnAtk1, ()=>{ pushInput('A'); }, ()=>{});
-  press(btnAtk2, ()=>{ pushInput('B'); }, ()=>{});
+  };
+  press(btnAtk1, onPressA, ()=>{});
+  press(btnAtk2, onPressB, ()=>{});
   press(btnSkill,
     ()=>{ skillHolding=true; skillPressStart = performance.now(); },
     ()=>{
@@ -226,11 +234,10 @@
     }
   );
 
-  // キー
   addEventListener('keydown', e=>{
     if (e.repeat) return;
-    if (e.key==='z' || e.key==='Z') pushInput('A');
-    if (e.key==='x' || e.key==='X') pushInput('B');
+    if (e.key==='z' || e.key==='Z') onPressA();
+    if (e.key==='x' || e.key==='X') onPressB();
     if (e.key==='c' || e.key==='C' || e.key===' ') {
       beginAttack( player.gauge>=0.75 ? 'SPIN_L' : 'SPIN_S' );
       if (player.gauge>=0.75) player.gauge=0;
@@ -248,6 +255,8 @@
 
   const clamp=(v,a,b)=> v<a?a: v>b?b:v;
   function drawSprite(img, x, y, w=64, h=64, flipX=false, alpha=1, tintRed=0){
+    // サブピクセル回避のため整数へ
+    x = Math.floor(x); y = Math.floor(y);
     ctx.save(); ctx.globalAlpha = alpha;
     if (flipX) { ctx.translate(x + w, y); ctx.scale(-1, 1); x = 0; y = 0; } else { ctx.translate(x, y); }
     ctx.drawImage(img, 0, 0, w, h);
@@ -287,6 +296,7 @@
     SPIN_L:{ dmg:40,len:900, anim:'spin', loops:4, radial:true },
   };
   let activeHit=null;
+
   function beginAttack(kind){
     const k = ATTACKS[kind]; if (!k) return;
     player.actionLockT = k.len; player.animT=0; player.animI=0; player.anim = (k.pre ? k.pre : k.anim);
@@ -305,26 +315,38 @@
     for(let i=0;i<4-alive;i++){
       const sx = world.camX + canvas.clientWidth + 120 + i*80;
       const e = makeEnemy(sx);
-      e.y = stageFloorY - e.h; // 床に合わせる
-      enemies.push(e);
+      e.y = stageFloorY - e.h; enemies.push(e);
     }
   }
 
-  // 地面コリジョン（床ライン=stageFloorY）
+  // 地面コリジョン
   function collideWithGround(ent){
     const floorY = stageFloorY - ent.h;
     if (ent.y >= floorY && ent.vy >= 0){ ent.y = floorY; ent.vy = 0; ent.grounded = true; if (ent===player) player.canJump=true; }
     else ent.grounded=false;
   }
 
+  // ====== タイル描画（隙間対策：Pattern＋整数スナップ） ======
+  let groundPattern = null, groundTileW = 64, groundTileH = 64;
+  function ensureGroundPattern(){
+    const img = images['S1.png']; if (!img) return;
+    groundTileW = img.width || 64;
+    groundTileH = img.height || 64;
+    // iOSのパターン繰り返しでのブラー対策：そのまま利用、座標を整数スナップ
+    groundPattern = ctx.createPattern(img, 'repeat');
+  }
   function drawGround(){
-    const img = images['S1.png']; const wTile=64, hTile=64; const y=stageFloorY;
-    const startX = Math.floor((world.camX - 50) / wTile) * wTile;
-    const endX = world.camX + canvas.clientWidth + 100;
-    for(let x=startX; x<endX; x+=wTile){
-      ctx.drawImage(img, x - world.camX, y - world.camY, wTile, hTile);
-      ctx.drawImage(img, x - world.camX, y - world.camY + hTile, wTile, hTile);
-    }
+    if (!groundPattern) ensureGroundPattern();
+    if (!groundPattern) return;
+    const y = Math.floor(stageFloorY);
+    const startX = Math.floor(- (world.camX % groundTileW));
+    ctx.save();
+    ctx.translate(startX, y);
+    ctx.fillStyle = groundPattern;
+    // 表面＋厚み1段を敷く
+    const width = Math.ceil(canvas.clientWidth + groundTileW*2);
+    ctx.fillRect(-groundTileW, 0, width, groundTileH*2);
+    ctx.restore();
   }
 
   function formatTime(sec){ const m=(sec/60)|0, s=sec%60; return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; }
@@ -355,7 +377,7 @@
     const targetCamX = player.x + player.w*0.5 - vw*0.5;
     world.camX += (targetCamX - world.camX) * 0.12;
 
-    // 落下死→リスポーン（床よりかなり落ちたら）
+    // 落下死→リスポーン
     if (player.y > stageFloorY + 400){
       player.x = world.camX + 120; player.y = stageFloorY - player.h; player.vx=0; player.vy=0; player.dir=1;
     }
@@ -363,13 +385,14 @@
     // アニメ
     player.animT += dt; if (player.animT>120){ player.animT=0; player.animI=(player.animI+1)%4; }
 
+    // 硬直とコンボ接続
     if (player.actionLockT > 0){
       player.actionLockT -= dt;
       if (player.actionLockT < 120 && activeHit && !activeHit.radial) {
-        const last = inputQueue.pop();
-        if (last){
-          if (last.tag==='B'){ beginAttack('B1'); }
-          else if (last.tag==='A'){
+        const next = inputQueue.pop();
+        if (next){
+          if (next.tag==='B'){ beginAttack('B1'); }
+          else if (next.tag==='A'){
             const prev = activeHit.kind;
             if (prev==='A1') beginAttack('A2');
             else if (prev==='A2') beginAttack('A3');
@@ -454,20 +477,24 @@
   function tryEnemyHit(e, dmg){ /* プレイヤー無敵のため演出省略 */ }
 
   function render(){
+    // 背景
     ctx.fillStyle='#060913'; ctx.fillRect(0,0,canvas.clientWidth,canvas.clientHeight);
+    // 地面（パターン）
     drawGround();
 
+    // プレイヤー
     const pFrames = Anim[player.anim] || Anim.idle;
     const pImg = images[pFrames[player.animI % pFrames.length]] || images['M1-1.png'];
-    drawSprite(pImg, Math.round(player.x - world.camX), Math.round(player.y - 0), player.w, player.h, player.dir<0, 1, 0);
+    drawSprite(pImg, player.x - world.camX, player.y - 0, player.w, player.h, player.dir<0, 1, 0);
 
+    // 敵
     for(const e of enemies){
       const eFrames = EnemyAnim[e.anim] || EnemyAnim.idle;
       const eImg = images[eFrames[e.animI % eFrames.length]] || images['EN1-1.png'];
       const tint = e.hitT>0 ? (e.hitT/HIT_FLASH_T) : 0; const alpha = e.fade ?? 1;
-      drawSprite(eImg, Math.round(e.x - world.camX), Math.round(e.y - 0), e.w, e.h, e.dir<0, alpha, tint);
+      drawSprite(eImg, e.x - world.camX, e.y - 0, e.w, e.h, e.dir<0, alpha, tint);
       if (!e.dead){
-        const hpW = 46, hpH = 5, bx = e.x - world.camX + (e.w-hpW)/2, by = e.y - 8;
+        const hpW = 46, hpH = 5, bx = Math.floor(e.x - world.camX + (e.w-hpW)/2), by = Math.floor(e.y - 8);
         ctx.fillStyle='#000a'; ctx.fillRect(bx-1,by-1,hpW+2,hpH+2);
         ctx.fillStyle='#222b'; ctx.fillRect(bx,by,hpW,hpH);
         ctx.fillStyle='#f55'; ctx.fillRect(bx,by,(hpW*(e.hp/ENEMY_HP))|0,hpH);
