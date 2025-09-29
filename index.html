@@ -3,19 +3,52 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-<title>MOB Side Action – Prototype</title>
+<title>MOB Side Action – Prototype (No-Overlap)</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
   :root{
+    /* 下部コントローラの高さをデバイスに合わせて固定（180〜260pxの範囲） */
+    --controls-h: clamp(180px, 34dvh, 260px);
+    --pad-gap: 8px;
     --hud:#0f1118cc; --fg:#e7ecf3; --accent:#39c6ff; --danger:#ff4d4f;
     --btn:#141824cc; --btn-hi:#1b2030cc;
   }
   html,body{height:100%;margin:0;background:#000;color:var(--fg);font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;overscroll-behavior:none}
   body{touch-action:none;-webkit-user-select:none;user-select:none}
-  #root{position:fixed;inset:0;display:grid;grid-template-rows:1fr auto;gap:8px;padding:calc(env(safe-area-inset-top,0px) + 8px) 8px calc(env(safe-area-inset-bottom,0px) + 8px) 8px;box-sizing:border-box}
-  #gameWrap{position:relative;display:grid;place-items:center;min-height:60vh}
-  canvas#game{width:100%;max-width:520px;aspect-ratio:9/16;background:#060913;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.5);touch-action:none}
-  /* HUD overlay */
+
+  /* 画面全体を縦2分割：上=ゲーム、下=操作 */
+  #root{
+    position:fixed; inset:0;
+    display:grid;
+    grid-template-rows: 1fr var(--controls-h);
+    gap: var(--pad-gap);
+    padding:
+      calc(env(safe-area-inset-top,0px) + var(--pad-gap))
+      var(--pad-gap)
+      calc(env(safe-area-inset-bottom,0px) + var(--pad-gap))
+      var(--pad-gap);
+    box-sizing:border-box;
+    height:100dvh; /* dvhでモバイルブラウザのUI変動に強い */
+  }
+
+  /* 上：ゲーム領域（コントローラと完全分離） */
+  #gameWrap{
+    position:relative; min-height:0; /* Grid内のオーバーフロー対策 */
+    display:grid; place-items:center;
+    background:#000; border-radius:16px;
+  }
+  /* Canvasは上段領域にフィット。横長になり過ぎないよう最大幅を制限 */
+  canvas#game{
+    width:100%;
+    height:100%;
+    max-width:520px;            /* 横に広すぎる端末での見た目を調整 */
+    background:#060913;
+    border-radius:16px;
+    box-shadow:0 10px 40px rgba(0,0,0,.5);
+    touch-action:none;
+  }
+
+  /* HUD overlay（Canvas上に重なるが、下段のボタンとは領域が別なので衝突しない） */
   .overlay{position:absolute;inset:0;pointer-events:none}
   .hud{
     position:absolute;left:8px;right:8px;top:8px;display:flex;justify-content:space-between;gap:8px;
@@ -24,16 +57,24 @@
   .hud .lives,.hud .timer{font-weight:700;letter-spacing:.5px}
   .gauge{height:6px;background:#1b2133;border-radius:999px;overflow:hidden;min-width:90px}
   .gauge>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#6af,#4f9);transition:width .1s}
-  /* Controls (touch) */
-  #controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .pad{position:relative;background:var(--hud);border-radius:16px;padding:10px;backdrop-filter:blur(6px)}
-  .pad.left{height:180px}
-  .pad.right{height:180px;display:grid;grid-template-areas:"atk1 skill" "atk2 skill";grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:10px}
-  .stickBase,.stickThumb{
-    position:absolute;border-radius:999px;pointer-events:auto;touch-action:none
+
+  /* 下：タッチコントローラ（ゲーム領域とは別レイヤー） */
+  #controls{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap: var(--pad-gap);
+    height: var(--controls-h); /* 明示固定で重なり防止 */
   }
+  .pad{position:relative;background:var(--hud);border-radius:16px;padding:10px;backdrop-filter:blur(6px);height:100%}
+  .pad.left{height:100%}
+  .pad.right{
+    display:grid;grid-template-areas:"atk1 skill" "atk2 skill";
+    grid-template-columns:1fr 1fr;grid-auto-rows:1fr;gap:10px;height:100%;
+  }
+  .stickBase,.stickThumb{position:absolute;border-radius:999px;pointer-events:auto;touch-action:none}
   .stickBase{width:140px;height:140px;left:10px;top:10px;background:#101522;border:2px solid #1f2a44aa}
   .stickThumb{width:72px;height:72px;left:44px;top:44px;background:#1a2440;border:2px solid #2e3b63aa;transition:transform .02s}
+
   .btn{
     pointer-events:auto;touch-action:none;background:var(--btn);border:2px solid #1f2a44aa;border-radius:14px;
     display:grid;place-items:center;font-weight:800;font-size:20px;user-select:none
@@ -42,12 +83,12 @@
   .btn[data-kind="atk1"]{grid-area:atk1}
   .btn[data-kind="atk2"]{grid-area:atk2}
   .btn[data-kind="skill"]{grid-area:skill;font-size:22px}
+
   .legend{position:absolute;inset:auto 10px 10px auto;font-size:12px;opacity:.8}
-  /* Helper badges */
-  .badge{padding:2px 6px;border-radius:8px;background:#1a2133;font-size:12px;margin-left:6px}
-  /* Small screen tweaks */
+
+  /* すごく小さい端末向け調整 */
   @media (max-width:360px){
-    .pad.left,.pad.right{height:160px}
+    :root{ --controls-h: clamp(170px, 38dvh, 220px); }
     .stickBase{width:120px;height:120px}
     .stickThumb{width:64px;height:64px;left:38px;top:38px}
   }
@@ -55,17 +96,19 @@
 </head>
 <body>
 <div id="root">
+  <!-- 上段：ゲーム画面（単独エリア） -->
   <div id="gameWrap">
     <canvas id="game" width="450" height="800"></canvas>
     <div class="overlay">
       <div class="hud" id="hud">
-        <div class="lives">残機 <span id="lives">∞</span> <span class="badge">無敵デバッグ</span></div>
+        <div class="lives">残機 <span id="lives">∞</span> <span class="badge" style="padding:2px 6px;border-radius:8px;background:#1a2133;font-size:12px;margin-left:6px">無敵デバッグ</span></div>
         <div class="timer">TIME <span id="time">00:00</span></div>
         <div class="gauge" title="Skill Gauge"><i id="gauge"></i></div>
       </div>
     </div>
   </div>
 
+  <!-- 下段：操作エリア（固定） -->
   <div id="controls">
     <div class="pad left" id="padLeft">
       <div class="stickBase" id="stickBase"></div>
@@ -82,29 +125,26 @@
 
 <script>
 /* ---------------------------------------------------------
- * MOB Side Action – Single-file Prototype
- * - 縦画面Canvas / 60FPS rAF
- * - 物理: 重力, 地形AABB, 床すり抜け/角衝突/多段ジャンプ対策
- * - 入力: キー＋タッチ（仮想スティック＋3ボタン）
- * - スプライト: 左移動時の反転描画対応（右向き素材のみ提供）
- * - コンボ: ■ / ▲ / ●（長押し対応ゲージ）
- * - 敵: HP50 / 被弾赤点滅＋ノックバック＋軽い浮き / 0で回転退場→フェードアウト
- * - カメラ: プレイヤー追従横スクロール
- * - ステージ: タイルS1.png横ループ＋単純な足場
- * - 低GC: 使い回し配列・オブジェクト、newの最小化
+ * MOB Side Action – No-Overlap Layout
+ * 変更点：
+ * - 画面をGridで上下2分割。下段コントローラ高さを固定（--controls-h）
+ * - Canvasは上段領域に100%フィット。重なり発生なし
+ * - それ以外のゲームロジックは従来通り
  * --------------------------------------------------------- */
 (() => {
   const DPR = Math.max(1, Math.floor(devicePixelRatio || 1));
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d', { alpha:false, desynchronized:true });
-  // 内部解像度アップスケーリング
-  function fixDPR(){
-    const cssW = canvas.clientWidth, cssH = canvas.clientHeight;
+
+  function fitCanvasToSlot(){
+    /* 上段#gameWrapいっぱいに内部解像度を合わせる */
+    const rect = canvas.getBoundingClientRect();
+    const cssW = rect.width, cssH = rect.height;
     canvas.width = Math.round(cssW * DPR);
     canvas.height = Math.round(cssH * DPR);
-    ctx.setTransform(DPR,0,0,DPR,0,0); // UIはCSSピクセル座標
+    ctx.setTransform(DPR,0,0,DPR,0,0); // CSSピクセル座標系
   }
-  fixDPR(); addEventListener('resize', fixDPR);
+  fitCanvasToSlot(); addEventListener('resize', fitCanvasToSlot);
 
   // ---- 画像ローダ（存在しない時は色板で代用） ----
   const images = {};
@@ -123,7 +163,6 @@
       const img = new Image();
       img.onload = ()=>{ images[name]=img; res(); };
       img.onerror = ()=>{
-        // fallback: 64x64プレースホルダ
         const c=document.createElement('canvas'); c.width=64; c.height=64;
         const x=c.getContext('2d');
         x.fillStyle='#111'; x.fillRect(0,0,64,64);
@@ -131,19 +170,18 @@
         x.fillStyle='#0008'; x.fillRect(4,40,56,20);
         images[name]=c; res();
       };
-      img.src = name; // 相対パス
+      img.src = name;
     });
   }
-  // 色ヒント
   const fallbacks = {
-    'M1-1.png':'#8ef', 'M1-2.png':'#8ef','M1-3.png':'#8ef','M1-4.png':'#8ef',
+    'M1-1.png':'#8ef','M1-2.png':'#8ef','M1-3.png':'#8ef','M1-4.png':'#8ef',
     'K1-1.png':'#adf','K1-2.png':'#adf','K1-3.png':'#adf','K1-4.png':'#adf','K1-5.png':'#adf',
     'h1.png':'#f77','h2.png':'#f77','h3.png':'#f77','h4.png':'#f77',
     'EN1-1.png':'#fc9','EN1-2.png':'#fc9','EN1-3.png':'#fc9','EN1-4.png':'#fc9','EN1-5.png':'#fc9','EN1-6.png':'#fc9',
     'S1.png':'#6bd'
   };
 
-  // ---- 入力 ----
+  // 入力（キー）
   const keys = new Set();
   addEventListener('keydown', e=>{
     if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' ','z','x','c','Z','X','C','Shift','Enter'].includes(e.key)) e.preventDefault();
@@ -156,107 +194,87 @@
   const base = document.getElementById('stickBase');
   const thumb = document.getElementById('stickThumb');
   let stickActive=false, stickId=null, stickVecX=0, stickVecY=0;
-  const stickCenter={ x: base.offsetLeft+base.offsetWidth/2, y: base.offsetTop+base.offsetHeight/2 };
-  const STICK_R = base.offsetWidth*0.5 - 8;
+  const stickCenter=()=>({ x: base.offsetLeft+base.offsetWidth/2, y: base.offsetTop+base.offsetHeight/2 });
   function setStickFromPoint(px,py){
-    const dx = px - stickCenter.x, dy = py - stickCenter.y;
+    const c = stickCenter();
+    const dx = px - c.x, dy = py - c.y;
+    const R = base.offsetWidth*0.5 - 8;
     const d = Math.hypot(dx,dy) || 1;
-    const nx = Math.max(-1, Math.min(1, dx / STICK_R));
-    const ny = Math.max(-1, Math.min(1, dy / STICK_R));
+    const nx = Math.max(-1, Math.min(1, dx / R));
+    const ny = Math.max(-1, Math.min(1, dy / R));
     stickVecX = Math.abs(dx) < 6 ? 0 : nx;
     stickVecY = Math.abs(dy) < 6 ? 0 : ny;
-    const mag = Math.min(1, d / STICK_R);
-    const tx = (STICK_R * mag) * (dx/d);
-    const ty = (STICK_R * mag) * (dy/d);
+    const mag = Math.min(1, d / R);
+    const tx = (R * mag) * (dx/d);
+    const ty = (R * mag) * (dy/d);
     thumb.style.transform = `translate(${tx}px, ${ty}px)`;
   }
   function resetStick(){ stickActive=false; stickId=null; stickVecX=0; stickVecY=0; thumb.style.transform='translate(0,0)'; }
   padLeft.addEventListener('pointerdown', e=>{ stickActive=true; stickId=e.pointerId; padLeft.setPointerCapture(stickId); setStickFromPoint(e.offsetX,e.offsetY); });
   padLeft.addEventListener('pointermove', e=>{ if(stickActive) setStickFromPoint(e.offsetX,e.offsetY); });
-  padLeft.addEventListener('pointerup', ()=> resetStick());
-  padLeft.addEventListener('pointercancel', ()=> resetStick());
+  padLeft.addEventListener('pointerup', resetStick);
+  padLeft.addEventListener('pointercancel', resetStick);
 
   // 右ボタン
   const btnAtk1 = document.getElementById('btnAtk1');
   const btnAtk2 = document.getElementById('btnAtk2');
   const btnSkill = document.getElementById('btnSkill');
-
   let skillPressStart = 0, skillHolding=false;
-
   const press = (el, down, up)=>{
     el.addEventListener('pointerdown', e=>{ e.preventDefault(); el.setPointerCapture(e.pointerId); down(); });
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', up);
   };
-
-  // ---- ゲーム定数 ----
-  const GRAVITY = 0.55;
-  const MOVE_SPEED = 2.6;       // 基本移動
-  const AIR_CTRL = 0.75;        // 空中の制動
-  const JUMP_V = -10.2;         // ジャンプ初速
-  const MAX_FALL = 16;
-
-  const HIT_FLASH_T = 120;      // 被弾赤点滅ms
-  const HIT_KNOCK = 3.0;        // ノックバック速度
-  const HIT_POP = -4.5;         // 軽く浮く
-  const ENEMY_HP = 50;
-
-  const STAGE_FLOOR_Y = 620;    // 足場基準y
-
-  // ---- カメラ/ワールド ----
-  const world = {
-    camX: 0, camY: 0,
-    width: 999999, height: 2000,
-    t: 0, dt: 16, last: performance.now(),
-    timerSec: 0
-  };
-
-  // ---- タイル床（S1.png横ループ） ----
-  const tileImg = ()=> images['S1.png'];
-  function drawGround() {
-    const img = tileImg();
-    const hTile = 64, wTile = 64;
-    const y = STAGE_FLOOR_Y;
-    // 画面横幅に合わせてタイル敷き詰め
-    const startX = Math.floor((world.camX - 50) / wTile) * wTile;
-    const endX = world.camX + canvas.clientWidth + 100;
-    for(let x=startX; x<endX; x+=wTile){
-      ctx.drawImage(img, x - world.camX, y - world.camY, wTile, wTile);
-      // 厚みを少し
-      ctx.drawImage(img, x - world.camX, y - world.camY + wTile, wTile, wTile);
+  press(btnAtk1, ()=>{ pushInput('A'); }, ()=>{});
+  press(btnAtk2, ()=>{ pushInput('B'); }, ()=>{});
+  press(btnSkill,
+    ()=>{ skillHolding=true; skillPressStart = performance.now(); },
+    ()=>{
+      const held = performance.now() - skillPressStart;
+      skillHolding=false;
+      if (held > 220){ player.gauge = clamp(player.gauge + 0.25, 0, 1); }
+      const kind = (player.gauge >= 0.75) ? 'SPIN_L' : 'SPIN_S';
+      beginAttack(kind);
+      if (kind==='SPIN_L') player.gauge = 0;
     }
-  }
+  );
 
-  // ---- ユーティリティ ----
+  // キー→攻撃
+  addEventListener('keydown', e=>{
+    if (e.repeat) return;
+    if (e.key==='z' || e.key==='Z') pushInput('A');
+    if (e.key==='x' || e.key==='X') pushInput('B');
+    if (e.key==='c' || e.key==='C' || e.key===' ') {
+      beginAttack( player.gauge>=0.75 ? 'SPIN_L' : 'SPIN_S' );
+      if (player.gauge>=0.75) player.gauge=0;
+    }
+    if (e.key==='ArrowUp' || e.key==='Shift' || e.key==='Enter'){
+      if (player.canJump && player.grounded){ player.vy = JUMP_V; player.grounded=false; player.canJump=false; }
+    }
+  });
+
+  // 定数
+  const GRAVITY = 0.55, MOVE_SPEED = 2.6, AIR_CTRL = 0.75, JUMP_V = -10.2, MAX_FALL=16;
+  const HIT_FLASH_T = 120, HIT_KNOCK = 3.0, HIT_POP = -4.5, ENEMY_HP = 50;
+  const STAGE_FLOOR_Y = 620;
+
+  const world = { camX:0, camY:0, width: 999999, height: 2000, t:0, dt:16, last: performance.now(), timerSec:0 };
+
+  const imagesWanted = wanted.map(n=>loadImg(n, fallbacks[n]||'#888'));
+  Promise.all(imagesWanted).then(start);
+
   const clamp=(v,a,b)=> v<a?a: v>b?b:v;
-  const nowMs=()=> performance.now();
-
-  // ---- スプライト描画（左右反転対応） ----
   function drawSprite(img, x, y, w=64, h=64, flipX=false, alpha=1, tintRed=0){
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    if (flipX) {
-      ctx.translate(x + w, y);
-      ctx.scale(-1, 1);
-      x = 0; y = 0;
-    } else {
-      ctx.translate(x, y);
-    }
+    ctx.save(); ctx.globalAlpha = alpha;
+    if (flipX) { ctx.translate(x + w, y); ctx.scale(-1, 1); x = 0; y = 0; } else { ctx.translate(x, y); }
     ctx.drawImage(img, 0, 0, w, h);
-    if (tintRed>0){
-      ctx.globalCompositeOperation='multiply';
-      ctx.fillStyle=`rgba(255,0,0,${tintRed})`;
-      ctx.fillRect(0,0,w,h);
-      ctx.globalCompositeOperation='source-over';
-    }
+    if (tintRed>0){ ctx.globalCompositeOperation='multiply'; ctx.fillStyle=`rgba(255,0,0,${tintRed})`; ctx.fillRect(0,0,w,h); ctx.globalCompositeOperation='source-over'; }
     ctx.restore();
   }
-
-  // ---- アニメフレーム辞書 ----
   const Anim = {
     idle: ['M1-1.png'],
     move: ['M1-2.png','M1-3.png','M1-4.png'],
-    atk1_upper: ['K1-1.png'], // アッパー
+    atk1_upper: ['K1-1.png'],
     stance: ['K1-3.png'],
     rushKick: ['K1-2.png'],
     killKick: ['K1-4.png'],
@@ -269,211 +287,95 @@
     atkS:['EN1-4.png','EN1-5.png'],
     atkM:['EN1-4.png','EN1-6.png'],
   };
+  function aabb(a,b){ return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y; }
 
-  // ---- ヒット判定（簡易） ----
-  function aabb(a,b){
-    return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;
-  }
-
-  // ---- プレイヤー ----
-  const player = {
-    x: 100, y: STAGE_FLOOR_Y-64, w:64, h:64,
-    vx:0, vy:0, dir: 1, grounded:false, canJump:true,
-    anim:'idle', animT:0, animI:0,
-    invincible:true, // とりあえず無敵
-    comboState: null, comboT:0,
-    gauge:0, // 0..1 スキルゲージ充填（長押し）
-    actionLockT: 0, // 攻撃モーション中の硬直（短め）
+  const player = { x:100,y:STAGE_FLOOR_Y-64,w:64,h:64,vx:0,vy:0,dir:1,grounded:false,canJump:true,
+    anim:'idle',animT:0,animI:0,invincible:true,comboState:null,comboT:0,gauge:0,actionLockT:0
   };
-
-  // 攻撃定義
   const ATTACKS = {
-    // ■ （単体押し）少し前進アッパー
-    A1: { dmg:5,  len:180, hitbox:{x:18,y:10,w:40,h:54}, impulse:{x:0.6,y:0}, anim:'atk1_upper' },
-    // ■（連続2段目）構え→突進キック
-    A2: { dmg:8,  len:220, hitbox:{x:20,y:8,w:44,h:50}, impulse:{x:1.8,y:0}, anim:'rushKick', pre:'stance', preLen:120 },
-    // ■（連続3段目）構え→必殺キック
-    A3: { dmg:10, len:240, hitbox:{x:18,y:8,w:46,h:50}, impulse:{x:2.2,y:0}, anim:'killKick', pre:'stance', preLen:120 },
-    // ▲ 構え（0.3秒震え）→蹴り上げ
-    B1: { dmg:15, len:260, hitbox:{x:16,y:-6,w:40,h:40}, impulse:{x:0.9,y:-1.0}, anim:'upKick', pre:'stance', preLen:300, shake:true },
-    // ● スピン（短押し：2周 / 長押し：4周）
-    SPIN_S: { dmg:25, len:500, anim:'spin', loops:2, radial:true },
-    SPIN_L: { dmg:40, len:900, anim:'spin', loops:4, radial:true },
+    A1:{ dmg:5, len:180, hitbox:{x:18,y:10,w:40,h:54}, impulse:{x:0.6,y:0}, anim:'atk1_upper' },
+    A2:{ dmg:8, len:220, hitbox:{x:20,y:8,w:44,h:50}, impulse:{x:1.8,y:0}, anim:'rushKick', pre:'stance', preLen:120 },
+    A3:{ dmg:10,len:240, hitbox:{x:18,y:8,w:46,h:50}, impulse:{x:2.2,y:0}, anim:'killKick', pre:'stance', preLen:120 },
+    B1:{ dmg:15,len:260, hitbox:{x:16,y:-6,w:40,h:40}, impulse:{x:0.9,y:-1.0}, anim:'upKick', pre:'stance', preLen:300, shake:true },
+    SPIN_S:{ dmg:25,len:500, anim:'spin', loops:2, radial:true },
+    SPIN_L:{ dmg:40,len:900, anim:'spin', loops:4, radial:true },
   };
-
-  // 実行中攻撃（ヒット1回判定）
-  let activeHit = null;
-
+  let activeHit=null;
   function beginAttack(kind){
-    const k = ATTACKS[kind];
-    if (!k) return;
-    player.actionLockT = k.len;
-    player.animT = 0; player.animI = 0;
-    player.anim = (k.pre ? k.pre : k.anim);
-    if (k.pre) {
-      // 事前硬直 → 本体へ
-      setTimeout(()=>{ player.anim = k.anim; }, k.preLen||0);
-    }
-    // 前進（衝撃）
+    const k = ATTACKS[kind]; if (!k) return;
+    player.actionLockT = k.len; player.animT=0; player.animI=0; player.anim = (k.pre ? k.pre : k.anim);
+    if (k.pre) setTimeout(()=>{ player.anim = k.anim; }, k.preLen||0);
     if (k.impulse) player.vx += player.dir * k.impulse.x;
-
-    // スピンは半径ヒット
-    activeHit = {
-      kind, used:false, t:k.len,
-      radial: !!k.radial,
-    };
+    activeHit = { kind, used:false, t:k.len, radial:!!k.radial };
   }
 
-  // コンボ入力キュー
-  const inputQueue = [];
-  function pushInput(tag){ // 'A' or 'B'
-    inputQueue.push({tag, t: nowMs()});
-    // コンボ接続（例: ■→▲ / ■→■→▲ / ■→■→■→▲）
-    // 実装: 攻撃硬直の終盤に参照して次のbeginAttackを自動発火
-  }
+  const inputQueue=[];
+  function pushInput(tag){ inputQueue.push({tag, t: performance.now()}); }
 
-  // ---- 敵管理 ----
-  const enemies = [];
-  function makeEnemy(spawnX){
-    return {
-      x: spawnX, y: STAGE_FLOOR_Y-64, w:60, h:60,
-      vx:0, vy:0, dir:-1,
-      hp: ENEMY_HP,
-      aiT: 0, anim:'idle', animT:0, animI:0,
-      hitT:0, dead:false, spinR:0, fade:1,
-      attackPhase:0, attackT:0,
-    };
-  }
+  const enemies=[];
+  function makeEnemy(x){ return { x, y:STAGE_FLOOR_Y-64, w:60,h:60, vx:0,vy:0, dir:-1, hp:50, aiT:0, anim:'idle',animT:0,animI:0, hitT:0, dead:false, spinR:0, fade:1, attackPhase:0, attackT:0 }; }
   function ensureEnemies(){
-    // 常時4体
     let alive = enemies.filter(e=>!e.dead).length;
-    const need = 4 - alive;
-    for(let i=0;i<need;i++){
-      // 画面外先にスポーン
+    for(let i=0;i<4-alive;i++){
       const sx = world.camX + canvas.clientWidth + 120 + i*80;
       enemies.push(makeEnemy(sx));
     }
   }
 
-  // ---- 画像読み込み後スタート ----
-  (async ()=>{
-    await Promise.all(wanted.map(n=>loadImg(n, fallbacks[n]||'#888')));
-    start();
-  })();
-
-  // ---- ステージの簡易コリジョン（床のみ） ----
   function collideWithGround(ent){
-    // 縦だけ判定（床ライン）
     const floorY = STAGE_FLOOR_Y - ent.h;
-    if (ent.y >= floorY && ent.vy >= 0){
-      ent.y = floorY; ent.vy = 0; ent.grounded = true; if (ent===player) player.canJump=true;
-    } else {
-      ent.grounded = false;
+    if (ent.y >= floorY && ent.vy >= 0){ ent.y = floorY; ent.vy = 0; ent.grounded = true; if (ent===player) player.canJump=true; }
+    else ent.grounded=false;
+  }
+
+  function drawGround(){
+    const img = images['S1.png']; const wTile=64, hTile=64; const y=STAGE_FLOOR_Y;
+    const startX = Math.floor((world.camX - 50) / wTile) * wTile;
+    const endX = world.camX + canvas.clientWidth + 100;
+    for(let x=startX; x<endX; x+=wTile){
+      ctx.drawImage(img, x - world.camX, y - world.camY, wTile, hTile);
+      ctx.drawImage(img, x - world.camX, y - world.camY + hTile, wTile, hTile);
     }
   }
 
-  // ---- 入力ハンドラ（右ボタン） ----
-  press(btnAtk1,
-    ()=>{ pushInput('A'); /* 連打/単発で分岐は更新ループで処理 */ },
-    ()=>{}
-  );
-  press(btnAtk2,
-    ()=>{ pushInput('B'); },
-    ()=>{}
-  );
-  press(btnSkill,
-    ()=>{
-      skillHolding=true; skillPressStart = nowMs();
-    },
-    ()=>{
-      const held = nowMs() - skillPressStart;
-      skillHolding=false;
-      // 長押し時はゲージを溜める（即発動はしない）
-      if (held > 220){ player.gauge = clamp(player.gauge + 0.25, 0, 1); }
-      // 押し離しで発動：ゲージ量でSPIN_S/L
-      const kind = (player.gauge >= 0.75) ? 'SPIN_L' : 'SPIN_S';
-      beginAttack(kind);
-      if (kind==='SPIN_L') player.gauge = 0; // 消費
-    }
-  );
+  function formatTime(sec){ const m=(sec/60)|0, s=sec%60; return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; }
 
-  // ---- キー入力→キュー ----
-  addEventListener('keydown', e=>{
-    if (e.repeat) return;
-    if (e.key==='z' || e.key==='Z') pushInput('A');
-    if (e.key==='x' || e.key==='X') pushInput('B');
-    if (e.key==='c' || e.key==='C' || e.key===' ') {
-      // スキル短押し即発
-      beginAttack( player.gauge>=0.75 ? 'SPIN_L' : 'SPIN_S' );
-      if (player.gauge>=0.75) player.gauge=0;
-    }
-    if (e.key==='ArrowUp' || e.key==='Shift' || e.key==='Enter'){
-      if (player.canJump && player.grounded){ player.vy = JUMP_V; player.grounded=false; player.canJump=false; }
-    }
-  });
-
-  // ---- 毎フレーム更新 ----
   function update(dt){
-    world.t += dt;
-    world.timerSec += dt/1000;
+    world.t += dt; world.timerSec += dt/1000;
 
-    // 入力（左右・ジャンプ）
     const wantLeft = keys.has('ArrowLeft') || (stickVecX < -0.25);
     const wantRight= keys.has('ArrowRight')|| (stickVecX > 0.25);
     const wantJump = keys.has('ArrowUp');
 
-    // 横移動
-    let move = 0;
-    if (wantLeft) move -= 1;
-    if (wantRight) move += 1;
-
+    let move = 0; if (wantLeft) move -= 1; if (wantRight) move += 1;
     const accel = player.grounded ? MOVE_SPEED : MOVE_SPEED * AIR_CTRL;
-    player.vx = move * accel;
-    if (move!==0) player.dir = move;
+    player.vx = move * accel; if (move!==0) player.dir = move;
 
-    // ジャンプ
-    if (wantJump && player.canJump && player.grounded){
-      player.vy = JUMP_V; player.grounded=false; player.canJump=false;
-    }
+    if (wantJump && player.canJump && player.grounded){ player.vy = JUMP_V; player.grounded=false; player.canJump=false; }
     if (!wantJump && player.grounded) player.canJump=true;
 
-    // 重力
     player.vy = clamp(player.vy + GRAVITY, -99, MAX_FALL);
-
-    // 位置更新
-    player.x += player.vx;
-    player.y += player.vy;
-
-    // 地面
+    player.x += player.vx; player.y += player.vy;
     collideWithGround(player);
 
-    // カメラ（プレイヤー中央寄せ）
-    const viewW = canvas.clientWidth, viewH = canvas.clientHeight;
-    const targetCamX = player.x + player.w*0.5 - viewW*0.5;
-    const targetCamY = 0;
+    // カメラ
+    const vw = canvas.clientWidth, vh = canvas.clientHeight;
+    const targetCamX = player.x + player.w*0.5 - vw*0.5;
     world.camX += (targetCamX - world.camX) * 0.12;
-    world.camY += (targetCamY - world.camY) * 0.12;
 
-    // プレイヤー落下死→リスポーン
-    if (player.y > STAGE_FLOOR_Y + 400){
-      player.x = world.camX + 120; player.y = STAGE_FLOOR_Y-64; player.vx=0; player.vy=0; player.dir=1;
-    }
+    // 落下死→リスポーン
+    if (player.y > STAGE_FLOOR_Y + 400){ player.x = world.camX + 120; player.y = STAGE_FLOOR_Y-64; player.vx=0; player.vy=0; player.dir=1; }
 
-    // アニメ更新
+    // アニメ
     player.animT += dt; if (player.animT>120){ player.animT=0; player.animI=(player.animI+1)%4; }
 
-    // アイドル/歩行アニメ調整（攻撃硬直中は攻撃アニメ優先）
     if (player.actionLockT > 0){
       player.actionLockT -= dt;
-      // コンボ接続チェック：硬直終盤で入力を見る
       if (player.actionLockT < 120 && activeHit && !activeHit.radial) {
-        // キュー末尾を参照
         const last = inputQueue.pop();
         if (last){
-          if (last.tag==='B'){
-            beginAttack('B1');
-          } else if (last.tag==='A'){
-            // 直前の攻撃種に応じて段階繰上げ
+          if (last.tag==='B'){ beginAttack('B1'); }
+          else if (last.tag==='A'){
             const prev = activeHit.kind;
             if (prev==='A1') beginAttack('A2');
             else if (prev==='A2') beginAttack('A3');
@@ -482,24 +384,17 @@
         }
       }
     }else{
-      // 移動/待機
-      if (Math.abs(player.vx)>0.1) player.anim='move';
-      else player.anim='idle';
+      if (Math.abs(player.vx)>0.1) player.anim='move'; else player.anim='idle';
     }
+    if (skillHolding) player.gauge = clamp(player.gauge + dt/4000, 0, 1);
 
-    // スキル長押し中ゲージUIに微量蓄積演出
-    if (skillHolding){
-      player.gauge = clamp(player.gauge + dt/4000, 0, 1);
-    }
-
-    // 攻撃ヒット処理
+    // 攻撃ヒット
     if (activeHit){
       activeHit.t -= dt;
       const k = ATTACKS[activeHit.kind];
       if (activeHit.t<=0){ activeHit=null; }
       else{
         if (k.radial){
-          // スピン: 半径攻撃（近接）
           const radius = 48;
           for (const e of enemies){
             if (e.dead) continue;
@@ -510,16 +405,12 @@
             }
           }
         } else {
-          // ボックス攻撃（プレイヤー前方）
-          const hb = { x: player.x + (player.dir>0? 20: (player.w- (20+ (k.hitbox?.w||40)) ) ) ,
+          const hb = { x: player.x + (player.dir>0? 20: (player.w- (20+ (k.hitbox?.w||40)) ) ),
                        y: player.y + (k.hitbox?.y||8),
-                       w: (k.hitbox?.w||40),
-                       h: (k.hitbox?.h||40) };
+                       w: (k.hitbox?.w||40), h: (k.hitbox?.h||40) };
           for (const e of enemies){
             if (e.dead) continue;
-            if (aabb(hb, e)){
-              dealDamage(e, k.dmg, player.dir, k===ATTACKS.B1 /*up*/);
-            }
+            if (aabb(hb, e)){ dealDamage(e, k.dmg, player.dir, k===ATTACKS.B1); }
           }
         }
       }
@@ -528,58 +419,29 @@
     // 敵AI
     for (const e of enemies){
       if (e.dead){
-        // 回転しながらフェード
         e.spinR += 0.3; e.vy += GRAVITY*0.6; e.y += e.vy; e.x += e.vx;
-        e.fade -= dt/600; if (e.fade<=0){ // 消滅→再補充はensureEnemiesがやる
-          e.fade = 0; e.remove = true;
-        }
+        e.fade -= dt/600; if (e.fade<=0){ e.fade = 0; e.remove = true; }
         continue;
       }
       e.animT += dt; if (e.animT>160){ e.animT=0; e.animI=(e.animI+1)%4; }
-
-      // 被弾赤点滅タイマ
       if (e.hitT>0) e.hitT -= dt;
 
-      // 簡易AI：プレイヤーに近寄る→ランダムで小/中攻撃（連撃は小→中）
-      const px = player.x, ex = e.x;
-      const dist = px - ex;
-      e.dir = dist>0 ? 1 : -1;
-
-      if (Math.abs(dist) > 80){
-        e.vx = 1.5 * e.dir;
-        e.anim = 'move';
-      } else {
-        e.vx = 0; 
-        if (e.attackT<=0){
-          // 攻撃開始
-          e.attackPhase = 0;
-          e.attackT = 300 + Math.random()*300;
-        } else {
+      const dist = player.x - e.x; e.dir = dist>0 ? 1 : -1;
+      if (Math.abs(dist) > 80){ e.vx = 1.5 * e.dir; e.anim='move'; }
+      else {
+        e.vx = 0;
+        if (e.attackT<=0){ e.attackPhase = 0; e.attackT = 300 + Math.random()*300; }
+        else {
           e.attackT -= dt;
-          if (e.attackT<200 && e.attackPhase===0){
-            e.anim='atkS';
-            // 小攻撃ヒット判定
-            tryEnemyHit(e, 6, 0.8, false);
-            e.attackPhase=1;
-          }
-          if (e.attackT<40 && e.attackPhase===1){
-            // 連撃：中へ繋ぐ
-            e.anim='atkM';
-            tryEnemyHit(e, 10, 1.1, true);
-            e.attackPhase=2;
-          }
-          if (e.attackT<=0){
-            e.anim='idle';
-          }
+          if (e.attackT<200 && e.attackPhase===0){ e.anim='atkS'; tryEnemyHit(e, 6, 0.8, false); e.attackPhase=1; }
+          if (e.attackT<40 && e.attackPhase===1){ e.anim='atkM'; tryEnemyHit(e,10, 1.1, true ); e.attackPhase=2; }
+          if (e.attackT<=0){ e.anim='idle'; }
         }
       }
-
-      // 物理
       e.vy = clamp(e.vy + GRAVITY, -99, MAX_FALL);
       e.x += e.vx; e.y += e.vy;
       collideWithGround(e);
     }
-    // 敵クリーニング＆補充
     for (let i=enemies.length-1;i>=0;i--) if (enemies[i].remove) enemies.splice(i,1);
     ensureEnemies();
 
@@ -590,53 +452,26 @@
 
   function dealDamage(e, dmg, dir, popUp){
     if (e.dead) return;
-    e.hp -= dmg;
-    e.hitT = HIT_FLASH_T;
-    e.vx = HIT_KNOCK * (dir||1);
-    if (popUp) e.vy = HIT_POP - 1.5; else e.vy = HIT_POP;
-
+    e.hp -= dmg; e.hitT = HIT_FLASH_T; e.vx = HIT_KNOCK * (dir||1); e.vy = popUp ? (HIT_POP - 1.5) : HIT_POP;
     if (e.hp <= 0){
-      // 回転退場
-      e.dead = true;
-      e.vx = 3.5*(dir||1);
-      e.vy = -6.0;
-      e.fade = 1;
+      e.dead = true; e.vx = 3.5*(dir||1); e.vy = -6.0; e.fade = 1;
     }
   }
+  function tryEnemyHit(e, dmg){ /* プレイヤー無敵のため未実装（演出のみ可） */ }
 
-  function tryEnemyHit(e, dmg, pushX, upper){
-    // 敵→プレイヤー攻撃（プレイヤーは無敵：ノーダメ仕様）
-    // 演出だけ…攻撃判定がプレイヤーに触れたら赤く光らせる等の処理を行いたい場合はここで
-    // 今は無敵なのでスキップ
-  }
-
-  function formatTime(sec){
-    const m = (sec/60)|0, s = sec%60;
-    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-  }
-
-  // ---- 描画 ----
   function render(){
-    // クリア
-    ctx.fillStyle='#060913';
-    ctx.fillRect(0,0,canvas.clientWidth,canvas.clientHeight);
-
-    // 地面タイル
+    ctx.fillStyle='#060913'; ctx.fillRect(0,0,canvas.clientWidth,canvas.clientHeight);
     drawGround();
 
-    // プレイヤー
     const pFrames = Anim[player.anim] || Anim.idle;
     const pImg = images[pFrames[player.animI % pFrames.length]] || images['M1-1.png'];
     drawSprite(pImg, Math.round(player.x - world.camX), Math.round(player.y - world.camY), player.w, player.h, player.dir<0, 1, 0);
 
-    // 敵
     for(const e of enemies){
       const eFrames = EnemyAnim[e.anim] || EnemyAnim.idle;
       const eImg = images[eFrames[e.animI % eFrames.length]] || images['EN1-1.png'];
-      const tint = e.hitT>0 ? (e.hitT/HIT_FLASH_T) : 0;
-      const alpha = e.fade ?? 1;
+      const tint = e.hitT>0 ? (e.hitT/HIT_FLASH_T) : 0; const alpha = e.fade ?? 1;
       drawSprite(eImg, Math.round(e.x - world.camX), Math.round(e.y - world.camY), e.w, e.h, e.dir<0, alpha, tint);
-      // HPバー
       if (!e.dead){
         const hpW = 46, hpH = 5, bx = e.x - world.camX + (e.w-hpW)/2, by = e.y - world.camY - 8;
         ctx.fillStyle='#000a'; ctx.fillRect(bx-1,by-1,hpW+2,hpH+2);
@@ -644,25 +479,15 @@
         ctx.fillStyle='#f55'; ctx.fillRect(bx,by,(hpW*(e.hp/ENEMY_HP))|0,hpH);
       }
     }
-
-    // 画面下部の操作エリアはDOM側UIなのでCanvas描画不要
   }
 
-  // ---- ループ ----
   function loop(ts){
-    const dt = clamp(ts - world.last, 8, 24); // 60fps近辺に収束
-    world.last = ts;
-    update(dt);
-    render();
-    requestAnimationFrame(loop);
+    const dt = Math.max(8, Math.min(24, ts - world.last)); world.last = ts;
+    update(dt); render(); requestAnimationFrame(loop);
   }
-
   function start(){
-    // 初期敵
-    for(let i=0;i<4;i++){
-      enemies.push(makeEnemy(player.x + 200 + i*120));
-    }
-    requestAnimationFrame((t)=>{ world.last=t; loop(t); });
+    for(let i=0;i<4;i++) enemies.push(makeEnemy(player.x + 200 + i*120));
+    requestAnimationFrame(t=>{ world.last=t; loop(t); });
   }
 })();
 </script>
