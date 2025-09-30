@@ -2,800 +2,603 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-<title>MOB Side-Action Prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>MOB Action Prototype</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
   :root{
-    /* 端末に合わせて可変。縦画面想定。 */
-    --safe-top: env(safe-area-inset-top, 0px);
-    --safe-bottom: env(safe-area-inset-bottom, 0px);
-    --hud-bg: #0d1117f2;
-    --hud-fg: #e6edf3;
-    --grid-gap: 10px;
-    --pad: 10px;
+    --bg:#0a0d12;--panel:#0c111a;--ink:#e4ecff;--muted:#9bb1d0;--accent:#59d;--danger:#ff4d4d;
+    --game-w:420px; /* internal logical width */
+    --hud-h:64px;
   }
-  html,body{height:100%;margin:0;background:#000;color:#fff;overscroll-behavior:none}
-  html,body{-webkit-user-select:none;-webkit-touch-callout:none;user-select:none;touch-action:none;font-family:system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans JP", "Apple Color Emoji","Segoe UI Emoji"}
-  #app{position:fixed;inset:0;display:flex;flex-direction:column;gap:var(--grid-gap);padding:calc(var(--safe-top) + var(--pad)) var(--pad) calc(var(--safe-bottom) + var(--pad)) var(--pad)}
-  /* 上：ゲーム画面 */
-  #gameWrap{flex:1;min-height:50vh;display:grid;place-items:center;background:linear-gradient(#0b0c10,#0b0c10 60%,#0b0c10);}
-  canvas{width:100%;height:100%;max-height:65vh;image-rendering: pixelated;image-rendering: crisp-edges;border-radius:12px;border:1px solid #1f2733;background:#1b2230}
-  /* 下：操作グリッド */
-  #hud{display:grid;grid-template-columns:1fr 1fr;gap:var(--grid-gap);}
-  .panel{background:var(--hud-bg);color:var(--hud-fg);border:1px solid #1f2733;border-radius:16px;padding:14px;min-height:180px;position:relative}
-  .title{position:absolute;left:12px;top:8px;font-size:12px;opacity:.75}
-  /* 左：仮想スティック */
-  #stickArea{position:relative;height:100%}
-  .stick-base{position:absolute;left:50%;top:55%;transform:translate(-50%,-50%);width:140px;height:140px;border-radius:999px;border:2px solid #324155;background:#0b1320aa}
-  .stick-thumb{position:absolute;left:50%;top:55%;transform:translate(-50%,-50%);width:80px;height:80px;border-radius:999px;border:2px solid #4a6aa8;background:#111b2e}
-  .hint{position:absolute;right:10px;bottom:8px;font-size:11px;opacity:.6}
-  /* 右：ボタン */
-  #btnArea{display:grid;grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(2,1fr);gap:14px;height:100%}
-  .btn{
-    display:grid;place-items:center;border-radius:14px;border:2px solid #324155;background:#0f1627aa;
-    font-size:22px;font-weight:700;touch-action:none;user-select:none;outline:none;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .btn:active{transform:scale(.98)}
-  .bSquare::before{content:"■"}
-  .bTriangle::before{content:"▲"}
-  .bCircle::before{content:"●"}
-  .bCross::before{content:"×"}
-  /* HUD（ゲーム情報） */
-  #overlay{
-    pointer-events:none;position:absolute;left:0;right:0;top:0;padding:6px 10px;
-    display:flex;gap:8px;align-items:center;justify-content:space-between;font-size:12px;
-    color:#dbe7ff;text-shadow:0 1px 0 #0008;
-  }
-  .bar{height:8px;width:120px;border:1px solid #3a4b63;border-radius:8px;background:#0c1524;overflow:hidden}
-  .bar>i{display:block;height:100%;background:linear-gradient(90deg,#2ee,#4df);width:50%}
-  .hp>i{background:linear-gradient(90deg,#e33,#f66)}
-  .enemyhp>i{background:linear-gradient(90deg,#e9a,#fbd)}
-  .timer{opacity:.9}
-  .notice{
-    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-    background:#0d1117e6;border:1px solid #2a3444;border-radius:12px;padding:8px 12px;font-size:12px;color:#d9e5ff
-  }
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,"Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;}
+  *{box-sizing:border-box}
+  body{display:flex;min-height:100dvh;}
+  #app{flex:1;display:grid;grid-template-rows:1fr auto;gap:10px;padding:env(safe-area-inset-top) env(safe-area-inset-right) calc(env(safe-area-inset-bottom) + 6px) env(safe-area-inset-left)}
+
+  /* GAME AREA (top) */
+  .game-wrap{display:grid;place-items:center;}
+  canvas#game{width:min(100%, var(--game-w));aspect-ratio:3/5; /* 420x700 */
+    background:#0b0f17;border:1px solid #141b26;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.45);touch-action:none}
+
+  /* HUD overlay */
+  .hud{position:relative;width:min(100%, var(--game-w));margin:0 auto;margin-top:-52px;pointer-events:none}
+  .hudbar{display:flex;gap:8px;align-items:center;justify-content:space-between;background:linear-gradient(180deg, rgba(12,17,26,.78), rgba(12,17,26,.62));
+    border:1px solid #1a2536;border-radius:12px;padding:6px 10px;backdrop-filter:blur(4px)}
+  .hud small{color:var(--muted)}
+  .hpbar{position:relative;height:10px;background:#202a3a;border-radius:6px;overflow:hidden;width:58%}
+  .hpbar>i{position:absolute;inset:0;background:linear-gradient(90deg, #2dd,#5af,#59d);transform-origin:left center}
+  .lives{display:flex;gap:6px}
+  .life{width:10px;height:10px;border-radius:50%;background:var(--accent);opacity:.9}
+
+  /* CONTROL AREA (bottom) */
+  .controls{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:stretch;user-select:none; -webkit-user-select:none;}
+  .pad{background:var(--panel);border:1px solid #162233;border-radius:14px;box-shadow:inset 0 0 0 1px #0f1622;position:relative;touch-action:none}
+  .gridlines{position:absolute;inset:0;background:linear-gradient(transparent 49%, rgba(255,255,255,.05) 50%),
+                                    linear-gradient(90deg, transparent 49%, rgba(255,255,255,.05) 50%);
+    background-size:40px 40px;pointer-events:none;border-radius:14px}
+
+  /* Virtual stick */
+  .stick{position:absolute;left:16px;bottom:16px;width:140px;height:140px;border-radius:50%;background:#0e1725;border:1px solid #152135}
+  .stick i{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:56px;height:56px;border-radius:50%;background:#15243a;border:1px solid #24406b;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+
+  /* Buttons */
+  .btns{position:absolute;right:16px;bottom:16px;display:grid;grid-template-columns:repeat(2,72px);grid-auto-rows:72px;gap:12px}
+  button.btn{appearance:none;border:0;border-radius:16px;background:#14243c;box-shadow:inset 0 0 0 1px #203556, 0 6px 18px rgba(0,0,0,.45);color:#cfe2ff;font-weight:800;font-size:22px;letter-spacing:1px}
+  button.btn:active{transform:translateY(1px)}
+  button.btn[data-type="atk1"]{background:#142a3c}
+  button.btn[data-type="atk2"]{background:#15253f}
+  button.btn[data-type="skill"]{background:#1a2648}
+  button.btn[data-type="jump"]{background:#18333f}
+
+  /* Anti-miss taps: make hit-area large */
+  button.btn{touch-action:manipulation}
+
+  footer.hint{opacity:.75;text-align:center;font-size:12px;margin-top:4px}
+  code.k{background:#0e1726;padding:2px 6px;border-radius:6px;border:1px solid #15233a}
 </style>
 </head>
 <body>
 <div id="app">
-  <div id="gameWrap">
-    <div id="overlay">
-      <div style="display:flex;align-items:center;gap:10px">
-        <span>残機 <b id="lives">3</b></span>
-        <span class="bar hp"><i id="php"></i></span>
-        <span>敵HP</span><span class="bar enemyhp"><i id="ehp"></i></span>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px">
-        <span class="timer">Time <b id="time">300</b></span>
-        <span>FPS <b id="fps">60</b></span>
+  <section class="game-wrap">
+    <canvas id="game" width="420" height="700" aria-label="game canvas"></canvas>
+    <div class="hud" aria-hidden>
+      <div class="hudbar">
+        <div class="hpbar" title="HP"><i id="hpfill" style="transform:scaleX(1)"></i></div>
+        <div class="lives" id="lives"></div>
+        <div class="tim" id="timer">TIME 00:00</div>
       </div>
     </div>
-    <canvas id="cv" width="480" height="270" aria-label="game-canvas"></canvas>
-    <div id="msg" class="notice" hidden>落下！リスポーン中…</div>
-  </div>
-  <div id="hud">
-    <div class="panel">
-      <div class="title">移動スティック</div>
-      <div id="stickArea">
-        <div class="stick-base" id="stickBase"></div>
-        <div class="stick-thumb" id="stickThumb"></div>
-        <div class="hint">Keyboard: ← → / A D / ↑ or Space でジャンプ</div>
+  </section>
+
+  <section class="controls" aria-label="controls">
+    <div class="pad">
+      <div class="gridlines"></div>
+      <div class="stick" id="stick"><i id="sticknub"></i></div>
+    </div>
+    <div class="pad">
+      <div class="gridlines"></div>
+      <div class="btns">
+        <button class="btn" id="btnA" data-type="atk1" aria-label="攻撃1">■</button>
+        <button class="btn" id="btnB" data-type="atk2" aria-label="攻撃2">▲</button>
+        <button class="btn" id="btnC" data-type="skill" aria-label="スキル">●</button>
+        <button class="btn" id="btnJ" data-type="jump" aria-label="ジャンプ">×</button>
       </div>
     </div>
-    <div class="panel">
-      <div class="title">アクション</div>
-      <div id="btnArea">
-        <button class="btn bSquare" id="btnAtk1" aria-label="攻撃1"></button>
-        <button class="btn bTriangle" id="btnAtk2" aria-label="攻撃2"></button>
-        <button class="btn bCircle" id="btnSkill" aria-label="スキル"></button>
-        <button class="btn bCross" id="btnJump" aria-label="ジャンプ"></button>
-      </div>
-    </div>
-  </div>
+    <footer class="hint">操作: <code class="k">←/A</code><code class="k">→/D</code><code class="k">Space/↑/W=ジャンプ</code> <code class="k">J=■</code> <code class="k">K=▲(長押しで強化)</code> <code class="k">L=●(長押しで強化)</code></footer>
+  </section>
 </div>
-
 <script>
-/** =========================================================
- *  MOB Side-Action Prototype (Vertical, Mobile-first)
- *  - Single file / GitHub Pages ready / Relative assets
- *  - Player HP=1000, Enemy HP=500 (test)
- *  - Left move uses horizontal flip (right-facing sprites only)
- *  - On hit: red flash + small lift + slight knockback
- *  - Death: fast spin fly-away then fade out
- *  - Skill: spin (tap=2 cycles/25 dmg, hold up to 1s=4 cycles/40 dmg)
- *  - Enemy: simple AI (walk/attack/backstep), small/mid/chain
- *  - Stage: flat ground with S1.png tiled as loop
- *  - 60 FPS target / low-GC (reuse objects)
- *  ========================================================= */
-
-const W = 480, H = 270;           // internal canvas resolution (pixel art)
-const GROUND_Y = H - 64;          // ground baseline
-const GRAVITY  = 0.5;
-const JUMP_VY  = -8.5;
-const MOVE_SPEED = 2.2;
-const AIR_CTRL = 0.8;
-
-const PLAYER_MAX_HP = 1000;
-const ENEMY_MAX_HP  = 500; // per spec: “とりあえず1体だけでHP500(テスト)”
-const ENEMY_WALK_SPEED = 1.6;
-
-const DMG = {
-  atk1_once: 5,
-  combo1: 8,
-  combo2: 10,
-  atk2: 15,
-  skill_tap: 25,
-  skill_hold: 40,
-};
-const iClamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-
-/* ---------------- Assets ---------------- */
-const assets = {
+// =====================
+// Asset Loader (reuses Image objects to keep GC low)
+// =====================
+const ASSETS = {
   // Player idle & move
-  "M1-1": "M1-1.png",
-  "M1-2": "M1-2.png",
-  "M1-3": "M1-3.png",
-  "M1-4": "M1-4.png",
-  // Player attacks (K*)
-  "K1-1": "K1-1.png", // 前進アッパー
-  "K1-2": "K1-2.png", // 突進キック
-  "K1-3": "K1-3.png", // 構え
-  "K1-4": "K1-4.png", // 必殺キック
-  "K1-5": "K1-5.png", // 蹴り上げ
+  'M1-1.png': 'M1-1.png',
+  'M1-2.png': 'M1-2.png',
+  'M1-3.png': 'M1-3.png',
+  'M1-4.png': 'M1-4.png',
+  // Player attacks
+  'K1-1.png': 'K1-1.png',
+  'K1-2.png': 'K1-2.png',
+  'K1-3.png': 'K1-3.png',
+  'K1-4.png': 'K1-4.png',
+  'K1-5.png': 'K1-5.png',
   // Skill spin frames
-  "h1": "h1.png", "h2": "h2.png", "h3": "h3.png", "h4":"h4.png",
+  'h1.png':'h1.png','h2.png':'h2.png','h3.png':'h3.png','h4.png':'h4.png',
   // Enemy
-  "EN1-1":"EN1-1.png", "EN1-2":"EN1-2.png", "EN1-3":"EN1-3.png",
-  "EN1-4":"EN1-4.png", "EN1-5":"EN1-5.png", "EN1-6":"EN1-6.png",
-  // Stage tile
-  "S1":"S1.png",
+  'EN1-1.png':'EN1-1.png','EN1-2.png':'EN1-2.png','EN1-3.png':'EN1-3.png',
+  'EN1-4.png':'EN1-4.png','EN1-5.png':'EN1-5.png','EN1-6.png':'EN1-6.png',
+  // Stage tile (loop)
+  'S1.png':'S1.png'
 };
-const images = {};
-let loadedCount=0, totalCount=Object.keys(assets).length;
-function loadImages(onAll){
-  const done=()=>{ if(++loadedCount>=totalCount) onAll && onAll(); }
-  for(const k in assets){
-    const img=new Image(); img.src=assets[k];
-    img.onload=done; img.onerror=()=>{ console.warn("Asset missing:",assets[k]); done(); }
-    images[k]=img;
+const images = new Map();
+function loadImages(callback){
+  let left = Object.keys(ASSETS).length; if(left===0){callback();return}
+  for(const [k,src] of Object.entries(ASSETS)){
+    const img = new Image();
+    img.onload=()=>{ if(--left===0) callback(); };
+    img.onerror=()=>{ console.warn('Missing image',src,'— using placeholder.'); if(--left===0) callback(); };
+    img.src = src; images.set(k,img);
   }
 }
 
-/* ---------------- Input (keyboard + virtual controls) ---------------- */
-const keys = Object.create(null);
-addEventListener("keydown",e=>{ keys[e.code]=true; if(["ArrowUp","ArrowDown","Space"].includes(e.code)) e.preventDefault();});
-addEventListener("keyup",e=>{ keys[e.code]=false; });
-
-const stick = {active:false, id:null, bx:0, by:0, dx:0, dy:0, nx:0, ny:0};
-(function setupStick(){
-  const base = document.getElementById('stickBase');
-  const thumb= document.getElementById('stickThumb');
-  const area = document.getElementById('stickArea');
-  const radius = 60; // travel radius for thumb
-
-  function start(e){
-    const t = (e.changedTouches? e.changedTouches[0]: e);
-    if(stick.active && stick.id!==t.identifier) return; // single-pointer for stick
-    const r = area.getBoundingClientRect();
-    stick.active=true; stick.id=t.identifier??'mouse';
-    stick.bx = r.left + r.width/2; stick.by = r.top + r.height*0.55;
-    move(e);
-  }
-  function move(e){
-    if(!stick.active) return;
-    const t = ([... (e.changedTouches??[])].find(tt=>tt.identifier===stick.id)) || (e.touches? null: e);
-    if(!t) return;
-    const x=t.clientX - stick.bx, y=t.clientY - stick.by;
-    const len = Math.hypot(x,y); const lim = radius;
-    const cl = len>lim? lim/len:1;
-    stick.dx = x*cl; stick.dy = y*cl;
-    stick.nx = stick.dx/lim; stick.ny = stick.dy/lim;
-    thumb.style.transform = `translate(${stick.dx-40}px, ${stick.dy-40}px)`; // -thumb half
-    thumb.style.left="50%"; thumb.style.top="55%";
-  }
-  function end(e){
-    const id = (e.changedTouches? e.changedTouches[0].identifier: 'mouse');
-    if(stick.id!==id) return;
-    stick.active=false; stick.id=null;
-    stick.dx=stick.dy=stick.nx=stick.ny=0;
-    thumb.style.transform = `translate(-50%,-50%)`;
-  }
-  area.addEventListener('touchstart',start,{passive:false});
-  area.addEventListener('touchmove',move,{passive:false});
-  area.addEventListener('touchend',end);
-  area.addEventListener('touchcancel',end);
-  area.addEventListener('pointerdown',start);
-  addEventListener('pointermove',move);
-  addEventListener('pointerup',end);
-})();
-
-// Buttons (multi-touch safe)
-const btn = {
-  atk1:false, atk2:false, skill:false, jump:false,
-  _holdSkill:false, _skillDownTime:0,
-};
-function press(el, flagName, onDown, onUp){
-  const down = (e)=>{ e.preventDefault(); btn[flagName]=true; onDown && onDown(); }
-  const up   = (e)=>{ btn[flagName]=false; onUp && onUp(); }
-  el.addEventListener('touchstart',down,{passive:false});
-  el.addEventListener('touchend',up);
-  el.addEventListener('touchcancel',up);
-  el.addEventListener('pointerdown',down);
-  el.addEventListener('pointerup',up);
-}
-press(document.getElementById('btnAtk1'),'atk1');
-press(document.getElementById('btnAtk2'),'atk2');
-press(document.getElementById('btnJump'),'jump');
-press(document.getElementById('btnSkill'),'skill',
-  ()=>{ btn._holdSkill=true; btn._skillDownTime=performance.now(); },
-  ()=>{ btn._holdSkill=false; }
-);
-
-/* ---------------- Utility draw ---------------- */
-const cv = document.getElementById('cv');
-const ctx = cv.getContext('2d');
-ctx.imageSmoothingEnabled = false;
-
-function drawImageFlip(img, x,y, w,h, flipX=false, tintRed=0, rot=0, alpha=1){
+// Helper: draw sprite with optional flip & red flash overlay
+function drawSprite(ctx,img,x,y,w,h,flip=false,alpha=1,flash=false,rotation=0){
   ctx.save();
-  ctx.globalAlpha = alpha;
   ctx.translate(x,y);
-  if(rot) ctx.rotate(rot);
-  if(flipX){ ctx.scale(-1,1); x= -w/2; } else { x= -w/2; }
-  y = -h;
-  ctx.drawImage(img, x, y, w, h);
-  if(tintRed>0){
-    ctx.globalCompositeOperation = 'source-atop';
-    ctx.fillStyle = `rgba(255,0,0,${tintRed})`;
-    ctx.fillRect(x,y,w,h);
+  if(rotation!==0) ctx.rotate(rotation);
+  if(flip){ ctx.scale(-1,1); x= -w/2; } else { x= -w/2; }
+  const yoff = -h; // draw from feet
+  ctx.globalAlpha = alpha;
+  if(img && img.complete && img.naturalWidth>0){
+    const iw=img.naturalWidth, ih=img.naturalHeight; // maintain aspect
+    const aspect = iw/ih; const targetAspect = w/h; // keep original aspect if needed
+    // We assume provided assets are already trimmed; scale to target box maintaining ratio
+    let dw=w, dh=h; if(Math.abs(aspect-targetAspect)>0.05){
+      if(aspect>targetAspect){ dh = w/aspect; } else { dw = h*aspect; }
+    }
+    ctx.drawImage(img, x+(w-dw)/2, yoff+(h-dh), dw, dh);
+  }else{
+    // placeholder
+    ctx.fillStyle = '#22344e'; ctx.fillRect(x, yoff, w, h);
+    ctx.strokeStyle = '#3a5a8f'; ctx.strokeRect(x+0.5, yoff+0.5, w-1, h-1);
+  }
+  if(flash){
+    ctx.globalCompositeOperation='source-atop';
+    ctx.fillStyle='rgba(255,60,60,0.6)';
+    ctx.fillRect(-w/2, yoff, w, h);
+    ctx.globalCompositeOperation='source-over';
   }
   ctx.restore();
 }
 
-/* ---------------- Core entities ---------------- */
-class Actor{
-  constructor(){
-    this.x=80; this.y=GROUND_Y;
-    this.vx=0; this.vy=0;
-    this.w=24; this.h=40; // collision box
-    this.face=1;          // 1:right, -1:left (flip drawing)
-    this.onGround=true;
-    this.state='idle';    // 'idle','run','jump','fall','atk','atk2','skill','hit','dead'
-    this.animTime=0;
-    this.tint=0;          // red flash amount (0..1)
-    this.spin=0;          // death spin radians
-    this.alpha=1;         // fade out
-    this.hp = 100;
-    this.maxhp = 100;
-    this.canControl = true;
-    this.queue = [];      // queued combo inputs
-    this.hitStop=0;       // brief stop on hit?
-    this.invul=0;         // after taking damage
+// =====================
+// Game constants & helpers
+// =====================
+const W=420,H=700; // canvas logical size (3:5)
+const GRAV=2000; // px/s^2
+const JUMP_V= -780; // px/s
+const MOVE_SPEED = 210; // walk speed
+const ENEMY_SPEED = 140;
+const AIR_CONTROL = 0.6;
+const GROUND_Y = 560; // world ground baseline
+const WORLD_LEN = 6000; // long stage for scroll
+
+// Player stats
+const PLAYER_MAX_HP = 1000;
+const ENEMY_MAX_HP = 500;
+
+// Attack data
+const ATTACKS = {
+  // ■: single press uppercut (K1-1 after K1-3)
+  light:{ wind:'K1-3.png', act:'K1-1.png', windT:0.12, actT:0.18, move:40, dmg:5, lockMove:true },
+  // ■■▲ etc handled via input buffer; full-chain auto-finishes, no cancels
+  combo1:{ wind:'K1-3.png', act:'K1-2.png', windT:0.20, actT:0.20, move:120, dmg:8, lockMove:true },
+  combo2:{ wind:'K1-3.png', act:'K1-4.png', windT:0.20, actT:0.20, move:80, dmg:10, lockMove:true },
+  // ▲: rising kick with charge
+  heavy:{ wind:'K1-3.png', act:'K1-5.png', windT:0.50, actT:0.30, move:60, dmg:15, chargeExtra:{ windT:1.00, dmg:+10, glow:true } }
+};
+
+const SKILL = {
+  frames:['h1.png','h2.png','h3.png','h4.png'],
+  cycleT:0.08,
+  dmgTap:25, roundsTap:2,
+  dmgHold:40, roundsHold:4,
+};
+
+// Utility
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const now=()=>performance.now()/1000;
+
+// =====================
+// Camera
+// =====================
+const camera={x:0,y:0};
+function cameraFollow(px){ camera.x = clamp(px - W*0.4, 0, WORLD_LEN - W); }
+
+// =====================
+// Stage (simple tiled ground from S1.png)
+// =====================
+const stage={ tileW:256, tileH:96, groundY:GROUND_Y, imgKey:'S1.png' };
+function drawStage(ctx){
+  const img=images.get(stage.imgKey);
+  const viewStart = Math.floor(camera.x / stage.tileW) * stage.tileW;
+  const viewEnd = camera.x + W + stage.tileW;
+  // sky
+  const grad = ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,'#06101d'); grad.addColorStop(1,'#0a1626');
+  ctx.fillStyle=grad; ctx.fillRect(0,0,W,H);
+  // ground tiles
+  for(let x=viewStart; x<viewEnd; x+=stage.tileW){
+    const sx = x - camera.x;
+    if(img && img.complete && img.naturalWidth>0){
+      ctx.drawImage(img, sx, stage.groundY - stage.tileH, stage.tileW, stage.tileH);
+    }else{
+      ctx.fillStyle='#1a2639'; ctx.fillRect(sx, stage.groundY - stage.tileH, stage.tileW, stage.tileH);
+      ctx.strokeStyle='#22324e'; ctx.strokeRect(sx+0.5, stage.groundY-stage.tileH+0.5, stage.tileW-1, stage.tileH-1);
+    }
   }
-  get rect(){ return {x:this.x-this.w/2, y:this.y-this.h, w:this.w, h:this.h}; }
-  applyPhysics(){
+}
+
+// =====================
+// Entities
+// =====================
+class Entity{
+  constructor(x){
+    this.x=x; this.y=stage.groundY; this.vx=0; this.vy=0; this.dir=1; // 1:right, -1:left
+    this.w=56; this.h=86; // visual box (keeps aspect)
+    this.hp=1; this.maxhp=1; this.alive=true;
+    this.state='idle';
+    this.animTime=0; this.frame=0; this.hurt=0; this.inv=0;
+    this.knockVX=0; this.knockVY=0; this.spin=0; // KO spin
+  }
+  bbox(){ return {x:this.x-18,y:this.y-this.h,width:36,height:this.h}; }
+  takeDamage(dmg, fromDir){
+    if(!this.alive) return;
+    if(this.inv>0) return;
+    this.hp -= dmg; this.hurt = 0.25; this.inv=0.2; // brief i-frames
+    // small pop + knockback
+    this.vy = -220; this.vx = 0; this.knockVX = fromDir * 180; this.knockVY = -120;
+    if(this.hp<=0){ this.alive=false; this.state='ko'; this.spin = 0; this.vx = fromDir*220; this.vy = -420; }
+  }
+  physics(dt){
     // gravity
-    this.vy += GRAVITY;
-    // clamp vy
-    if(this.vy>14) this.vy=14;
-    // integrate
-    this.x += this.vx;
-    this.y += this.vy;
-    // ground collision (flat)
-    if(this.y>=GROUND_Y){
-      this.y=GROUND_Y; this.vy=0; this.onGround=true;
-    }else{
-      this.onGround=false;
-    }
-    // fall death
-    if(this.y>H+120 && this.state!=='dead') this.onFallDeath();
-  }
-  onFallDeath(){
-    // override in subclasses
-  }
-  takeDamage(dmg, kbDir= -this.face){
-    if(this.invul>0 || this.state==='dead') return;
-    this.hp = Math.max(0, this.hp - dmg);
-    // flash red + small float + slight knockback
-    this.tint = 0.7;
-    this.vy = -2.2;
-    this.vx = kbDir * 1.5;
-    this.invul = 300; // ms
-    if(this.hp<=0) this.die(kbDir);
-  }
-  die(dir){
-    this.state='dead'; this.canControl=false;
-    this.vx = dir*2.5; this.vy = -4;
-    this.spin = 0;
-  }
-  updateTimers(dt){
-    if(this.tint>0){ this.tint=Math.max(0,this.tint - dt*0.007); }
-    if(this.invul>0){ this.invul=Math.max(0,this.invul - dt); }
-    if(this.hitStop>0){ this.hitStop=Math.max(0,this.hitStop - dt); }
+    this.vy += GRAV*dt;
+    this.y += this.vy*dt; this.x += (this.vx + this.knockVX)*dt; this.knockVX *= Math.pow(0.001, dt); // quick decay
+    if(this.y>stage.groundY){ this.y=stage.groundY; this.vy=0; }
+    // world bounds
+    this.x = clamp(this.x, 16, WORLD_LEN-16);
   }
 }
 
-/* ---------------- Player ---------------- */
-class Player extends Actor{
-  constructor(){
-    super();
-    this.x=120; this.y=GROUND_Y;
-    this.maxhp=PLAYER_MAX_HP; this.hp=this.maxhp;
-    this.lives=3;
-    this.skillCharge=0; // 0..100 (1s)
-    this.headGauge=0;   // visual
+class Player extends Entity{
+  constructor(x){
+    super(x); this.hp=PLAYER_MAX_HP; this.maxhp=PLAYER_MAX_HP; this.lives=3;
+    this.moveInput=0; this.wantJump=false; this.onGround=true; this.lockMove=false; this.flip=false;
+    this.comboBuffer=[]; this.comboStep=0; this.comboTimer=0; this.heavyCharge=0; this.skillHold=0; this.skillActive=false; this.skillTime=0; this.skillIndex=0; this.skillRounds=0; this.glow=0;
   }
-  onFallDeath(){
-    // lose a life & respawn
-    showMessage(true);
-    this.respawn();
+  update(dt){
+    // State timers
+    this.animTime += dt; if(this.hurt>0) this.hurt-=dt; if(this.inv>0) this.inv-=dt; if(this.glow>0) this.glow-=dt;
+
+    // Ground check
+    this.onGround = (this.y>=stage.groundY-0.5);
+
+    // Movement input -> velocity (disabled during certain actions)
+    let speed = MOVE_SPEED; let ctrl = this.onGround?1:AIR_CONTROL;
+    if(!this.lockMove && !this.skillActive){ this.vx = this.moveInput * speed * ctrl; }
+    if(this.moveInput!==0) this.dir = this.moveInput>0?1:-1;
+    this.flip = (this.dir<0); // flip when facing left using right-facing sprites only
+
+    // Jump
+    if(this.wantJump && this.onGround && !this.skillActive){ this.vy = JUMP_V; this.wantJump=false; }
+
+    // Attack chain auto-finish (no cancel mid)
+    if(this.state.startsWith('atk')){
+      this.comboTimer -= dt;
+      if(this.comboTimer<=0){ // proceed to next phase / finish
+        if(this.state==='atk_wind'){
+          // switch to active frame
+          this.state='atk_act'; this.animTime=0;
+        }else{
+          // finished current attack; advance combo buffer if exists
+          if(this.comboStep===0 && this.comboBuffer[0]==='light2'){
+            this.startAttack('combo1'); this.comboStep=1;
+          } else if(this.comboStep===1 && this.comboBuffer[1]==='light3'){
+            this.startAttack('combo2'); this.comboStep=2;
+          } else { this.state='idle'; this.lockMove=false; this.comboBuffer.length=0; this.comboStep=0; }
+        }
+      }
+    }
+
+    // Heavy charge visual
+    if(this.state==='heavy_charge'){ this.heavyCharge += dt; if(this.heavyCharge>1) this.heavyCharge=1; this.glow=0.1; }
+
+    // Skill spin
+    if(this.skillActive){
+      this.skillTime += dt; const cycle=SKILL.cycleT; if(this.skillTime>=cycle){ this.skillTime-=cycle; this.skillIndex=(this.skillIndex+1)%SKILL.frames.length; if(this.skillIndex===0){ this.skillRounds--; if(this.skillRounds<=0){ this.skillActive=false; this.state='idle'; this.lockMove=false; } } }
+    }
+
+    // Physics integration
+    this.physics(dt);
+
+    // Respawn on fall
+    if(this.y>H+200){ this.respawn(); }
   }
-  respawn(){
+  respawn(){ this.lives--; this.hp=this.maxhp; this.x=100; this.y=stage.groundY; this.vx=this.vy=0; this.state='idle'; this.lockMove=false; this.skillActive=false; this.comboBuffer.length=0; this.comboStep=0; }
+
+  startAttack(kind){
+    // Cannot cancel if already attacking
+    if(this.state.startsWith('atk')) return;
+    const A = ATTACKS[kind]; if(!A) return;
+    this.state='atk_wind'; this.animTime=0; this.lockMove=!!A.lockMove; this.comboTimer=A.windT; this.currentAtk=A; this.heavyCharge=0;
+  }
+  startHeavy(charge=false){
+    if(this.state.startsWith('atk') || this.skillActive) return;
+    if(charge){ this.state='heavy_charge'; this.lockMove=true; this.heavyCharge=0; }
+    else { this.commitHeavy(false); }
+  }
+  commitHeavy(fromCharge){
+    // transition to heavy attack using charge bonus if any
+    const A=ATTACKS.heavy; const charged = fromCharge && this.heavyCharge>=0.5;
+    const windT = charged?A.chargeExtra.windT:A.windT;
+    const dmg = A.dmg + (charged?(A.chargeExtra.dmg||0):0);
+    this.state='atk_wind'; this.animTime=0; this.lockMove=true; this.comboTimer=windT; this.currentAtk={...A,dmg,windT}; this.glow = charged?0.6:0;
+  }
+  startSkill(hold=false){
+    if(this.state.startsWith('atk')||this.state==='heavy_charge'||this.skillActive) return;
+    this.skillActive=true; this.lockMove=true; this.skillTime=0; this.skillIndex=0; this.state='skill';
+    this.skillRounds = hold?SKILL.roundsHold:SKILL.roundsTap;
+    this.skillDamage = hold?SKILL.dmgHold:SKILL.dmgTap;
+  }
+}
+
+class Enemy extends Entity{
+  constructor(x){ super(x); this.maxhp=ENEMY_MAX_HP; this.hp=this.maxhp; this.aiTimer=0; this.cd=0; this.plan='idle'; this.dir=-1; this.w=54; this.h=82; }
+  update(dt, player){
+    if(!this.alive){ // KO spin & fade
+      this.spin += dt*18; this.vx *= 0.99; this.vy += GRAV*dt; this.x += this.vx*dt; this.y += this.vy*dt; if(this.y>H+200) this.alpha=0; return; }
+    if(this.hurt>0) this.hurt-=dt; if(this.inv>0) this.inv-=dt;
+
+    // Simple AI with gaps so it can't infinite lock
+    this.aiTimer -= dt; if(this.aiTimer<=0){
+      const dx = player.x - this.x; const adx = Math.abs(dx);
+      if(adx>160){ this.plan='chase'; this.dir = dx>0?1:-1; this.aiTimer=0.2; }
+      else if(adx>60){ // decide to poke or wait
+        this.plan = Math.random()<0.5? 'poke':'idle'; this.aiTimer=0.4+Math.random()*0.6;
+      } else { // in range -> choose small/medium or reset
+        const r=Math.random();
+        if(r<0.4) { this.plan='small'; this.aiTimer=0.3; }
+        else if(r<0.7){ this.plan='medium'; this.aiTimer=0.35; }
+        else { this.plan='idle'; this.aiTimer=0.5; }
+        this.dir = dx>0?1:-1;
+      }
+    }
+
+    // Execute plan with cooldown to create gaps
+    if(this.cd>0) this.cd-=dt;
+    switch(this.plan){
+      case 'chase': this.vx=this.dir*ENEMY_SPEED; break;
+      case 'poke': this.vx=this.dir*80; break;
+      default: this.vx=0; break;
+    }
+
+    // Attacks trigger but include enforced downtime
+    if(this.cd<=0 && (this.plan==='small'||this.plan==='medium')){
+      this.cd = 0.5; // gap so no stun-lock
+      this.state = this.plan==='small'?'atk_s':'atk_m';
+      this.animTime=0;
+    }
+
+    // Attack active movement windows
+    if(this.state==='atk_s'){
+      this.animTime += dt;
+      if(this.animTime<0.3){ this.vx=this.dir*120; }
+      else { this.state='idle'; }
+    } else if(this.state==='atk_m'){
+      this.animTime += dt;
+      if(this.animTime<0.3){ this.vx=this.dir*80; }
+      else { this.state='idle'; }
+    }
+
+    // Physics
+    this.physics(dt);
+  }
+}
+
+// =====================
+// Collision / Hit detection (simple AABB)
+// =====================
+function rectsOverlap(a,b){ return a.x < b.x+b.width && a.x+a.width > b.x && a.y < b.y+b.height && a.y+a.height > b.y; }
+
+// Attack hitboxes (brief during active frames)
+function tryPlayerHitsEnemy(player, enemy){
+  let hit=false, dmg=0;
+  if(!enemy.alive) return;
+  // Skill spin always active during skill
+  if(player.skillActive){
+    const hb = {x:player.x + player.dir*28 - 18, y:player.y-player.h, width:36, height:player.h};
+    const eb = enemy.bbox();
+    if(rectsOverlap(hb,eb)) { hit=true; dmg=player.skillDamage * (1/ (SKILL.frames.length)); /* per-cycle chip */ }
+  }
+  // Attacks when in active phase
+  if(player.state==='atk_act' && player.currentAtk){
+    const rng = 30 + (player.currentAtk.move||0)*0.2;
+    const hb = {x:player.x + player.dir*(18+rng) - 18, y:player.y-player.h*0.9, width:36, height:player.h*0.8};
+    const eb = enemy.bbox();
+    if(rectsOverlap(hb,eb)) { hit=true; dmg=player.currentAtk.dmg; }
+  }
+  if(hit){ enemy.takeDamage(dmg, player.dir); // enemy reaction
+    // slight float on medium (▲)
+    if(player.currentAtk && player.currentAtk===ATTACKS.heavy){ enemy.vy = -260; }
+  }
+}
+
+function tryEnemyHitsPlayer(enemy, player){
+  if(!enemy.alive) return;
+  // small attack window (0.3s) using EN1-4->1-5
+  if(enemy.state==='atk_s' && enemy.animTime<0.3){
+    const hb = {x:enemy.x + enemy.dir*26 - 16, y:enemy.y-enemy.h*0.9, width:32, height:enemy.h*0.7};
+    const pb = player.bbox(); if(rectsOverlap(hb,pb)) { player.takeDamage(5, enemy.dir); }
+  }
+  if(enemy.state==='atk_m' && enemy.animTime<0.3){
+    const hb = {x:enemy.x + enemy.dir*28 - 18, y:enemy.y-enemy.h*0.9, width:36, height:enemy.h*0.8};
+    const pb = player.bbox(); if(rectsOverlap(hb,pb)) { player.takeDamage(8, enemy.dir); }
+  }
+}
+
+Player.prototype.takeDamage = function(dmg, fromDir){
+  if(this.inv>0 || !this.alive) return;
+  this.hp -= dmg; this.hurt=0.25; this.inv=0.18; // blink and brief i-frames
+  this.vy = -180; this.knockVX = fromDir*200; this.knockVY = -120;
+  if(this.hp<=0){ // KO blow-away with spin + fade
     this.lives = Math.max(0, this.lives-1);
-    this.x=120; this.y=GROUND_Y; this.vx=0; this.vy=0;
-    this.face=1; this.state='idle'; this.alpha=1; this.spin=0;
-    this.hp=this.maxhp;
-    this.canControl=true;
-    this.queue.length=0;
-  }
-  die(dir){
-    super.die(dir);
-    // fade out & remove; then auto-respawn if lives>0
-    // handled in update()
+    this.state='ko'; this.alive=false; this.spin=0; this.vx=fromDir*260; this.vy=-520;
+    setTimeout(()=>{ // fade-out then respawn
+      this.alive=true; this.state='idle'; this.spin=0; this.hp=this.maxhp; this.x=100; this.y=stage.groundY; this.vx=this.vy=0; cameraFollow(this.x);
+    }, 1200);
   }
 }
 
-/* ---------------- Enemy (simple AI) ---------------- */
-class Enemy extends Actor{
-  constructor(){
-    super();
-    this.x=360; this.y=GROUND_Y;
-    this.maxhp=ENEMY_MAX_HP; this.hp=this.maxhp;
-    this.ai='idle';
-    this.cool=0; // decision cooldown ms
-  }
-  onFallDeath(){
-    // offscreen → treat as dead
-    this.hp=0; this.die(1);
-  }
+// =====================
+// Rendering
+// =====================
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+ctx.imageSmoothingEnabled=false;
+
+const player = new Player(100);
+const enemy = new Enemy(520);
+
+// HUD init
+const hpfill = document.getElementById('hpfill');
+const livesEl = document.getElementById('lives');
+function refreshHUD(){
+  const r = clamp(player.hp/player.maxhp,0,1);
+  hpfill.style.transform = `scaleX(${r})`;
+  livesEl.innerHTML = '';
+  for(let i=0;i<player.lives;i++){ const d=document.createElement('div'); d.className='life'; livesEl.appendChild(d); }
 }
 
-/* ---------------- World / Game ---------------- */
-const game = {
-  camX:0,
-  time:300, // seconds
-  acc:0,
-  player:null,
-  enemy:null,
-  stage:{},
-  lastTs:performance.now(),
-  fps:60, fpsAcc:0, fpsCnt:0,
-};
-function resetGame(){
-  game.player = new Player();
-  game.enemy  = new Enemy();
-  game.camX = 0;
-  game.time = 300;
-}
-resetGame();
+let startT = performance.now();
+function fmtTime(ms){ const s = Math.floor(ms/1000); const m = String(Math.floor(s/60)).padStart(2,'0'); const ss=String(s%60).padStart(2,'0'); return `${m}:${ss}`; }
 
-/* ---------------- Animation sets ---------------- */
-const Anim = {
-  player:{
-    idle: [{k:"M1-1",t:200}],
-    run:  [{k:"M1-2",t:120},{k:"M1-3",t:120},{k:"M1-4",t:120}],
-    pose: [{k:"K1-3",t:200}],
-    atk1_once: [{k:"K1-3",t:160},{k:"K1-1",t:200}], // 構え→前進アッパー
-    combo1: [{k:"K1-3",t:200},{k:"K1-2",t:200}],   // 構え→突進キック
-    combo2: [{k:"K1-3",t:200},{k:"K1-4",t:200}],   // 構え→必殺キック
-    atk2_charge: [{k:"K1-3",t:500,shake:true}],    // 0.5秒震え
-    atk2_chargeLong: [{k:"K1-3",t:1000,shake:true}],
-    atk2_kick: [{k:"K1-5",t:300,advance:true}],
-    skill_spin: ["h1","h2","h3","h4"].map(k=>({k,t:70})),
-  },
-  enemy:{
-    idle: [{k:"EN1-1",t:250}],
-    walk: [{k:"EN1-2",t:180},{k:"EN1-3",t:180}],
-    smallAtk: [{k:"EN1-4",t:120},{k:"EN1-5",t:180,advance:true}], // 小攻撃
-    midAtk:   [{k:"EN1-4",t:120},{k:"EN1-6",t:200}],              // 中攻撃(アッパー)
+function draw(){
+  // Background & stage
+  drawStage(ctx);
+
+  // Entities
+  // Enemy sprite selection
+  let eImgKey='EN1-1.png';
+  if(enemy.state==='atk_s'){ eImgKey = (enemy.animTime<0.15)?'EN1-4.png':'EN1-5.png'; }
+  else if(enemy.state==='atk_m'){ eImgKey = (enemy.animTime<0.15)?'EN1-4.png':'EN1-6.png'; }
+  else if(Math.abs(enemy.vx)>5){ eImgKey = (Math.floor(enemy.animTime*10)%2)?'EN1-2.png':'EN1-3.png'; }
+  const eImg = images.get(eImgKey);
+
+  const pOnGround = player.onGround;
+  // Player sprite selection
+  let pKey = 'M1-1.png';
+  if(player.skillActive){ pKey = SKILL.frames[player.skillIndex]; }
+  else if(player.state==='atk_wind') { pKey = player.currentAtk?.wind || 'K1-3.png'; }
+  else if(player.state==='atk_act') { pKey = player.currentAtk?.act || 'K1-1.png'; }
+  else if(player.state==='heavy_charge'){ pKey='K1-3.png'; }
+  else if(!pOnGround){ pKey='M1-4.png'; }
+  else if(Math.abs(player.vx)>10){ const t=Math.floor(player.animTime*10)%3; pKey=['M1-2.png','M1-3.png','M1-4.png'][t]; }
+  const pImg = images.get(pKey);
+
+  // Apply camera
+  ctx.save(); ctx.translate(-camera.x,0);
+
+  // Draw enemy
+  drawSprite(ctx, eImg, enemy.x, enemy.y, enemy.w, enemy.h, enemy.dir<0, 1, enemy.hurt>0);
+
+  // Draw player (glow if charged)
+  if(player.glow>0){
+    ctx.save(); ctx.globalAlpha = 0.3+0.4*Math.sin(performance.now()/60);
+    ctx.shadowColor = '#8ff'; ctx.shadowBlur=20; ctx.fillStyle='#9ef';
+    ctx.beginPath(); ctx.ellipse(player.x, player.y-player.h*0.6, 40, 52, 0, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
   }
-};
+  const flash = player.hurt>0 && Math.floor(performance.now()/50)%2===0;
+  drawSprite(ctx, pImg, player.x, player.y, player.w, player.h, player.flip, 1, flash);
 
-/* ---------------- Attack logic & hitboxes ---------------- */
-function rectOverlap(a,b){
-  return a.x<b.x+b.w && b.x<a.x+a.w && a.y<b.y+b.h && b.y<a.y+a.h;
-}
-function hbFromActor(a, w=26, h=20, yOff=10){
-  return {x:a.x - w/2 + (a.face*8), y:a.y - yOff - h, w, h};
-}
+  ctx.restore();
 
-/* ---------------- Main update/draw ---------------- */
-function update(ts){
-  const dt = ts - game.lastTs; game.lastTs=ts;
-  // FPS calc (1s)
-  game.fpsAcc += dt; game.fpsCnt++;
-  if(game.fpsAcc>=1000){ document.getElementById('fps').textContent = game.fpsCnt; game.fps=game.fpsCnt; game.fpsAcc=0; game.fpsCnt=0; }
+  // UI overlays
+  const tms = performance.now()-startT; document.getElementById('timer').textContent = 'TIME '+fmtTime(tms);
+  refreshHUD();
 
-  const pl = game.player, en = game.enemy;
-  // timer (clamp >=0)
-  game.acc += dt;
-  if(game.acc>=1000){ game.time=Math.max(0, game.time-1); game.acc-=1000; document.getElementById('time').textContent=game.time; }
-
-  handlePlayer(pl, dt, en);
-  handleEnemy(en, dt, pl);
-
-  updateCamera();
-
-  // HUD
-  document.getElementById('lives').textContent = pl.lives;
-  document.getElementById('php').style.width = `${(pl.hp/pl.maxhp*100)|0}%`;
-  document.getElementById('ehp').style.width = `${(en.hp/en.maxhp*100)|0}%`;
+  // Charge/skill meters
+  // Head meter for skill/charge
+  ctx.save();
+  ctx.translate(player.x - camera.x, player.y - player.h - 22);
+  if(player.state==='heavy_charge' || player.skillActive){
+    ctx.fillStyle='#0d2238'; ctx.fillRect(-22,-8,44,6); ctx.fillStyle='#6df';
+    let val=0; if(player.state==='heavy_charge') val = player.heavyCharge; else { val = 1 - (player.skillRounds/(player.skillRounds>0?player.skillRounds:1)); }
+    ctx.fillRect(-22,-8, 44*clamp(val,0,1),6);
+  }
+  ctx.restore();
 }
 
-function updateCamera(){
-  const pl = game.player;
-  // Keep player around center with soft follow
-  const target = pl.x - W*0.4;
-  game.camX += (target - game.camX)*0.15;
-  if(game.camX<0) game.camX=0;
-}
+// =====================
+// Main loop
+// =====================
+let last=now();
+function tick(){
+  const t=now(); let dt=t-last; last=t; if(dt>0.05) dt=0.05; // clamp
 
-function handlePlayer(p, dt, enemy){
-  p.updateTimers(dt);
-  if(p.state==='dead'){
-    // death fly & fade
-    p.applyPhysics();
-    p.spin += dt*0.02 * (p.vx>=0?1:-1);
-    p.alpha = Math.max(0, p.alpha - dt*0.0018);
-    if(p.alpha<=0){
-      if(p.lives>0){ p.respawn(); hideMessage(); }
-    }
-    return;
-  }
+  // Update entities
+  player.update(dt);
+  enemy.update(dt, player);
 
-  // Input (keyboard + virtual)
-  let mv = 0;
-  if(keys.ArrowLeft||keys.KeyA) mv -= 1;
-  if(keys.ArrowRight||keys.KeyD) mv += 1;
-  if(stick.active){ if(stick.nx<-0.2) mv -=1; else if(stick.nx>0.2) mv +=1; }
-  const wantJump = keys.Space||keys.ArrowUp||keys.KeyW||btn.jump;
+  // Contact & hits
+  tryPlayerHitsEnemy(player, enemy);
+  tryEnemyHitsPlayer(enemy, player);
 
-  const canMove = p.canControl && !['atk','atk2','skill','hit'].includes(p.state);
+  // Camera
+  cameraFollow(player.x);
 
-  // Horizontal
-  if(canMove){
-    const speed = p.onGround? MOVE_SPEED : MOVE_SPEED*AIR_CTRL;
-    p.vx = mv*speed;
-    if(mv!==0) p.face = (mv>0)? 1 : -1;
-  }else{
-    // lock movement
-    p.vx *= 0.9;
-  }
-
-  // Jump
-  if(wantJump && p.onGround && p.canControl){
-    p.vy = JUMP_VY;
-  }
-
-  // Attacks & skill (queue if currently attacking)
-  handlePlayerAttacks(p, dt);
-
-  // Physics
-  p.applyPhysics();
-
-  // State
-  if(p.state!=='skill' && p.state!=='atk' && p.state!=='atk2' && p.state!=='hit'){
-    if(!p.onGround) p.state = (p.vy<0)? 'jump':'fall';
-    else if(Math.abs(p.vx)>0.1) p.state='run';
-    else p.state='idle';
-  }
-
-  // Collide attack → enemy
-  processPlayerHits(p, enemy, dt);
-}
-
-function handlePlayerAttacks(p, dt){
-  // Button mapping (press-edge)
-  const atk1 = btn.atk1 || keys.KeyJ;
-  const atk2 = btn.atk2 || keys.KeyK;
-  const skill= btn.skill || keys.KeyL;
-
-  // Manage skill charge display
-  if(btn._holdSkill || keys.KeyL){
-    const held = Math.min(100, ((performance.now()-btn._skillDownTime)/10)|0);
-    p.skillCharge = held;
-    p.headGauge = held;
-  }else{
-    p.headGauge = 0;
-  }
-
-  // If currently in attack/skill, advance its timeline
-  if(p._act){
-    p._act.t += dt;
-    if(p._act.t >= p._act.dur){
-      // finished
-      const ended = p._act.name;
-      p._act = null;
-      // chain availability: combos must be queued in order (no mid-cancel)
-      if(p.queue.length>0){
-        const next = p.queue.shift();
-        startPlayerAction(p, next);
-        return;
-      }else{
-        p.canControl = true;
-      }
-    }else{
-      // during attack, small scripted advances
-      if(p._act.advance && p.onGround){
-        p.vx = p.face * p._act.advance; // slight forward
-      }
-    }
-    return; // while attacking/skill, input is locked except queue
-  }
-
-  // Not attacking → accept new inputs (queue cleared)
-  if(atk1){ startPlayerAction(p, 'atk1_once'); }
-  else if(atk2){ startPlayerAction(p, 'atk2'); }
-  else if(skill){
-    // decide by hold time (>=0.5s to extend to 1.0s if held)
-    const heldMs = (btn._holdSkill||keys.KeyL)? (performance.now()-btn._skillDownTime) : 0;
-    startPlayerAction(p, 'skill', heldMs>=500);
-  }
-}
-
-function startPlayerAction(p, kind, long=false){
-  // If already acting, queue (but spec saysキャンセル不可→終了後につなぐ)
-  if(p._act){
-    // define simple chain logic: ■→▲ or ■→■→▲ など
-    // allow up to 2 queued actions
-    if(p.queue.length<2) p.queue.push(kind);
-    return;
-  }
-  p.canControl=false;
-
-  if(kind==='atk1_once'){
-    p.state='atk';
-    // 単発アッパー（出し切り）
-    p._act = {
-      name:'atk1_once', t:0, dur:360,
-      frames:Anim.player.atk1_once, dmg:DMG.atk1_once, hb:{w:26,h:18,y:12}, advance:1.2
-    };
-    // 自動でコンボ入力が続いていたら queue に積んでおく（外部からも可能）
-    // ここでは規約のみ。ユーザー操作で繋げる想定。
-
-  }else if(kind==='atk2'){
-    // 構えで震え→蹴り上げ（長押し0.5sで震え1秒＆強化）
-    p.state='atk2';
-    const longPress = long || false;
-    p._act = { name:'atk2_charge', t:0, dur:(longPress?1000:500), frames:(longPress?Anim.player.atk2_chargeLong:Anim.player.atk2_charge), dmg:0, hb:null };
-    // enqueue actual kick afterward
-    p.queue.push('atk2_kick'+(longPress?':long':'')); // label with power
-  }else if(kind.startsWith('atk2_kick')){
-    const longPress = kind.endsWith(':long');
-    p.state='atk2';
-    p._act = {
-      name:'atk2_kick', t:0, dur:300, frames:Anim.player.atk2_kick, dmg:(longPress? DMG.atk2+6 : DMG.atk2),
-      hb:{w:26,h:20,y:16}, advance:1.1
-    };
-
-  }else if(kind==='skill'){
-    p.state='skill';
-    const heldMs = Math.min(1000, (btn._holdSkill||keys.KeyL)? (performance.now()-btn._skillDownTime):0);
-    const strong = heldMs>=500; // 0.5s 以上で長押し扱い
-    const cycles = strong? 4: 2;
-    p._act = {
-      name:'skill_spin', t:0, dur: Anim.player.skill_spin[0].t*4*cycles,
-      frames: Anim.player.skill_spin, dmg:(strong? DMG.skill_hold : DMG.skill_tap), hb:{w:30,h:26,y:12}, advance:0.6
-    };
-    p.skillCharge=0; btn._holdSkill=false;
-  }
-}
-
-function processPlayerHits(p, enemy, dt){
-  if(!p._act || !p._act.hb) return;
-  // Simple active window (latter half of the animation)
-  const active = (p._act.t > p._act.dur*0.4);
-  if(!active) return;
-
-  // Build hitbox
-  const hb = hbFromActor(p, p._act.hb.w, p._act.hb.h, p._act.hb.y);
-  const er = enemy.rect;
-  if(rectOverlap(hb, er)){
-    // apply once per action
-    if(!p._act._hitDone){
-      p._act._hitDone=true;
-      enemy.takeDamage(p._act.dmg, p.face); // knock in facing dir
-      // 特性：中攻撃（敵の）が「少し浮かせる」…は敵側で処理
-    }
-  }
-}
-
-function handleEnemy(e, dt, player){
-  e.updateTimers(dt);
-  if(e.state==='dead'){
-    e.applyPhysics();
-    e.spin += dt*0.02*(e.vx>=0?1:-1);
-    e.alpha = Math.max(0, e.alpha - dt*0.002);
-    return;
-  }
-
-  // Simple AI state
-  if(e.cool>0) e.cool-=dt;
-  const dist = player.x - e.x;
-  e.face = (dist>=0)? 1 : -1;
-
-  if(!e._act){
-    // move toward player if far
-    if(Math.abs(dist)>60){
-      e.vx = Math.sign(dist)*ENEMY_WALK_SPEED;
-      e.state = 'run';
-    }else{
-      e.vx = 0; e.state='idle';
-      // choose attack (small/mid/chain)
-      if(e.cool<=0){
-        const r = Math.random();
-        if(r<0.4) startEnemyAttack(e,'small');
-        else if(r<0.75) startEnemyAttack(e,'mid');
-        else { startEnemyAttack(e,'small'); e.queue=['mid']; } // chain
-        e.cool = 900;
-      }
-    }
-    // occasional hop
-    if(e.onGround && Math.random()<0.002) e.vy = JUMP_VY*0.8;
-  }else{
-    // progress current attack
-    e._act.t += dt;
-    if(e._act.t>=e._act.dur){
-      e._act=null;
-      if(e.queue && e.queue.length){
-        const nx = e.queue.shift();
-        startEnemyAttack(e,nx);
-      }else{
-        // backstep
-        e.vx = -e.face*1.8; e.vy = -1.2;
-      }
-    }else{
-      if(e._act.advance && e.onGround) e.vx = e.face*e._act.advance;
-    }
-  }
-
-  // Physics
-  e.applyPhysics();
-
-  // Collide → player
-  if(e._act && e._act.hb){
-    const active = (e._act.t > e._act.dur*0.35);
-    if(active){
-      const hb = hbFromActor(e, e._act.hb.w, e._act.hb.h, e._act.hb.y);
-      const pr = player.rect;
-      if(rectOverlap(hb, pr) && !e._act._hitDone){
-        e._act._hitDone=true;
-        // small / mid / chain damage
-        player.takeDamage(e._act.dmg, e.face);
-        if(e._act.lift){ player.vy = -2.6; } // mid upper lifts slightly
-      }
-    }
-  }
-
-  // If player hits enemy handled already in player
-}
-
-function startEnemyAttack(e, kind){
-  if(e._act) return;
-  if(kind==='small'){
-    e._act = {name:'small', t:0, dur:300, frames:Anim.enemy.smallAtk, hb:{w:24,h:16,y:14}, dmg:5, advance:1.0};
-  }else if(kind==='mid'){
-    e._act = {name:'mid', t:0, dur:340, frames:Anim.enemy.midAtk, hb:{w:26,h:18,y:16}, dmg:8, lift:true, advance:0.8};
-  }
-}
-
-/* ---------------- Rendering ---------------- */
-function render(){
-  const camX = game.camX;
-
+  // Clear frame
   ctx.clearRect(0,0,W,H);
+  draw();
 
-  // Sky
-  ctx.fillStyle = "#0b0c10"; ctx.fillRect(0,0,W,H);
-
-  // Ground tiles loop with S1.png
-  const tile = images["S1"];
-  const tileW = tile.naturalWidth||48, tileH= tile.naturalHeight||48;
-  const groundTop = GROUND_Y+1;
-  const startX = Math.floor((camX%tileW+tileW)%tileW);
-  for(let x=-startX; x<W; x+=tileW){
-    ctx.drawImage(tile, x, groundTop, tileW, tileH);
-  }
-
-  // Draw entities sorted by y (simple)
-  const ents = [game.player, game.enemy].filter(Boolean);
-  ents.sort((a,b)=> (a.y - b.y));
-  for(const e of ents){
-    drawActor(e, camX);
-  }
-
-  // Skill charge gauge over head (player)
-  const p = game.player;
-  if(p.headGauge>0){
-    const gx = Math.floor(p.x - camX), gy = Math.floor(p.y - p.h - 14);
-    ctx.fillStyle="#0c1524"; ctx.fillRect(gx-16, gy, 32, 5);
-    ctx.fillStyle="#49e"; ctx.fillRect(gx-16, gy, Math.floor(32*p.headGauge/100), 5);
-    ctx.strokeStyle="#2a3d58"; ctx.strokeRect(gx-16, gy, 32, 5);
-  }
+  requestAnimationFrame(tick);
 }
 
-function drawActor(a, camX){
-  // choose current frame
-  let img = images["M1-1"], w=36,h=44;
-  let set=null;
-  if(a instanceof Player){
-    if(a._act){ set = a._act.frames; }
-    else if(a.state==='run'){ set=Anim.player.run; }
-    else set=Anim.player.idle;
-  }else{
-    if(a._act){
-      set = a._act.frames;
-    }else if(Math.abs(a.vx)>0.2){ set=Anim.enemy.walk; }
-    else set=Anim.enemy.idle;
-  }
-  const t = (a._act? a._act.t : a.animTime);
-  let accum=0, chosen=set[0];
-  for(const f of set){ accum+=f.t; if(t%Math.max(accum,1) < f.t){ chosen=f; break; } }
-  img = images[chosen.k] || img;
-
-  // position
-  const x = Math.floor(a.x - camX), y=Math.floor(a.y);
-  const flip = (a.face<0);
-  const tint = a.tint;
-
-  // shake if charge pose
-  let offX=0, offY=0, rot=0, alpha=a.alpha;
-  if(chosen.shake){ offX = ((performance.now()/30|0)%2)*1 -0.5; }
-  if(a.state==='dead'){ rot = a.spin; alpha=a.alpha; }
-
-  drawImageFlip(img, x+offX, y+offY, w,h, flip, tint, rot, alpha);
+// =====================
+// Input (keyboard + virtual controls) — designed to not miss taps
+// =====================
+const keys = new Set();
+window.addEventListener('keydown',e=>{ keys.add(e.code); handleKeys(); });
+window.addEventListener('keyup',e=>{ keys.delete(e.code); handleKeys(true); });
+function handleKeys(up=false){
+  const left = keys.has('ArrowLeft')||keys.has('KeyA');
+  const right = keys.has('ArrowRight')||keys.has('KeyD');
+  player.moveInput = (right?1:0) - (left?1:0);
+  if(keys.has('Space')||keys.has('ArrowUp')||keys.has('KeyW')){ if(up){/* ignore */} else player.wantJump=true; }
+  if(keys.has('KeyJ')) doAtk1();
+  if(keys.has('KeyK')){ if(up){ commitHeavyIfCharging(); } else startHeavyOrCharge(); }
+  if(keys.has('KeyL')){ if(up){ commitSkillHold(true); } else startSkillTap(); }
 }
 
-/* ---------------- UI helpers ---------------- */
-const notice = document.getElementById('msg');
-let noticeTimer=0;
-function showMessage(v){ notice.hidden=!v; if(v){ noticeTimer=1200; } }
-function hideMessage(){ notice.hidden=true; }
-
-function step(ts){
-  update(ts);
-  render();
-  if(noticeTimer>0){ noticeTimer -= (1000/60); if(noticeTimer<=0) hideMessage(); }
-  requestAnimationFrame(step);
+// Virtual stick
+const stick = document.getElementById('stick');
+const nub = document.getElementById('sticknub');
+let stickId=null;
+function stickSet(dx){
+  player.moveInput = clamp(dx/48, -1, 1);
 }
+function stickReset(){ player.moveInput=0; nub.style.transform='translate(-50%,-50%)'; }
+function pointerPos(e, el){ const r=el.getBoundingClientRect(); const x=(e.clientX|| (e.touches?e.touches[0].clientX:0)) - r.left; const y=(e.clientY|| (e.touches?e.touches[0].clientY:0)) - r.top; return {x,y}; }
 
-/* ---------------- Bootstrap ---------------- */
-loadImages(()=>{ requestAnimationFrame(step); });
+function stickStart(e){ e.preventDefault(); const p=e.changedTouches?e.changedTouches[0]:e; stickId=p.identifier??'mouse'; const {x,y}=pointerPos(p,stick); const cx=70, cy=70; const dx=x-cx, dy=y-cy; const len=Math.hypot(dx,dy); const max=40; const k = len>max? max/len:1; nub.style.transform=`translate(${(dx*k)}px, ${(dy*k)}px)`; stickSet(dx); }
+function stickMove(e){ if(stickId===null) return; const touches = e.changedTouches?Array.from(e.changedTouches):[e]; const p = touches.find(t=> (t.identifier??'mouse')===stickId); if(!p) return; e.preventDefault(); const {x,y}=pointerPos(p,stick); const dx=x-70, dy=y-70; const len=Math.hypot(dx,dy); const max=40; const k = len>max? max/len:1; nub.style.transform=`translate(${(dx*k)}px, ${(dy*k)}px)`; stickSet(dx); }
+function stickEnd(e){ if(stickId===null) return; const touches = e.changedTouches?Array.from(e.changedTouches):[e]; const p = touches.find(t=> (t.identifier??'mouse')===stickId); if(!p) return; e.preventDefault(); stickId=null; stickReset(); }
+stick.addEventListener('pointerdown',stickStart);stick.addEventListener('pointermove',stickMove);stick.addEventListener('pointerup',stickEnd);stick.addEventListener('pointercancel',stickEnd);
+stick.addEventListener('touchstart',stickStart,{passive:false});stick.addEventListener('touchmove',stickMove,{passive:false});stick.addEventListener('touchend',stickEnd,{passive:false});stick.addEventListener('touchcancel',stickEnd,{passive:false});
 
-/* ---------------- Keyboard → buttons bridge for combos ---------------- */
-addEventListener('keydown', (e)=>{
-  if(e.repeat) return;
-  if(e.code==='KeyJ'){ btn.atk1=true; setTimeout(()=>btn.atk1=false, 0); }
-  else if(e.code==='KeyK'){ btn.atk2=true; setTimeout(()=>btn.atk2=false, 0); }
-  else if(e.code==='KeyL'){
-    // start hold
-    btn.skill=true; btn._holdSkill=true; btn._skillDownTime=performance.now();
-  }else if(e.code==='Space' || e.code==='ArrowUp' || e.code==='KeyW'){
-    btn.jump=true; setTimeout(()=>btn.jump=false, 0);
-  }
-});
-addEventListener('keyup',(e)=>{
-  if(e.code==='KeyL'){ btn.skill=false; btn._holdSkill=false; }
-});
+// Buttons (debounced, no-miss using pointerdown)
+function wireBtn(id, onDown, onUp){ const el=document.getElementById(id); el.addEventListener('pointerdown', e=>{ e.preventDefault(); onDown(); el.setPointerCapture(e.pointerId); }); el.addEventListener('pointerup', e=>{ e.preventDefault(); if(onUp) onUp(); }); el.addEventListener('touchstart', e=>{ e.preventDefault(); onDown(); }, {passive:false}); el.addEventListener('touchend', e=>{ e.preventDefault(); if(onUp) onUp(); }, {passive:false}); }
 
-/* ---------------- Safety: button click must always respond ---------------- */
-for(const id of ['btnAtk1','btnAtk2','btnSkill','btnJump']){
-  const el = document.getElementById(id);
-  el.addEventListener('click', e=>{ /* no-op: prevent ghost click bug on some UAs */ }, {passive:false});
+function doAtk1(){
+  // If idle, start light; if already finished first, buffer next steps
+  if(player.state==='idle' && !player.skillActive){ player.startAttack('light'); player.comboBuffer=[ 'light2','light3' ]; player.comboStep=0; }
 }
+function startHeavyOrCharge(){ if(player.state==='idle' && !player.skillActive){ player.startHeavy(true); } }
+function commitHeavyIfCharging(){ if(player.state==='heavy_charge'){ player.commitHeavy(true); } }
+function startSkillTap(){ if(player.state==='idle' && !player.skillActive){ player.startSkill(false); } }
+function commitSkillHold(){ if(player.state==='idle' && !player.skillActive){ player.startSkill(true); } }
+
+wireBtn('btnA', doAtk1);
+wireBtn('btnB', ()=>startHeavyOrCharge(), ()=>commitHeavyIfCharging());
+wireBtn('btnC', ()=>startSkillTap(), ()=>{/* long press handled by holding then separate hold button? Use keyboard L for hold; or tap twice quickly to simulate */});
+wireBtn('btnJ', ()=>{ player.wantJump=true; });
+
+// =====================
+// Start game
+// =====================
+loadImages(()=>{ requestAnimationFrame(tick); });
 </script>
 </body>
 </html>
