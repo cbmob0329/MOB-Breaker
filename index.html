@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Prototype (Player Only)</title>
+<title>MOB Side Action – Prototype (Player Only) Rev3</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
   :root{
@@ -86,10 +86,10 @@
   .bar>i{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:linear-gradient(90deg,#ff9a9e,#ff6b6b)}
   .timer{margin-left:auto}
 
-  /* 頭上ゲージ：必要時のみ display: block */
+  /* 頭上ゲージ：必要時のみ表示 */
   .overhead{
-    position:absolute;left:50%;transform:translateX(-50%); /* 横センター */
-    display:none;gap:6px;align-items:center;pointer-events:none; /* 既定は非表示 */
+    position:absolute;left:50%;transform:translateX(-50%);
+    display:none;gap:6px;align-items:center;pointer-events:none;
   }
   .gauge{width:64px;height:6px;border-radius:999px;outline:1px solid #1a263d;background:#0a1220;overflow:hidden}
   .gauge>i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#69d0ff,#a0ffe6)}
@@ -132,12 +132,12 @@
 
 <script>
 /* =========================================================
-   MOB Side Action – Player Only (Rev2)
-   変更点：
-   - 構え時間すべて 0.15s
-   - コンボ入力バッファ（0.18s）を追加
-   - 頭上ゲージ：充電が必要なときのみ表示（A2長押し/スキル長押し）
-   - S1.png の“上面”を正しく地面に（継ぎ目無しタイル）
+   MOB Side Action – Player Only (Rev3)
+   修正点：
+   - S1.png を自動スケール（描画高さ=96px）して地面上面を固定Y=360に
+   - タイルは整数座標＆スムージングOFFで継ぎ目ゼロ
+   - プレイヤーは必ずタイル上面に立つ（消失防止）
+   - 既存の連撃/ゲージ仕様は維持
    ========================================================= */
 (function(){
   'use strict';
@@ -243,19 +243,22 @@
 
   // 物理
   const GRAV=2000, MOVE=260, JUMP_V=760, MAX_FALL=1200;
-  const FLOOR_BASE=440; // タイルの“底面”基準（描画の下端）。上面はタイル高さ分だけ上。
+
+  // 地面の上面（プレイヤーが立つY）を固定
+  const GROUND_TOP_Y = 360;         // ← ここが“タイルの上面”
+  const TARGET_TILE_DRAW_H = 96;    // S1 をこの高さで描画（自動スケール）
 
   class Player{
     constructor(assets, world){
       this.assets=assets; this.world=world;
-      this.x=100; this.y=this.world.groundLine()-10;
+      this.x=100; this.y=GROUND_TOP_Y-10;
       this.vx=0; this.vy=0; this.w=56; this.h=64;
       this.face=1; this.onGround=false;
       this.hp=1000; this.maxhp=1000; this.lives=3;
       this.dead=false; this.deathT=0; this.invulnT=0;
       this.state='idle'; this.animT=0;
       this.comboStep=0; this.attackQueue=[];
-      this.comboGraceT=0; // 連撃猶予
+      this.comboGraceT=0;
 
       this.frames={
         idle:['M1-1.png'],
@@ -282,7 +285,7 @@
     }
     _updateOverheadPos(){
       const w=this.world;
-      const headY = this.y - this.h/2 - 10; // 頭上に10px
+      const headY = this.y - this.h/2 - 10;
       this.overhead.root.style.left   = ((this.x - w.camX) * w.screenScaleX) + 'px';
       this.overhead.root.style.bottom = (w.gameH - (headY - w.camY)) * w.screenScaleY + 'px';
     }
@@ -302,7 +305,7 @@
       }
       if(this.invulnT>0) this.invulnT=Math.max(0,this.invulnT-dt);
 
-      // 頭上ゲージ（充電時のみ表示）
+      // 頭上ゲージ（充電時のみ）
       if(input.attack2Charging){
         input.attack2ChargeT=Math.min(1.0, input.attack2ChargeT+dt);
         this._showOverhead(true,'▲ Charge', input.attack2ChargeT);
@@ -313,7 +316,7 @@
         this._showOverhead(false);
       }
 
-      // 充電解除で発動キュー
+      // 充電解除→発動
       if(!input.attack2Charging && input.btn.a2===false && input.attack2ChargeT>0){
         const charged = input.attack2ChargeT>=0.5;
         this.queueAttack({type:'A2',charged});
@@ -325,21 +328,17 @@
         input.skillChargeT=0;
       }
 
-      // 出し切り・被弾中は移動不可
       if(this.state==='atk' || this.state==='skill' || this.state==='hurt'){
         this._updateAction(dt,input,world);
         return;
       }
 
-      // コンボ猶予ウィンドウ中はA1入力で自動継続
       if(this.comboGraceT>0){
         this.comboGraceT=Math.max(0, this.comboGraceT-dt);
         if(input.btn.a1){ this.queueAttack({type:'A1'}); this.comboGraceT=0; }
       }
 
-      // 通常入力
       if(input.btn.a1){ this.queueAttack({type:'A1'}); }
-      // A2/Skillは離したタイミングでqueue済み
 
       if(this.attackQueue.length>0){
         const next=this.attackQueue.shift();
@@ -362,10 +361,9 @@
       this.vy += GRAV*dt; this.vy=Math.min(this.vy,MAX_FALL);
       this.x  += this.vx*dt; this.y += this.vy*dt;
 
-      // 地面
-      const gY = world.groundLine();
-      if(this.y + this.h/2 >= gY){
-        this.y = gY - this.h/2; this.vy=0; this.onGround=true;
+      // 地面：上面で止める
+      if(this.y + this.h/2 >= GROUND_TOP_Y){
+        this.y = GROUND_TOP_Y - this.h/2; this.vy=0; this.onGround=true;
       } else this.onGround=false;
 
       // 落下死
@@ -401,7 +399,7 @@
       this.state='atk'; this.animT=0;
       const power=charged?18:15;
       const seq=[
-        {kind:'prepShake', dur:0.15, frame:this.frames.k2prep, dx:0, power:0}, // 構え短縮
+        {kind:'prepShake', dur:0.15, frame:this.frames.k2prep, dx:0, power:0},
         {kind:'hit', dur:0.4, frame:this.frames.k2, dx:14, power}
       ];
       this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
@@ -425,13 +423,13 @@
       // 攻撃・スキル中も重力
       this.vx=0;
       this.vy+=GRAV*dt; this.vy=Math.min(this.vy,MAX_FALL); this.y+=this.vy*dt;
-      const gY=world.groundLine();
-      if(this.y + this.h/2 >= gY){ this.y=gY - this.h/2; this.vy=0; this.onGround=true; } else this.onGround=false;
 
-      // 落下死
+      if(this.y + this.h/2 >= GROUND_TOP_Y){
+        this.y = GROUND_TOP_Y - this.h/2; this.vy=0; this.onGround=true;
+      } else this.onGround=false;
+
       if(this.y - world.camY > world.gameH + 200){ this._die(world); }
 
-      // シーケンス
       if(this._actionSeq){
         this._actionTime+=dt;
         const cur=this._actionSeq[this._actionIndex];
@@ -440,11 +438,8 @@
           if(this._actionTime>=cur.dur){
             this._actionIndex++; this._actionTime=0;
             if(this._actionIndex>=this._actionSeq.length){
-              // 行動終了：A1ならコンボ猶予を付与して連撃成功率UP
               if(this.state==='atk' && this.comboStep>0){
-                // 次のA1入力を受け付ける猶予（0.18s）
-                this.comboGraceT=0.18;
-                // 予約が無ければ一旦idleへ（入力が来れば即座に次段開始）
+                this.comboGraceT=0.18; // 連撃猶予
               }
               this.state='idle'; this._actionSeq=null;
             }
@@ -472,7 +467,7 @@
     _respawn(world){
       this.dead=false; this.state='idle'; this.comboStep=0; this.attackQueue.length=0; this.comboGraceT=0;
       this.invulnT=0.6;
-      this.x=world.camX+80; this.y=world.groundLine()-this.h/2; this.vx=0; this.vy=0;
+      this.x=world.camX+80; this.y=GROUND_TOP_Y - this.h/2; this.vx=0; this.vy=0;
       if(this.hp<=0){ this.hp=this.maxhp; updateHPUI(this.hp,this.maxhp); }
     }
 
@@ -506,7 +501,7 @@
 
       const targetH=this.h, scale=targetH/frameImg.height;
       const drawW=frameImg.width*scale, drawH=targetH;
-      ctx.imageSmoothingEnabled=false; // にじみ/継ぎ目対策
+      ctx.imageSmoothingEnabled=false;
       ctx.drawImage(frameImg, Math.round(-drawW/2+ox), Math.round(-drawH/2+oy), Math.round(drawW), Math.round(drawH));
     }
   }
@@ -514,7 +509,7 @@
   class World{
     constructor(assets, canvas){
       this.assets=assets; this.canvas=canvas; this.ctx=canvas.getContext('2d',{alpha:true});
-      this.ctx.imageSmoothingEnabled=false; // タイル継ぎ目/ドット保護
+      this.ctx.imageSmoothingEnabled=false; // 継ぎ目＆ドット保護
       this.gameW=canvas.width; this.gameH=canvas.height;
       this.camX=0; this.camY=0;
       this.time=0; this._timerAcc=0;
@@ -524,19 +519,19 @@
 
       this.bgSpeed=0.4;
 
+      // S1.png の自動スケール設定
       const tile=this.assets.img('S1.png');
-      this.tileW = tile? tile.width : 64;
-      this.tileH = tile? tile.height: 64;
-      this.tileScale = 1; // 原寸タイル前提
+      if(tile){
+        this.tileScale = TARGET_TILE_DRAW_H / tile.height; // ← 高さを96pxに
+        this.tileDW = tile.width  * this.tileScale;         // 描画幅
+        this.tileDH = tile.height * this.tileScale;         // (=96)
+      }else{
+        this.tileScale=1; this.tileDW=64; this.tileDH=TARGET_TILE_DRAW_H;
+      }
     }
     resize(){
       const rect=this.canvas.getBoundingClientRect();
       this.screenScaleX=rect.width/this.gameW; this.screenScaleY=rect.height/this.gameH;
-    }
-
-    // タイル上面を“地面ライン”として返す
-    groundLine(){
-      return FLOOR_BASE - (this.tileH*this.tileScale);
     }
 
     updateCam(player){
@@ -560,7 +555,7 @@
       const ctx=this.ctx;
       ctx.clearRect(0,0,this.gameW,this.gameH);
 
-      // 背景パララックス
+      // 背景
       const bg=this.assets.img('sora.png');
       if(bg){
         const scale=this.gameH/bg.height;
@@ -569,28 +564,34 @@
         for(let i=-1;i<=2;i++){
           ctx.drawImage(bg, Math.floor(bx + i*bw), 0, Math.ceil(bw), this.gameH);
         }
-      }else{
+      } else {
         const g=ctx.createLinearGradient(0,0,0,this.gameH);
         g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18');
-        ctx.fillStyle=g; ctx.fillRect(0,0,this.gameW,this.gameH);
+        ctx.fillStyle=g; ctx.fillRect(0,0,this.gameH,this.gameH);
       }
 
-      // タイル（継ぎ目無し）: タイルの底面が FLOOR_BASE、上面が groundLine()
+      // 床タイル（上面=GROUND_TOP_Y）
       const tile=this.assets.img('S1.png');
-      if(tile){
-        const tw=this.tileW*this.tileScale, th=this.tileH*this.tileScale;
-        const topY = this.groundLine();
-        const y = Math.round(topY); // 上面に合わせて描画
-        // 左右ループ
+      const yTop = GROUND_TOP_Y;           // 上面
+      const yDraw= Math.round(yTop);       // タイルの描画開始Y
+      const th = Math.round(this.tileDH);  // 96
+      const tw = Math.round(this.tileDW);
+
+      if(tile && tw>0 && th>0){
+        // 左端をカメラに合わせてループ
         const startX = Math.floor((this.camX - this.gameW*0.2)/tw)*tw;
         const endX   = this.camX + this.gameW*1.2;
-        for(let x=startX; x<=endX; x+=tw){
-          ctx.drawImage(tile, 0,0,tile.width,tile.height,
-                        Math.round(x - this.camX), Math.round(y), Math.round(tw), Math.round(th));
+        for(let x=startX; x<=endX + tw; x+=tw){
+          ctx.drawImage(
+            tile,
+            0,0,tile.width,tile.height,
+            Math.round(x - this.camX), Math.round(yDraw), tw, th
+          );
         }
-      }else{
-        const gY=this.groundLine();
-        ctx.fillStyle='#1d2a3d'; ctx.fillRect(0, gY, this.gameW, FLOOR_BASE - gY);
+      } else {
+        // 代替の床
+        ctx.fillStyle='#1d2a3d';
+        ctx.fillRect(0, yDraw, this.gameW, th||96);
       }
 
       // プレイヤー
