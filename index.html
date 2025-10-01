@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Player Only Rev6</title>
+<title>MOB Side Action – Player Only Rev7</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
   :root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
@@ -60,11 +60,13 @@
   </div>
 
 <script>
-/* ===================== Rev6 修正概要 ======================
- - ▲/●：pointerup/keyup パルス + フレーム境界エッジで確実に「離したら1回だけ」発動
- - A1と混ざる問題：▲/●待機中はA1新規開始をブロック、A1連撃終了直後に▲/●を最優先実行
- - 空中攻撃：開始時の横速度を保持して行動中も慣性で移動（入力による加速は不可）
- - 地面：床上面Yと衝突Yを完全一致 + 1px食い込み。タイル整数スナップ＆1px重ね＋床上端1px塗り
+/* ===================== Rev7 完全版 ======================
+ - ▲/●：離した瞬間に1回だけ発動（pointer/touch/keyboard対応）
+ - 優先度：SK＞A2＞A1。▲/●待機中はA1開始をブロック、A1中に離したら区切れ直後に最優先実行
+ - 空中攻撃：開始時の横慣性を保持（攻撃中も移動）。入力による加速は不可
+ - 床：描画高さ=96px 自動スケール、横1pxオーバーラップ、上端整数スナップ＋上端1px塗り、足元2px食い込み
+ - ゲージ：頭上・充電時のみ表示
+ - 連撃：構え0.15s、猶予0.22s、3段でリセット
 ========================================================== */
 (function(){
   'use strict';
@@ -84,7 +86,6 @@
       this.btn={a1:false,a2:false,skill:false};
       this.prev={a1:false,a2:false,skill:false};
       this.edge={a1:false, a2Release:false, skillRelease:false};
-      // イベントからの即時パルス（同フレーム内にdown→upしても取りこぼさない）
       this.pulseRelease={a2:false,skill:false};
       this.attack2Charging=false; this.skillCharging=false;
       this.attack2ChargeT=0; this.skillChargeT=0;
@@ -110,7 +111,6 @@
       },{passive:false});
     }
     _initTouch(){
-      // 左スティック
       const stickArea=document.getElementById('stickArea');
       const thumb=document.getElementById('stickThumb');
       let stickId=-1, origin=null;
@@ -138,13 +138,11 @@
       stickArea.addEventListener('touchend',  e=>{e.preventDefault();onEnd(e);  },{passive:false});
       stickArea.addEventListener('touchcancel',e=>{e.preventDefault();onEnd(e);},{passive:false});
 
-      // ボタン
       const bind=(id,onDown,onUp)=>{
         const el=document.getElementById(id);
         el.addEventListener('pointerdown',e=>{e.preventDefault(); onDown(); el.setPointerCapture?.(e.pointerId);});
         el.addEventListener('pointerup',  e=>{e.preventDefault(); onUp(); el.releasePointerCapture?.(e.pointerId);});
         el.addEventListener('pointercancel',()=>{ onUp(); });
-        // safety for quick taps
         el.addEventListener('touchstart',e=>{e.preventDefault(); onDown();},{passive:false});
         el.addEventListener('touchend',  e=>{e.preventDefault(); onUp();},{passive:false});
       };
@@ -157,7 +155,6 @@
     }
     consumeJump(){ const j=this.jump; this.jump=false; return j; }
     beginFrame(){
-      // フレーム境界エッジ
       this.edge.a1 =  this.btn.a1 && !this.prev.a1;
       this.edge.a2Release    = (!this.btn.a2 && this.prev.a2) || this.pulseRelease.a2;
       this.edge.skillRelease = (!this.btn.skill && this.prev.skill) || this.pulseRelease.skill;
@@ -173,13 +170,13 @@
   const GROUND_TOP_Y = 360;   // タイル上端（上面）
   const TILE_DRAW_H  = 96;    // タイル描画高さ
   const TILE_OVERLAP = 1;     // 横 1px 重ね
-  const FOOT_PAD     = 1;     // 足元1px食い込み（視覚隙間対策）
+  const FOOT_PAD     = 2;     // 足元 2px 食い込み（視覚隙間ゼロ）
 
   class Player{
     constructor(assets, world){
       this.assets=assets; this.world=world;
       this.w=56; this.h=64;
-      this.x=100; this.y=GROUND_TOP_Y - this.h/2 + FOOT_PAD;
+      this.x=100; this.y=Math.floor(GROUND_TOP_Y) - this.h/2 + FOOT_PAD;
       this.vx=0; this.vy=0; this.face=1; this.onGround=false;
 
       this.hp=1000; this.maxhp=1000; this.lives=3;
@@ -187,15 +184,16 @@
 
       this.state='idle'; this.animT=0;
 
-      // コンボ/A1
+      // A1 連撃
       this.comboStep=0; this.comboGraceT=0; this.bufferA1=false;
 
-      // 優先キュー（A2/SKは多重禁止）
+      // 優先キュー（多重禁止）
       this.queueA2=null; this.queueSK=null;
 
-      // 攻撃中の慣性
-      this.actionAirVx=0; this.actionAir=false;
+      // 空中攻撃慣性
+      this.actionAir=false; this.actionAirVx=0;
 
+      // スプライト定義
       this.frames={
         idle:['M1-1.png'],
         walk:['M1-2.png','M1-3.png','M1-4.png'],
@@ -208,6 +206,11 @@
       this.overhead=this._createOverheadGauge();
       document.querySelector('.gamewrap').appendChild(this.overhead.root);
     }
+
+    // 画像ヘルパ
+    _getFramePath(key, index=0){ const v=this.frames[key]; if(Array.isArray(v)){ const i=Math.max(0,Math.min(v.length-1,index)); return v[i]; } return v; }
+    _getImageByKey(key, index=0){ return this.world.assets.img(this._getFramePath(key,index)); }
+
     _createOverheadGauge(){
       const root=document.createElement('div'); root.className='overhead';
       const g=document.createElement('div'); g.className='gauge';
@@ -233,41 +236,28 @@
       if(this.dead){ this.deathT+=dt; if(this.deathT>1.2) this._respawn(world); return; }
       if(this.invulnT>0) this.invulnT=Math.max(0,this.invulnT-dt);
 
-      // 溜めゲージ表示
+      // 溜め：ゲージ表示
       if(input.attack2Charging){ input.attack2ChargeT=Math.min(1, input.attack2ChargeT+dt); this._showOverhead(true,'▲ Charge', input.attack2ChargeT); }
       else if(input.skillCharging){ input.skillChargeT=Math.min(1, input.skillChargeT+dt); this._showOverhead(true,'● Charge', input.skillChargeT); }
       else { this._showOverhead(false); }
 
-      // 離した瞬間だけキュー、A1より優先
-      if(input.edge.a2Release && input.attack2ChargeT>0){
-        const charged=input.attack2ChargeT>=0.5;
-        this.queueA2 = {charged};  // 多重上書き（常に最新に）
-        input.attack2ChargeT=0;
-      }
-      if(input.edge.skillRelease && input.skillChargeT>0){
-        const charged=input.skillChargeT>=0.5;
-        this.queueSK = {charged};
-        input.skillChargeT=0;
-      }
+      // 離した瞬間だけ上書きキュー（常に最新）
+      if(input.edge.a2Release && input.attack2ChargeT>0){ this.queueA2={charged:input.attack2ChargeT>=0.5}; input.attack2ChargeT=0; }
+      if(input.edge.skillRelease && input.skillChargeT>0){ this.queueSK={charged:input.skillChargeT>=0.5}; input.skillChargeT=0; }
 
-      // 出し切り/被弾/スキル中
+      // 行動中
       if(this.state==='atk' || this.state==='skill' || this.state==='hurt'){
-        this._updateAction(dt,input,world);
-        return;
+        this._updateAction(dt,input,world); return;
       }
 
-      // A1入力バッファ（エッジでセット）
-      if(input.edge.a1){ this.bufferA1=true; }
+      // A1入力エッジで予約
+      if(input.edge.a1) this.bufferA1=true;
       if(this.comboGraceT>0) this.comboGraceT=Math.max(0,this.comboGraceT-dt);
 
-      // 優先度：SK＞A2＞A1
-      if(this.queueSK){ this._startSpin(this.queueSK.charged); this.queueSK=null; this.bufferA1=false; return; }
-      if(this.queueA2){ this._startA2(this.queueA2.charged); this.queueA2=null; this.bufferA1=false; return; }
-
-      // ■は3段まで、可能なら開始
-      if(this.bufferA1 && this.comboStep<3){
-        this.bufferA1=false; this._startA1(); return;
-      }
+      // 優先度：SK＞A2＞A1（▲/●待機中はA1開始をブロック）
+      if(this.queueSK){ const q=this.queueSK; this.queueSK=null; this.bufferA1=false; this._startSpin(q.charged); return; }
+      if(this.queueA2){ const q=this.queueA2; this.queueA2=null; this.bufferA1=false; this._startA2(q.charged); return; }
+      if(this.bufferA1 && this.comboStep<3){ this.bufferA1=false; this._startA1(); return; }
 
       // 通常移動
       let ax=0;
@@ -282,30 +272,27 @@
       this.vy = Math.min(this.vy + GRAV*dt, MAX_FALL);
       this.x  += this.vx*dt; this.y += this.vy*dt;
 
-      // 地面（床上端に一致、1px食い込み）
+      // 接地（足元2px食い込みで固定）
       const top = Math.floor(GROUND_TOP_Y);
       if(this.y + this.h/2 >= top + FOOT_PAD){
         this.y = top - this.h/2 + FOOT_PAD; this.vy=0; this.onGround=true;
       } else this.onGround=false;
 
-      // 落下死
       if(this.y - world.camY > world.gameH + 200){ this._die(world); }
 
-      // 表示状態
       this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
       this.animT += dt;
       world.updateTimer(dt);
 
-      // ▲溜め中の見た目シェイク（入力移動は可能にしてもいいが、仕様通り立ち表示のみ変える）
+      // ▲見た目シェイク
       if(input.attack2Charging && this.state!=='atk' && this.state!=='skill'){ this.state='chargeA2'; }
     }
 
     _startA1(){
       this.state='atk'; this.animT=0;
       this.comboStep=Math.min((this.comboStep||0)+1,3);
-      // 攻撃開始時に“空中なら”横慣性を保持
-      this.actionAir = !this.onGround;
-      this.actionAirVx = this.actionAir ? this.vx : 0;
+      // 空中なら慣性保持
+      this.actionAir = !this.onGround; this.actionAirVx = this.actionAir ? this.vx : 0;
 
       const seq=[ {kind:'prep', dur:0.15, frame:'k1prep', dx:0, power:0} ];
       let frame='', power=5, dx=0;
@@ -318,8 +305,7 @@
 
     _startA2(charged){
       this.state='atk'; this.animT=0;
-      this.actionAir = !this.onGround;
-      this.actionAirVx = this.actionAir ? this.vx : 0;
+      this.actionAir = !this.onGround; this.actionAirVx = this.actionAir ? this.vx : 0;
       const power=charged?18:15;
       this._actionSeq=[
         {kind:'prepShake', dur:0.15, frame:'k2prep', dx:0, power:0},
@@ -330,8 +316,7 @@
 
     _startSpin(charged){
       this.state='skill'; this.animT=0;
-      this.actionAir = !this.onGround;
-      this.actionAirVx = this.actionAir ? this.vx : 0;
+      this.actionAir = !this.onGround; this.actionAirVx = this.actionAir ? this.vx : 0;
       const rounds=charged?4:2, power=charged?40:25, frames=this.frames.spin;
       const seq=[];
       for(let r=0;r<rounds;r++){ for(let i=0;i<frames.length;i++){ seq.push({kind:'sp', dur:0.08, frame:frames[i], dx:0, power:(i===1?power:0)}); } }
@@ -339,7 +324,7 @@
     }
 
     _updateAction(dt,input,world){
-      // 攻撃中：入力による加速は不可。ただし空中での慣性は維持。
+      // 攻撃中：入力加速は不可だが空中慣性は維持
       const airVX = this.actionAir ? this.actionAirVx : 0;
       this.x += airVX * dt;
 
@@ -347,7 +332,7 @@
       this.vy = Math.min(this.vy + GRAV*dt, MAX_FALL);
       this.y += this.vy*dt;
 
-      // 地面
+      // 接地
       const top=Math.floor(GROUND_TOP_Y);
       if(this.y + this.h/2 >= top + FOOT_PAD){
         this.y = top - this.h/2 + FOOT_PAD; this.vy=0; this.onGround=true; this.actionAir=false; this.actionAirVx=0;
@@ -355,7 +340,7 @@
 
       if(this.y - world.camY > world.gameH + 200){ this._die(world); }
 
-      // シーケンス
+      // 行動シーケンス
       if(this._actionSeq){
         this._actionTime+=dt;
         const cur=this._actionSeq[this._actionIndex];
@@ -364,14 +349,11 @@
           if(this._actionTime>=cur.dur){
             this._actionIndex++; this._actionTime=0;
             if(this._actionIndex>=this._actionSeq.length){
-              // A1の連撃猶予
               if(this.state==='atk' && this.comboStep>0){ this.comboGraceT=0.22; }
-              // A1の3段目終了でリセット
               if(this.state==='atk' && this.comboStep>=3){ this.comboStep=0; this.bufferA1=false; }
-              // 次は優先待機のSK/A2があれば即時実行
+              // 優先待機があれば即次へ
               if(this.queueSK){ const q=this.queueSK; this.queueSK=null; this._startSpin(q.charged); return; }
               if(this.queueA2){ const q=this.queueA2; this.queueA2=null; this._startA2(q.charged); return; }
-
               this.state='idle'; this._actionSeq=null;
             }
           }
@@ -393,36 +375,41 @@
       this.actionAir=false; this.actionAirVx=0;
       this.invulnT=0.6;
       this.x=world.camX+80; this.y=Math.floor(GROUND_TOP_Y) - this.h/2 + FOOT_PAD; this.vx=0; this.vy=0;
-      if(this.hp<=0){ this.hp=this.maxhp; document.getElementById('hpfill').style.width='100%'; document.getElementById('hpnum').textContent=this.hp; }
+      if(this.hp<=0){ this.hp=this.maxhp; const f=document.getElementById('hpfill'); f.style.width='100%'; document.getElementById('hpnum').textContent=this.hp; }
     }
 
     draw(ctx,world){
       ctx.save();
       ctx.translate(this.x - world.camX, this.y - world.camY);
       if(this.face<0) ctx.scale(-1,1);
-      let ox=0, oy=0;
-      let frameImg=null;
-      const f=(name)=>world.assets.img(this.frames[name]||name);
 
-      if(this.state==='idle' || this.state==='chargeA2'){
-        frameImg = this.state==='chargeA2'? f('k2prep') : f('idle')[0];
-        if(this.state==='chargeA2'){ ox = Math.sin(this.animT*40)*2; }
+      let ox=0, oy=0, img=null;
+      if(this.state==='chargeA2'){
+        img = this.world.assets.img(this.frames.k2prep);
+        ox = Math.sin(this.animT*40)*2;
+      } else if(this.state==='idle'){
+        img = this._getImageByKey('idle', 0);
       } else if(this.state==='run'){
-        const i=Math.floor(this.animT*10)%this.frames.walk.length; frameImg=f('walk')[i];
+        const i=Math.floor(this.animT*10)%this.frames.walk.length;
+        img = this._getImageByKey('walk', i);
       } else if(this.state==='jump'){
-        frameImg=f('walk')[0];
-      } else if((this.state==='atk'||this.state==='skill') && this._actionSeq){
+        img = this._getImageByKey('walk', 0);
+      } else if((this.state==='atk' || this.state==='skill') && this._actionSeq){
         const cur=this._actionSeq[this._actionIndex];
-        frameImg= (typeof cur.frame==='string') ? f(cur.frame) : cur.frame;
+        // cur.frame は 'k1a' 等のキー or 直接ファイル名
+        const key=cur.frame;
+        img = this.world.assets.img(this.frames[key] ? this._getFramePath(key,0) : key);
         if(cur.kind==='prepShake'){ ox+=Math.sin(this._actionTime*40)*2; }
-      } else frameImg=f('idle')[0];
-
-      if(frameImg){
-        const targetH=this.h, scale=targetH/frameImg.height;
-        const w=frameImg.width*scale, h=targetH;
-        ctx.imageSmoothingEnabled=false;
-        ctx.drawImage(frameImg, Math.round(-w/2+ox), Math.round(-h/2+oy), Math.round(w), Math.round(h));
+      } else {
+        img = this._getImageByKey('idle', 0);
       }
+
+      if(!img){ img = this.world.assets.img('M1-1.png'); } // フォールバック
+
+      const targetH=this.h, scale=targetH/img.height;
+      const w=img.width*scale, h=targetH;
+      ctx.imageSmoothingEnabled=false;
+      ctx.drawImage(img, Math.round(-w/2+ox), Math.round(-h/2+oy), Math.round(w), Math.round(h));
       ctx.restore();
     }
   }
@@ -440,6 +427,7 @@
 
       this.bgSpeed=0.4;
 
+      // S1.png 自動スケール
       const tile=this.assets.img('S1.png');
       if(tile){
         this.tileScale = TILE_DRAW_H / tile.height;
@@ -453,7 +441,11 @@
       const r=this.canvas.getBoundingClientRect();
       this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
     }
-    updateCam(p){ const target=p.x - this.gameW*0.35; this.camX=Math.max(0, lerp(this.camX,target,0.12)); this.camY=0; }
+    updateCam(p){
+      const target=p.x - this.gameW*0.35;
+      this.camX=Math.max(0, lerp(this.camX,target,0.12));
+      this.camY=0;
+    }
     updateTimer(dt){
       this._timerAcc+=dt;
       if(this._timerAcc>=0.2){ this.time+=this._timerAcc; this._timerAcc=0; const t=Math.floor(this.time);
@@ -462,21 +454,25 @@
     }
     draw(player){
       const ctx=this.ctx; ctx.clearRect(0,0,this.gameW,this.gameH);
+
       // 背景
       const bg=this.assets.img('sora.png');
       if(bg){
         const s=this.gameH/bg.height, bw=bg.width*s, bx= - (this.camX*this.bgSpeed) % bw;
         for(let i=-1;i<=2;i++) ctx.drawImage(bg, Math.floor(bx+i*bw), 0, Math.ceil(bw), this.gameH);
-      } else { const g=ctx.createLinearGradient(0,0,0,this.gameH); g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18'); ctx.fillStyle=g; ctx.fillRect(0,0,this.gameW,this.gameH); }
+      } else {
+        const g=ctx.createLinearGradient(0,0,0,this.gameH); g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18');
+        ctx.fillStyle=g; ctx.fillRect(0,0,this.gameW,this.gameH);
+      }
 
-      // 床（上面 = GROUND_TOP_Y）
+      // 床
       const tile=this.assets.img('S1.png');
       const yTop = Math.floor(GROUND_TOP_Y);
       const th   = Math.round(this.tileDH);
       const tw   = Math.round(this.tileDW);
       const step = Math.max(1, tw - TILE_OVERLAP);
 
-      // 上端1pxを塗って半端なラインを覆う
+      // 上端1px塗り（半端ライン隠し）
       ctx.fillStyle = '#0b0f17';
       ctx.fillRect(0, yTop-1, this.gameW, 1);
 
@@ -490,7 +486,8 @@
       } else {
         ctx.fillStyle='#1d2a3d'; ctx.fillRect(0, yTop, this.gameW, th||TILE_DRAW_H);
       }
-      // 床下は無地で塗る（背景覗き防止）
+
+      // 床下塗り（背景覗き防止）
       ctx.fillStyle = '#0b0f17';
       ctx.fillRect(0, yTop + th, this.gameW, this.gameH - (yTop + th));
 
