@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Rev20 (Mini & Kozou)</title>
+<title>MOB Side Action – Rev20c (SL8 fix)</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
   :root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
@@ -61,13 +61,10 @@
   </div>
 
 <script>
-/* ===================== Rev20 ======================
- 新敵:
-  - MOBアイスロボミニ（小型・小ジャンプ移動／通常5／必殺7・2往復・SA）
-  - MOB小僧（遅歩行・山なり投擲5・ガード中半減→3ヒットでカウンター8）
- 既存:
-  - Rev19のプレイヤー・ワルMOB・アイスロボの修正/仕様は維持
-================================================== */
+/* ===================== Rev20c (SL8 fix) ======================
+ - 画像名を SL8.png に統一
+ - Rev20b の堅牢ローダと全仕様を踏襲
+============================================================== */
 (function(){
 'use strict';
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
@@ -97,11 +94,19 @@ class Effects{
   }
 }
 
-/* ===== Assets ===== */
+/* ===== Assets (robust) ===== */
 class Assets{
-  constructor(){ this.images=new Map(); }
-  load(srcs){ return Promise.all(srcs.map(src=>new Promise((res,rej)=>{ const img=new Image(); img.onload=()=>{this.images.set(src,img);res();}; img.onerror=rej; img.src=src; }))); }
+  constructor(){ this.images=new Map(); this.missing=new Set(); }
+  load(srcs){
+    return Promise.all(srcs.map(src=>new Promise((resolve)=>{
+      const img=new Image();
+      img.onload=()=>{ this.images.set(src,img); resolve(); };
+      img.onerror=()=>{ console.warn('Image load failed:',src); this.missing.add(src); resolve(); };
+      img.src=src;
+    })));
+  }
   img(n){ return this.images.get(n); }
+  has(n){ return this.images.has(n) && !this.missing.has(n); }
 }
 
 /* ===== Input ===== */
@@ -191,7 +196,7 @@ class Input{
 /* ===== Constants ===== */
 const GRAV=2000, MOVE=260, JUMP_V=760, MAX_FALL=1200;
 const GROUND_TOP_Y=360, FOOT_PAD=2;
-const rectsOverlap=(a,b)=>Math.abs(a.x-b.x)*2 < (a.w+b.w) && Math.abs(a.y-b.y)*2 < (a.h+b.h);
+const rectsOverlap=(a,b)=>Math.abs(a.x-b.x)*2 < (a.w+b.w) && Math.abs(a.h-b.h)*2 < (a.h+b.h); // 保険
 
 /* ===== CharacterBase ===== */
 class CharacterBase{
@@ -206,7 +211,7 @@ class CharacterBase{
   hurt(amount, dir, opts={}, effects){
     if(this.invulnT>0||this.dead) return false;
     this.hp=Math.max(0,this.hp-amount);
-    const kbMul = opts.kbMul||1, kbuMul=opts.kbuMul||1;
+    const kbMul = (opts.kbMul??1), kbuMul=(opts.kbuMul??1);
     const baseKb  = 140 + amount*12;
     const baseKbu = opts.lift ? 360 : (amount>=15? 300 : 210);
     this.vx = clamp(dir * baseKb * kbMul, -320, 320);
@@ -214,11 +219,7 @@ class CharacterBase{
     this.x += dir * 3; this.face = -dir;
     this.state='hurt'; this.hurtT=0; this.animT=0; this.invulnT=0.35;
     if(effects) effects.addSpark(this.x, this.y-10, amount>=15);
-
-    if(this.hp<=0){
-      this.dead=true; this.vx = dir * 520; this.vy = -520;
-      this.spinSpeed = 18; this.deathT = 0; this.fade = 1;
-    }
+    if(this.hp<=0){ this.dead=true; this.vx = dir * 520; this.vy = -520; this.spinSpeed = 18; this.deathT = 0; this.fade = 1; }
     return true;
   }
   updatePhysics(dt){
@@ -297,7 +298,7 @@ class Player extends CharacterBase{
     }
     if(cur.kind==='hit' || cur.kind==='sp'){
       const w=50, h=40, x=this.x + this.face*(this.w*0.3 + w*0.5), y=this.y - 6;
-      return {x,y,w,h, power:cur.power||0, dir:this.face, lift:cur.lift||0, kbMul:cur.kbMul||1, kbuMul:cur.kbuMul||1};
+      return {x,y,w,h, power:cur.power||0, dir:this.face, lift:cur.lift||1, kbMul:cur.kbMul||1, kbuMul:cur.kbuMul||1};
     }
     return null;
   }
@@ -305,7 +306,6 @@ class Player extends CharacterBase{
     input.beginFrame();
     this._posOverhead();
 
-    // 攻撃中でないのに残留シーケンスがあれば破棄（保険）
     if(this.state!=='atk' && this.state!=='skill' && this._actionSeq){ this._actionSeq=null; }
 
     if(this.a2LockoutT>0) this.a2LockoutT=Math.max(0,this.a2LockoutT-dt);
@@ -443,7 +443,7 @@ class Player extends CharacterBase{
       img=this.world.assets.img(this.frames[key]?this._getFramePath(key,0):key);
       if(cur.kind==='prepShake') ox+=Math.sin(this._actionTime*40)*2;
     } else img=this._imgByKey('idle',0);
-    if(!img) img=this.world.assets.img('M1-1.png');
+    if(!img) { ctx.restore(); return; }
     const scale=this.h/img.height, w=img.width*scale, h=this.h;
     ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2+ox), Math.round(-h/2), Math.round(w), Math.round(h));
     ctx.restore();
@@ -459,18 +459,10 @@ class Projectile{
   }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.9, h:this.h*0.9}; }
   update(dt){ if(this.dead) return; this.x+=this.vx*dt; this.y+=this.vy*dt; this.life-=dt; if(this.life<=0) this.dead=true; }
-  draw(ctx){
-    if(this.dead) return;
-    const img=this.img; if(!img) return;
-    const scale=this.h/img.height, w=img.width*scale, h=this.h;
-    ctx.save(); ctx.translate(this.x-this.world.camX,this.y-this.world.camY);
-    if(this.dir<0) ctx.scale(-1,1);
-    ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
-    ctx.restore();
-  }
+  draw(ctx){ if(this.dead||!this.img) return; const img=this.img; const scale=this.h/img.height, w=img.width*scale, h=this.h;
+    ctx.save(); ctx.translate(this.x-this.world.camX,this.y-this.world.camY); if(this.dir<0) ctx.scale(-1,1);
+    ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); ctx.restore(); }
 }
-
-/* ===== 専用弾：アイスロボのエネルギー弾 ===== */
 class EnergyBall extends Projectile{
   constructor(world,x,y,dir,img,basePower=20,chargeSec=0){
     super(world,x,y,dir,img,basePower);
@@ -484,25 +476,17 @@ class EnergyBall extends Projectile{
   }
 }
 
-/* ===== New: 小僧の投擲石（山なり） ===== */
+/* ===== 専用（小僧の石） ===== */
 class KozouStone extends Projectile{
   constructor(world,x,y,dir,img){
     super(world,x,y,dir,img,5);
-    this.vx = 120*dir;
-    this.vy = -360;
-    this.w = 24; this.h = 24;
-    this.gravity = 900;
+    this.vx = 120*dir; this.vy = -360; this.w = 24; this.h = 24; this.gravity = 900;
   }
-  update(dt){
-    if(this.dead) return;
-    this.vy += this.gravity*dt;
-    this.x += this.vx*dt; this.y += this.vy*dt;
-    const ground = Math.floor(GROUND_TOP_Y);
-    if(this.y + this.h/2 >= ground+FOOT_PAD){ this.dead=true; }
-  }
+  update(dt){ if(this.dead) return; this.vy += this.gravity*dt; this.x += this.vx*dt; this.y += this.vy*dt;
+    const ground = Math.floor(GROUND_TOP_Y); if(this.y + this.h/2 >= ground+FOOT_PAD){ this.dead=true; } }
 }
 
-/* ===== WaruMOB ===== */
+/* ===== WaruMOB（既存） ===== */
 class WaruMOB extends CharacterBase{
   constructor(world,effects,assets,x=520){
     super(52,60);
@@ -575,6 +559,7 @@ class WaruMOB extends CharacterBase{
     else if(this.state==='atk' && this._seq){ const cur=this._seq[this._idx]; img=this.imgByKey(cur.key||'prep2'); }
     else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.imgByKey(f? 'walk1':'walk2'); }
     else { img=this.imgByKey('idle'); }
+    if(!img){ ctx.restore(); return; }
     const scale=this.h/img.height, w=img.width*scale, h=this.h;
     ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
     ctx.restore();
@@ -583,7 +568,7 @@ class WaruMOB extends CharacterBase{
   }
 }
 
-/* ===== Ice Robo ===== */
+/* ===== Ice Robo（既存） ===== */
 class IceRobo extends CharacterBase{
   constructor(world,effects,assets,x=900){
     super(64,70);
@@ -692,6 +677,7 @@ class IceRobo extends CharacterBase{
     else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.img(f? 'walk1':'walk2'); }
     else if(this.state==='jump'){ const f=Math.floor(this.animT*8)%3; img=this.img(['jump1','jump2','jump3'][f]); }
     else { img=this.img('idle'); }
+    if(!img){ ctx.restore(); return; }
 
     const scale=this.h/img.height, w=img.width*scale, h=this.h;
     ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2+ox), Math.round(-h/2), Math.round(w), Math.round(h));
@@ -700,9 +686,10 @@ class IceRobo extends CharacterBase{
       const orb=this.img('orb');
       const t=this.chargeT; const mul = 0.6 + 0.8*(t/2);
       const hh=32*mul, ww=44*mul; const oxh = this.face*26, oyh=-14;
-      ctx.save(); ctx.translate(oxh, oyh); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.9;
-      ctx.drawImage(orb, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh));
-      ctx.restore();
+      if(orb){ ctx.save(); ctx.translate(oxh, oyh); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.9;
+        ctx.drawImage(orb, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh));
+        ctx.restore();
+      }
     }
     ctx.restore();
     this.drawHPBar(ctx,world);
@@ -710,7 +697,7 @@ class IceRobo extends CharacterBase{
   }
 }
 
-/* ===== New: MOBアイスロボミニ ===== */
+/* ===== IceRoboMini（既存） ===== */
 class IceRoboMini extends CharacterBase{
   constructor(world, effects, assets, x=1200){
     super(40,44);
@@ -786,6 +773,7 @@ class IceRoboMini extends CharacterBase{
     else if(this.state==='atk'){ img=this.hopT<0.16? this.img('idle'): this.img('atk1'); }
     else if(!this.onGround) img=this.img('move');
     else img=this.img('move');
+    if(!img){ ctx.restore(); return; }
     const scale=this.h/img.height, w=img.width*scale, h=this.h;
     ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
     ctx.restore();
@@ -793,7 +781,7 @@ class IceRoboMini extends CharacterBase{
   }
 }
 
-/* ===== New: MOB小僧 ===== */
+/* ===== 小僧（SL8.png 使用） ===== */
 class Kozou extends CharacterBase{
   constructor(world,effects,assets,x=1400){
     super(50,58);
@@ -809,7 +797,7 @@ class Kozou extends CharacterBase{
       idle:'SL.png', w1:'SL2.png', w2:'SL3.png',
       prep:'SL4.png', throw:'SL5.png',
       guard:'SL6.png', counter:'SL7.png',
-      stone:'SL.8.png' // ご指定どおりドット入り
+      stone:'SL8.png'   // ← 修正
     };
     return this.assets.img(map[key]||'SL.png');
   }
@@ -883,6 +871,7 @@ class Kozou extends CharacterBase{
     else if(this.guard){ img=this.img('guard'); }
     else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.img(f?'w1':'w2'); }
     else { img=this.img('idle'); }
+    if(!img){ ctx.restore(); return; }
     const scale=this.h/img.height, w=img.width*scale, h=this.h;
     ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
     ctx.restore();
@@ -903,33 +892,23 @@ class World{
     const r=this.canvas.getBoundingClientRect();
     this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
 
-    const bg=this.assets.img('back1.png');
-    if(bg){ this.bgScale = this.gameH / bg.height; this.bgDW = bg.width*this.bgScale; this.bgDH = bg.height*this.bgScale; }
-    else { this.bgScale=1; this.bgDW=this.gameW; this.bgDH=this.gameH; }
+    this.bgImg = this.assets.has('back1.png') ? this.assets.img('back1.png') : null;
+    if(this.bgImg){ this.bgScale = this.gameH / this.bgImg.height; this.bgDW = this.bgImg.width*this.bgScale; this.bgDH = this.bgImg.height*this.bgScale; }
     this.bgSpeed=1.0;
   }
   resize(){ const r=this.canvas.getBoundingClientRect(); this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH; }
-  updateCam(p){
-    const offs=this.effects.getCamOffset();
-    const target=p.x - this.gameW*0.35 + offs.x;
-    this.camX=Math.max(0, lerp(this.camX,target,0.12));
-    this.camY=offs.y;
-  }
-  updateTimer(dt){
-    this._timerAcc+=dt; if(this._timerAcc>=0.2){ this.time+=this._timerAcc; this._timerAcc=0;
-      const t=Math.floor(this.time); const mm=String(Math.floor(t/60)).padStart(2,'0'); const ss=String(t%60).padStart(2,'0');
-      document.getElementById('time').textContent=`${mm}:${ss}`; }
-  }
+  updateCam(p){ const offs=this.effects.getCamOffset(); const target=p.x - this.gameW*0.35 + offs.x; this.camX=Math.max(0, lerp(this.camX,target,0.12)); this.camY=offs.y; }
+  updateTimer(dt){ this._timerAcc+=dt; if(this._timerAcc>=0.2){ this.time+=this._timerAcc; this._timerAcc=0;
+      const t=Math.floor(this.time); const mm=String(Math.floor(t/60)).padStart(2,'0'); const ss=String(t%60).padStart(2,'0'); document.getElementById('time').textContent=`${mm}:${ss}`; } }
   draw(player, enemies){
     const ctx=this.ctx; ctx.clearRect(0,0,this.gameW,this.gameH);
-    const bg=this.assets.img('back1.png');
-    if(bg){
+    if(this.bgImg){
       const w=Math.round(this.bgDW), h=Math.round(this.bgDH);
       const step=Math.max(1, w - 1);
       const startX = Math.floor((this.camX*this.bgSpeed - this.gameW*0.2)/step)*step;
       const endX   = this.camX*this.bgSpeed + this.gameW*1.2 + w;
       for(let x=startX; x<=endX; x+=step){
-        ctx.drawImage(bg, 0,0,bg.width,bg.height, Math.round(x - this.camX*this.bgSpeed), 0, w, h);
+        ctx.drawImage(this.bgImg, 0,0,this.bgImg.width,this.bgImg.height, Math.round(x - this.camX*this.bgSpeed), 0, w, h);
       }
     } else {
       const g=ctx.createLinearGradient(0,0,0,this.gameH); g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18');
@@ -961,15 +940,14 @@ class Game{
       'h1.png','h2.png','h3.png','h4.png',
       'teki1.png','teki2.png','teki3.png','teki7.png',
       'I1.png','I2.png','I3.png','I4.png','I5.png','I6.png','I7.png','I8.png',
-      // New: Mini & Kozou
       'IC.png','IC2.png','IC3.png','IC4.png',
-      'SL.png','SL2.png','SL3.png','SL4.png','SL5.png','SL6.png','SL7.png','SL.8.png'
+      'SL.png','SL2.png','SL3.png','SL4.png','SL5.png','SL6.png','SL7.png','SL8.png'  // ← 修正済
     ];
     await this.assets.load(imgs);
+
     this.world=new World(this.assets,this.canvas,this.effects);
     this.player=new Player(this.assets,this.world,this.effects);
 
-    // 既存 + 新規2体
     this.enemies=[
       new WaruMOB(this.world,this.effects,this.assets,460),
       new WaruMOB(this.world,this.effects,this.assets,700),
@@ -993,11 +971,10 @@ class Game{
 
       this.player.update(dt,this.input,this.world,this.enemies);
 
-      // 敵更新と被弾処理
+      // 敵更新と当たり
       for(const e of this.enemies){
         e.update(dt,this.player);
 
-        // WaruMOB：弾
         if(e instanceof WaruMOB){
           for(const p of e.projectiles){
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
@@ -1006,7 +983,6 @@ class Game{
             }
           }
         }
-        // IceRobo：ダッシュ接触 & エネルギー弾
         if(e instanceof IceRobo){
           if(e.state==='dash'){
             const hb = {x:e.x + e.face*20, y:e.y, w:e.w*0.9, h:e.h*0.9};
@@ -1022,7 +998,6 @@ class Game{
             }
           }
         }
-        // Kozou：投擲石
         if(e instanceof Kozou){
           for(const p of e.projectiles){
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
@@ -1036,7 +1011,7 @@ class Game{
       // 死亡掃除
       this.enemies=this.enemies.filter(e=>!(e.dead && e.fade<=0));
 
-      // すり抜け防止（X分離）
+      // すり抜け防止
       for(const e of this.enemies){
         if(e.dead || this.player.dead) continue;
         const a=this.player.aabb(), b=e.aabb();
@@ -1064,11 +1039,11 @@ class Game{
   }
 }
 
-/* ===== 被弾時：攻撃/スキル＆バッファ完全解除（Rev19仕様維持） ===== */
+/* ===== 被弾時のバッファ解除 ===== */
 Player.prototype.hurt = function(amount,dir,opts,effects){
   const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
   if(hit){
-    updateHPUI(this.hp,this.maxhp);
+    const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=this.hp; fill.style.width=Math.max(0,Math.min(100,(this.hp/this.maxhp)*100))+'%';
     this._actionSeq = null; this._actionIndex = 0; this._actionTime = 0;
     this.bufferA1 = false; this.queueA2 = null; this.queueSK = null;
     this.comboStep = 0; this.comboGraceT = 0; this.a2LockoutT = 0;
