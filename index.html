@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Rev18b (IceRobo + WaruMOB x2)</title>
+<title>MOB Side Action – Rev19 (IceRobo + WaruMOB x2)</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
   :root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
@@ -61,11 +61,13 @@
   </div>
 
 <script>
-/* ===================== Rev18b (Hotfix) ======================
- - FIX: Effects.shake() の typo 削除
- - FIX: IceRobo.aabb() のオブジェクト初期化の代入ミス修正
- - その他仕様（IceRobo/WaruMOB/プレイヤー/弾調整）は Rev18 のまま
-============================================================== */
+/* ===================== Rev19 ======================
+ Fix:
+  - IceRobo 溜め：地上/空中OK、溜め中も物理更新・近距離で早出/2sで自動放出
+  - Player 被弾：攻撃/スキル/バッファ完全解除、■押下不能＆連撃不自然を根治
+  - 予防：攻撃中でないのにシーケンス残留時は破棄
+  - 既存の弾・スキルCT・すり抜け防止・エフェクト等は維持
+================================================== */
 (function(){
 'use strict';
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
@@ -81,7 +83,7 @@ class Effects{
     else{ this.shake(0.08,4); this.hitstop=Math.max(this.hitstop,0.05); }
     if(navigator.vibrate) navigator.vibrate(strong?18:10);
   }
-  shake(dur,amp){ this.shakeT=Math.max(this.shakeT,dur); this.shakeAmp=Math.max(this.shakeAmp,amp); } /* ← 修正 */
+  shake(dur,amp){ this.shakeT=Math.max(this.shakeT,dur); this.shakeAmp=Math.max(this.shakeAmp,amp); }
   getCamOffset(){ if(this.shakeT>0){ const a=this.shakeAmp*this.shakeT; return {x:(Math.random()*2-1)*a,y:(Math.random()*2-1)*a*0.6}; } return {x:0,y:0}; }
   update(dt){ if(this.hitstop>0)this.hitstop=Math.max(0,this.hitstop-dt); if(this.shakeT>0)this.shakeT=Math.max(0,this.shakeT-dt); for(const s of this.sparks){ s.t+=dt; } this.sparks=this.sparks.filter(s=>s.t<s.life); }
   draw(ctx,world){
@@ -303,6 +305,9 @@ class Player extends CharacterBase{
     input.beginFrame();
     this._posOverhead();
 
+    // ★攻撃中でないのに残留シーケンスがあれば破棄（保険）
+    if(this.state!=='atk' && this.state!=='skill' && this._actionSeq){ this._actionSeq=null; }
+
     if(this.a2LockoutT>0) this.a2LockoutT=Math.max(0,this.a2LockoutT-dt);
     const skBtn=document.getElementById('btnSK');
     if(this.skillCDT>0){ this.skillCDT=Math.max(0,this.skillCDT-dt); skBtn.setAttribute('disabled',''); }
@@ -471,7 +476,7 @@ class EnergyBall extends Projectile{
   constructor(world,x,y,dir,img,basePower=20,chargeSec=0){
     super(world,x,y,dir,img,basePower);
     this.chargeSec = clamp(chargeSec,0,2.0);
-    this.power = basePower + Math.floor(this.chargeSec / 0.1);
+    this.power = basePower + Math.floor(this.chargeSec / 0.1); // 0.1s毎+1
     const sizeMul = 1 + 0.4*(this.chargeSec/2); // 1.0〜1.4倍
     this.w = Math.round(44*sizeMul);
     this.h = Math.round(32*sizeMul);
@@ -561,7 +566,7 @@ class WaruMOB extends CharacterBase{
   }
 }
 
-/* ===== Ice Robo ===== */
+/* ===== IceRobo ===== */
 class IceRobo extends CharacterBase{
   constructor(world,effects,assets,x=900){
     super(64,70);
@@ -569,12 +574,15 @@ class IceRobo extends CharacterBase{
     this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
     this.maxhp=1200; this.hp=1200;
     this.superArmor=false;
-    this.cool=0; this.recoverT=0;
-    this.modeJump=false; this.modeSwapT=0;
+    this.cool=0;              // 行動間隔
+    this.recoverT=0;          // 発射後硬直
+    this.modeJump=false;      // 移動モード切替
+    this.modeSwapT=0;
     this._seq=null; this._idx=0; this._t=0;
-    this.chargeT=0; this.energyOrbs=[];
+    this.chargeT=0;           // エネルギー溜め秒
+    this.energyOrbs=[];       // 発射済み弾
   }
-  aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.9}; } /* ← 修正 */
+  aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.9}; }
   hurt(amount, dir, opts={}, effects){
     if(this.invulnT>0||this.dead) return false;
     this.hp=Math.max(0,this.hp-amount);
@@ -587,6 +595,7 @@ class IceRobo extends CharacterBase{
     this.x += dir * 2; this.face = -dir;
     if(!this.superArmor){ this.state='hurt'; this.hurtT=0; this.invulnT=0.25; }
     if(effects) effects.addSpark(this.x, this.y-10, amount>=20);
+
     if(this.hp<=0){
       this.dead=true; this.vx = dir * 540; this.vy = -560;
       this.spinSpeed = 18; this.deathT = 0; this.fade = 1;
@@ -594,7 +603,11 @@ class IceRobo extends CharacterBase{
     return true;
   }
   img(key){
-    const map={ idle:'I1.png', walk1:'I1.png', walk2:'I2.png', jump1:'I1.png', jump2:'I2.png', jump3:'I3.png', charge:'I4.png', release:'I5.png', dashPrep:'I6.png', dashAtk:'I7.png', orb:'I8.png' };
+    const map={
+      idle:'I1.png', walk1:'I1.png', walk2:'I2.png',
+      jump1:'I1.png', jump2:'I2.png', jump3:'I3.png',
+      charge:'I4.png', release:'I5.png', dashPrep:'I6.png', dashAtk:'I7.png', orb:'I8.png'
+    };
     return this.assets.img(map[key]||'I1.png');
   }
   addEnergyBall(chargeSec){
@@ -602,53 +615,84 @@ class IceRobo extends CharacterBase{
     const ox=this.face*30, oy=-10;
     this.energyOrbs.push(new EnergyBall(this.world,this.x+ox,this.y+oy,this.face,img,20,chargeSec));
   }
-  update(dt,player){
+
+  // ★修正版 AI
+  update(dt, player){
     if(this.dead){ this.updatePhysics(dt); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
     if(this.recoverT>0){ this.recoverT=Math.max(0,this.recoverT-dt); }
 
+    // 弾更新
     for(const p of this.energyOrbs) p.update(dt);
     this.energyOrbs=this.energyOrbs.filter(p=>!p.dead);
 
+    // 溜め中：物理も進める（地上/空中どちらで始めても自然）
     if(this.state==='charge'){
-      this.superArmor=true;
-      this._t+=dt; this.chargeT=Math.min(2.0, this.chargeT + dt);
-      this.animT+=dt;
+      this.superArmor = true;
+      this.vx = 0;
+      this.updatePhysics(dt);
+      this._t += dt;
+      this.chargeT = Math.min(2.0, this.chargeT + dt);
+      this.animT += dt;
+
+      const adx = Math.abs(player.x - this.x);
+      if(adx < 180 && this.chargeT > 0.25){ this.releaseEnergy(); }
+      else if(this.chargeT >= 2.0){ this.releaseEnergy(); }
       return;
     }
+
+    // ダッシュ中
     if(this.state==='dash'){
       this.updatePhysics(dt);
-      this._t+=dt;
+      this._t += dt;
       if(this._t>=0.35){ this.state='idle'; this.superArmor=false; this.vx=0; this.cool=2.2; }
-      this.animT+=dt; return;
+      this.animT += dt;
+      return;
     }
+
+    // 予備/硬直/被弾
     if(this.state==='atk' || this.state==='recover'){
       this.updatePhysics(dt);
-      this.animT+=dt;
+      this.animT += dt;
       if(this.state==='recover' && this.recoverT<=0){ this.state='idle'; }
       return;
     }
     if(this.state==='hurt'){
       this.updatePhysics(dt);
       if(this.onGround) this.state='idle';
-      this.animT+=dt; return;
+      this.animT += dt;
+      return;
     }
 
-    const dx=player.x - this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
+    // ---- 通常AI ----
+    const dx = player.x - this.x;
+    const adx = Math.abs(dx);
+    this.face = dx>=0? 1 : -1;
 
-    this.modeSwapT-=dt;
-    if(this.modeSwapT<=0){ this.modeSwapT = 2.5 + Math.random()*2.0; this.modeJump = !this.modeJump; }
+    // モード切替は地上でのみトグル（ブレ低減）
+    this.modeSwapT -= dt;
+    if(this.modeSwapT<=0 && this.onGround){
+      this.modeSwapT = 2.5 + Math.random()*2.0;
+      this.modeJump = !this.modeJump;
+    }
 
-    if(this.cool<=0 && this.recoverT<=0 && adx>=180 && adx<=520){
-      this.state='charge'; this._t=0; this.chargeT=0; this.vx=0; this.superArmor=true; this.cool=3.2; return;
+    // 攻撃選択
+    const desireCharge = (adx>=160 && adx<=520);
+    if(this.cool<=0 && this.recoverT<=0 && desireCharge){
+      if(this.onGround || Math.random()<0.25){
+        this.state='charge'; this._t=0; this.chargeT=0; this.vx=0; this.superArmor=true; this.cool=3.2;
+        return;
+      }
     }
     if(this.cool<=0 && this.recoverT<=0 && adx<260){
       this.state='atk'; this.superArmor=true; this.vx=0; this._seq=[
         {key:'dashPrep', dur:0.28, vibrate:true},
         {key:'dashAtk',  dur:0.35}
-      ]; this._idx=0; this._t=0; this.animT=0; this.cool=2.6; return;
+      ]; this._idx=0; this._t=0; this.animT=0; this.cool=2.6;
+      return;
     }
 
+    // 移動：歩き遅め／ジャンプ移動はプレイヤー並
     const walk=80, run=MOVE;
     if(adx>140){
       const sp = this.modeJump? run : walk;
@@ -660,10 +704,16 @@ class IceRobo extends CharacterBase{
 
     this.updatePhysics(dt);
     this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
-    this.animT+=dt;
+    this.animT += dt;
   }
-  releaseEnergy(){ this.addEnergyBall(this.chargeT); this.state='recover'; this.recoverT=0.8; this.superArmor=false; }
+
+  releaseEnergy(){
+    this.addEnergyBall(this.chargeT);
+    this.state='recover'; this.recoverT=0.8; this.superArmor=false;
+  }
+
   draw(ctx,world){
+    // 予備動作→ダッシュの可視進行
     if(this.state==='atk' && this._seq){
       this._t+=1/60;
       const cur=this._seq[this._idx];
@@ -677,7 +727,6 @@ class IceRobo extends CharacterBase{
         }
       }
     }
-    if(this.state==='charge' && this.chargeT>=2.0){ this.releaseEnergy(); }
 
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
     if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
@@ -695,23 +744,26 @@ class IceRobo extends CharacterBase{
     const scale=this.h/img.height, w=img.width*scale, h=this.h;
     ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2+ox), Math.round(-h/2), Math.round(w), Math.round(h));
 
+    // 溜め中の手元エフェクト（I8をスケール）
     if(this.state==='charge'){
       const orb=this.img('orb');
-      const t=this.chargeT; const mul = 0.6 + 0.8*(t/2);
+      const t=this.chargeT; const mul = 0.6 + 0.8*(t/2); // 0.6〜1.4
       const hh=32*mul, ww=44*mul;
       const oxh = this.face*26, oyh=-14;
       ctx.save();
       ctx.translate(oxh, oyh);
       if(this.face<0) ctx.scale(-1,1);
       ctx.globalAlpha=0.9;
-      const osx=Math.round(-ww/2), osy=Math.round(-hh/2);
-      ctx.drawImage(orb, osx, osy, Math.round(ww), Math.round(hh));
+      ctx.drawImage(orb, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh));
       ctx.restore();
     }
 
     ctx.restore();
+
+    // HPバー（小さめ）
     this.drawHPBar(ctx,world);
 
+    // 発射済みエネルギー弾
     for(const p of this.energyOrbs) p.draw(ctx);
   }
 }
@@ -791,6 +843,7 @@ class Game{
     this.world=new World(this.assets,this.canvas,this.effects);
     this.player=new Player(this.assets,this.world,this.effects);
 
+    // 敵：WaruMOB×2 + IceRobo×1
     this.enemies=[
       new WaruMOB(this.world,this.effects,this.assets,460),
       new WaruMOB(this.world,this.effects,this.assets,700),
@@ -812,9 +865,11 @@ class Game{
 
       this.player.update(dt,this.input,this.world,this.enemies);
 
+      // 敵更新と被弾処理
       for(const e of this.enemies){
         e.update(dt,this.player);
 
+        // WaruMOB射撃
         if(e instanceof WaruMOB){
           for(const p of e.projectiles){
             if(!p.dead && this.player.invulnT<=0){
@@ -827,6 +882,7 @@ class Game{
           }
         }
 
+        // IceRobo：ダッシュ接触 & エネルギー弾
         if(e instanceof IceRobo){
           if(e.state==='dash'){
             const hb = {x:e.x + e.face*20, y:e.y, w:e.w*0.9, h:e.h*0.9};
@@ -845,15 +901,13 @@ class Game{
               }
             }
           }
-          if(e.state==='charge'){
-            const adx=Math.abs(this.player.x - e.x);
-            if(adx<180 && e.chargeT>0.25){ e.releaseEnergy(); }
-          }
         }
       }
 
+      // 死亡掃除
       this.enemies=this.enemies.filter(e=>!(e.dead && e.fade<=0));
 
+      // すり抜け防止（X分離）
       for(const e of this.enemies){
         if(e.dead || this.player.dead) continue;
         const a=this.player.aabb(), b=e.aabb();
@@ -881,9 +935,19 @@ class Game{
   }
 }
 
+/* ===== 被弾時の完全解除版 ===== */
 Player.prototype.hurt = function(amount,dir,opts,effects){
   const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
-  if(hit) updateHPUI(this.hp,this.maxhp);
+  if(hit){
+    updateHPUI(this.hp,this.maxhp);
+
+    // 攻撃・スキルの完全解除と入力リセット
+    this._actionSeq = null; this._actionIndex = 0; this._actionTime = 0;
+    this.bufferA1 = false; this.queueA2 = null; this.queueSK = null;
+    this.comboStep = 0; this.comboGraceT = 0; this.a2LockoutT = 0;
+    this.overhead?.root && (this.overhead.root.style.display='none');
+    this.actionAir = false; this.actionAirVx = 0;
+  }
   return hit;
 };
 
