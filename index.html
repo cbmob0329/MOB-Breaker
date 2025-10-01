@@ -3,983 +3,426 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-<title>MOB Side Action – Prototype</title>
+<title>MOB Side Action – Prototype v2</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
   :root{
-    --ui-bg:#0e111acc;
-    --ui-fg:#e8ebff;
-    --accent:#47a6ff;
-    --danger:#ff4d6d;
+    --ui-bg:#0e111acc; --ui-fg:#e8ebff; --accent:#47a6ff;
     --safe-top: env(safe-area-inset-top,0px);
     --safe-right: env(safe-area-inset-right,0px);
     --safe-bottom: env(safe-area-inset-bottom,0px);
     --safe-left: env(safe-area-inset-left,0px);
-    --phone-w: 420px;   /* 表示用 “筐体” 幅（縦画面） */
-    --phone-h: 780px;   /* 表示用 “筐体” 高さ */
-    --game-h: 62%;      /* 上部ゲーム領域の高さ（下に操作UI） */
+    --phone-w:420px; --phone-h:780px; --game-h:62%;
   }
   html,body{height:100%;margin:0;background:#000;color:#fff;overscroll-behavior:none}
-  html,body{-webkit-user-select:none;-webkit-touch-callout:none;user-select:none;font-family:system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif}
-
+  html,body{-webkit-user-select:none;-webkit-touch-callout:none;user-select:none;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Hiragino Kaku Gothic ProN","Yu Gothic","Noto Sans JP",sans-serif}
   #root{position:fixed;inset:0;display:grid;place-items:center;padding:12px}
-
-  /* スマホ筐体っぽいフレーム（中央寄せ） */
   #phone{
-    width: min(100vw, var(--phone-w));
-    height: min(100vh, var(--phone-h));
-    aspect-ratio: var(--phone-w) / var(--phone-h);
-    position:relative; overflow:hidden;
-    background:#070b12;
-    border:1px solid #0e1522;border-radius:16px;
-    box-shadow:0 12px 40px rgba(0,0,0,.5);
-    padding:0;
+    width:min(100vw,var(--phone-w));height:min(100vh,var(--phone-h));
+    aspect-ratio: var(--phone-w)/var(--phone-h);
+    position:relative;overflow:hidden;background:#070b12;border:1px solid #0e1522;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.5)
   }
-
-  /* 上：ゲーム、下：操作UI を明確にグリッド分離 */
-  #layout{
-    position:absolute; inset:0;
-    display:grid;
-    grid-template-rows: var(--game-h) 1fr;
-    grid-template-columns: 1fr;
-  }
-
-  /* ゲーム面 */
-  #game-wrap{position:relative; overflow:hidden}
-  canvas#game{position:absolute; inset:0; width:100%; height:100%; image-rendering: pixelated;}
-
-  /* HUD（残機・タイマー・HPなど） */
-  #hud{
-    position:absolute; left:0; right:0; top:0;
-    padding: calc(6px + var(--safe-top)) 8px 6px 8px;
-    display:flex; gap:8px; align-items:center; justify-content:space-between;
-    pointer-events:none; z-index:5;
-  }
-  .badge{
-    background:var(--ui-bg); color:var(--ui-fg);
-    padding:6px 10px; border-radius:10px; font-weight:700; font-variant-numeric:tabular-nums;
-    box-shadow:0 0 0 1px rgba(255,255,255,.06) inset, 0 4px 18px rgba(0,0,0,.35);
-  }
-  .hpbar{position:relative; width:54%; height:14px; border-radius:999px; background:#20263a; box-shadow:inset 0 2px 6px rgba(0,0,0,.6)}
-  .hpbar>i{position:absolute; left:0; top:0; bottom:0; width:60%; background:linear-gradient(90deg,#36f09a,#47a6ff); border-radius:inherit; box-shadow:0 0 12px rgba(71,166,255,.35) inset}
-  .hpbar>span{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:11px; color:#fff; mix-blend-mode:screen; text-shadow:0 1px 2px rgba(0,0,0,.6)}
-
-  /* 下：操作UI */
-  #controls{
-    position:relative;
-    padding: 10px calc(8px + var(--safe-right)) calc(10px + var(--safe-bottom)) calc(8px + var(--safe-left));
-    background: linear-gradient(180deg, #0a0e18 0%, #0a0e18aa 25%, #0a0e1860 100%);
-    border-top:1px solid #0e1522;
-    display:grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px 12px;
-    align-items:center;
-  }
-  /* 左：スティック、右：ボタン群。ゲームと重ならないよう下段固定 */
-  .left, .right{display:flex; align-items:center; justify-content:center; height:100%}
-  .left{justify-content:flex-start}
-  .right{justify-content:flex-end; gap:14px; flex-wrap:wrap}
-
-  /* バーチャルスティック */
-  .stick{
-    width:140px; height:140px; border-radius:999px; position:relative;
-    background:radial-gradient(transparent 50%, #101728 51%);
-    border:1px solid #16213a; box-shadow:inset 0 8px 24px rgba(0,0,0,.6);
-    touch-action:none;
-  }
-  .stick .knob{
-    width:64px; height:64px; border-radius:999px; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
-    background:#172038; border:1px solid #243154; box-shadow:0 6px 18px rgba(0,0,0,.6), inset 0 2px 10px rgba(255,255,255,.06);
-    pointer-events:none;
-  }
-
-  /* ボタン群（反応しない誤タッチのないようhit area広め＆押下視覚） */
-  .btn{
-    width:68px; height:68px; border-radius:16px; display:grid; place-items:center;
-    background:var(--ui-bg); color:var(--ui-fg); font-weight:900; font-size:24px;
-    border:1px solid #1c2542; box-shadow:0 8px 22px rgba(0,0,0,.45), inset 0 2px 8px rgba(255,255,255,.05);
-    touch-action:manipulation; -webkit-tap-highlight-color: transparent;
-  }
-  .btn:active{transform:translateY(1px); filter:brightness(1.05)}
-  .btn[data-kind="atk1"]{outline:2px solid rgba(255,255,255,.06)}
-  .btn[data-kind="atk2"]{outline:2px solid rgba(255,255,255,.06)}
-  .btn[data-kind="skill"]{outline:2px solid rgba(255,255,255,.06)}
-  .btn[data-kind="jump"]{outline:2px solid rgba(255,255,255,.06)}
-  .tiny{font-size:12px; opacity:.85; margin-top:4px}
-
-  /* 頭上ゲージ（スキル/チャージ） */
-  .float-ui{
-    position:absolute; transform:translate(-50%,-100%); pointer-events:none; z-index:6;
-    background:#0c1220cc; border:1px solid #2a385e; color:#b9d3ff; padding:3px 6px; border-radius:6px; font-size:10px;
-  }
-  .charge{
-    width:58px; height:6px; background:#1a2240; border-radius:999px; position:relative; overflow:hidden; margin-top:2px;
-  }
-  .charge>i{position:absolute; left:0; top:0; bottom:0; width:0%; background:#47a6ff; box-shadow:0 0 10px rgba(71,166,255,.6)}
-  .skillspin{font-weight:700; letter-spacing:.4px}
-
-  /* “被弾赤点滅” はキャンバス描画時に乗算・色化で実現（四角形点滅を回避） */
-
-  /* 画面外に飛んでいく死亡演出もキャンバスで */
+  #layout{position:absolute;inset:0;display:grid;grid-template-rows:var(--game-h) 1fr}
+  #game-wrap{position:relative;overflow:hidden}
+  canvas#game{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated}
+  #hud{position:absolute;left:0;right:0;top:0;padding:calc(6px + var(--safe-top)) 8px 6px;display:flex;gap:8px;align-items:center;justify-content:space-between;pointer-events:none;z-index:5}
+  .badge{background:#0e111acc;color:#e8ebff;padding:6px 10px;border-radius:10px;font-weight:700;font-variant-numeric:tabular-nums;box-shadow:0 0 0 1px rgba(255,255,255,.06) inset,0 4px 18px rgba(0,0,0,.35)}
+  .hpbar{position:relative;width:54%;height:14px;border-radius:999px;background:#20263a;box-shadow:inset 0 2px 6px rgba(0,0,0,.6)}
+  .hpbar>i{position:absolute;left:0;top:0;bottom:0;width:60%;background:linear-gradient(90deg,#36f09a,#47a6ff);border-radius:inherit;box-shadow:0 0 12px rgba(71,166,255,.35) inset}
+  .hpbar>span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;mix-blend-mode:screen;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+  #controls{position:relative;padding:10px calc(8px + var(--safe-right)) calc(10px + var(--safe-bottom)) calc(8px + var(--safe-left));background:linear-gradient(180deg,#0a0e18 0%,#0a0e18aa 25%,#0a0e1860 100%);border-top:1px solid #0e1522;display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;align-items:center}
+  .left,.right{display:flex;align-items:center;justify-content:center;height:100%}
+  .left{justify-content:flex-start}.right{justify-content:flex-end;gap:14px;flex-wrap:wrap}
+  .stick{width:140px;height:140px;border-radius:999px;position:relative;background:radial-gradient(transparent 50%, #101728 51%);border:1px solid #16213a;box-shadow:inset 0 8px 24px rgba(0,0,0,.6);touch-action:none}
+  .stick .knob{width:64px;height:64px;border-radius:999px;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#172038;border:1px solid #243154;box-shadow:0 6px 18px rgba(0,0,0,.6), inset 0 2px 10px rgba(255,255,255,.06);pointer-events:none}
+  .btn{width:68px;height:68px;border-radius:16px;display:grid;place-items:center;background:#0e111acc;color:#e8ebff;font-weight:900;font-size:24px;border:1px solid #1c2542;box-shadow:0 8px 22px rgba(0,0,0,.45), inset 0 2px 8px rgba(255,255,255,.05);touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+  .btn:active{transform:translateY(1px);filter:brightness(1.05)}
+  .tiny{font-size:12px;opacity:.85;margin-top:4px}
+  .float-ui{position:absolute;transform:translate(-50%,-100%);pointer-events:none;z-index:6;background:#0c1220cc;border:1px solid #2a385e;color:#b9d3ff;padding:3px 6px;border-radius:6px;font-size:10px}
+  .charge{width:58px;height:6px;background:#1a2240;border-radius:999px;position:relative;overflow:hidden;margin-top:2px}
+  .charge>i{position:absolute;left:0;top:0;bottom:0;width:0%;background:#47a6ff;box-shadow:0 0 10px rgba(71,166,255,.6)}
+  /* 画面内デバッグ */
+  #debug{position:absolute;left:6px;bottom:calc(6px + var(--safe-bottom));z-index:8;font-size:11px;line-height:1.4;background:#0a0e18d0;padding:6px 8px;border:1px solid #1f2b4a;border-radius:8px;max-width:90%}
+  #debug code{font-family:ui-monospace,Consolas,monospace}
 </style>
 </head>
 <body>
+<!-- 必要ならこの行より上に <script>window.ASSETS="../assets/";</script> を置く -->
 <div id="root">
   <div id="phone">
     <div id="layout">
-
-      <!-- 上：ゲーム -->
       <div id="game-wrap">
         <canvas id="game"></canvas>
         <div id="hud">
           <div class="badge" id="lives">× 3</div>
-          <div class="hpbar" title="HP">
-            <i id="hpfill"></i>
-            <span id="hptext">1000 / 1000</span>
-          </div>
+          <div class="hpbar"><i id="hpfill"></i><span id="hptext">1000 / 1000</span></div>
           <div class="badge" id="timer">00:00</div>
         </div>
-        <!-- 頭上UI（動的） -->
         <div id="float-ui" class="float-ui" style="display:none">
           <div class="skillspin" id="float-label">CHARGE</div>
           <div class="charge"><i id="charge-bar"></i></div>
         </div>
+        <div id="debug" style="display:none"></div>
       </div>
-
-      <!-- 下：操作UI -->
       <div id="controls">
         <div class="left">
-          <div id="stick" class="stick" aria-label="Move">
-            <div id="knob" class="knob"></div>
-          </div>
+          <div id="stick" class="stick" aria-label="Move"><div id="knob" class="knob"></div></div>
         </div>
         <div class="right">
-          <div class="btn" data-kind="atk1" id="btn-atk1" aria-label="■ 攻撃1">■</div>
-          <div class="btn" data-kind="atk2" id="btn-atk2" aria-label="▲ 攻撃2">▲</div>
-          <div class="btn" data-kind="skill" id="btn-skill" aria-label="● スキル">●</div>
-          <div class="btn" data-kind="jump" id="btn-jump" aria-label="× ジャンプ">×</div>
+          <div class="btn" id="btn-atk1" aria-label="■ 攻撃1">■</div>
+          <div class="btn" id="btn-atk2" aria-label="▲ 攻撃2">▲</div>
+          <div class="btn" id="btn-skill" aria-label="● スキル">●</div>
+          <div class="btn" id="btn-jump" aria-label="× ジャンプ">×</div>
           <div class="tiny">長押し：溜め（▲/●）</div>
         </div>
       </div>
-
     </div>
   </div>
 </div>
 
 <script>
-/* =========================================================
-   MOB Side Action – Prototype
-   単一HTML・スマホ縦画面・安全な下段UI・右向き素材のみ対応（左はミラー）
-   ・60FPS目標：requestAnimationFrame
-   ・GC少なめ：再利用バッファとプール
-   ・クラス分割（同ファイル内）＆コメント充実
-   ・相対パス想定（GitHub Pages OK）
-   ・“四角点滅バグ”回避のため、Sprite自体を赤色化（乗算）＋アルファ点滅
-   ========================================================= */
-
 (() => {
-  /*** 画像配置パスのベース（必要に応じて変更） ***/
-  const ASSETS = "./assets/";
-
-  /*** 画像ファイル名（依頼仕様に一致） ***/
+  /*** ▼▼ ここが重要：ASSETS ベースパスの上書きに対応 ▼▼ ***/
+  const ASSETS = (window.ASSETS || "./assets/"); // 例: window.ASSETS="../img/"
+  /*** 依頼通りのファイル名 ***/
   const IMG = {
-    // Player
-    stand: "M1-1.png",
-    walk: ["M1-2.png","M1-3.png","M1-4.png"], // 3枚、サイズ差あっても自動統一
-    // Attacks
-    kPose: "K1-3.png",
-    k1: "K1-1.png",  // 攻撃①本体
-    k2: "K1-2.png",  // 連撃①
-    k3: "K1-4.png",  // 連撃②
-    k5: "K1-5.png",  // 攻撃②
-    // Skill spin
-    spin: ["h1.png","h2.png","h3.png","h4.png"],
-    // Tiles
-    tile: "S1.png",
-    // Enemy
-    enStand: "EN1-1.png",
-    enWalk: ["EN1-2.png","EN1-3.png"],
-    enLite: ["EN1-4.png","EN1-5.png"], // 小攻撃
-    enMid : ["EN1-4.png","EN1-6.png"], // 中攻撃（打ち上げ）
+    stand:"M1-1.png", walk:["M1-2.png","M1-3.png","M1-4.png"],
+    kPose:"K1-3.png", k1:"K1-1.png", k2:"K1-2.png", k3:"K1-4.png", k5:"K1-5.png",
+    spin:["h1.png","h2.png","h3.png","h4.png"],
+    tile:"S1.png",
+    enStand:"EN1-1.png", enWalk:["EN1-2.png","EN1-3.png"], enLite:["EN1-4.png","EN1-5.png"], enMid:["EN1-4.png","EN1-6.png"],
   };
 
-  /*** キャンバス ***/
   const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d', { alpha: true, desynchronized: true });
+  const ctx = canvas.getContext('2d', { alpha:true, desynchronized:true });
   ctx.imageSmoothingEnabled = false;
 
-  /*** レイアウトとUI ***/
   const hudHPFill = document.getElementById('hpfill');
   const hudHPText = document.getElementById('hptext');
-  const hudLives = document.getElementById('lives');
-  const hudTimer = document.getElementById('timer');
-
-  const floatUI = document.getElementById('float-ui');
+  const hudTimer  = document.getElementById('timer');
+  const floatUI   = document.getElementById('float-ui');
   const chargeBar = document.getElementById('charge-bar');
-  const floatLabel = document.getElementById('float-label');
+  const floatLabel= document.getElementById('float-label');
+  const dbgEl     = document.getElementById('debug');
 
-  const stickEl = document.getElementById('stick');
-  const knobEl  = document.getElementById('knob');
   const btnAtk1 = document.getElementById('btn-atk1');
   const btnAtk2 = document.getElementById('btn-atk2');
   const btnSkill= document.getElementById('btn-skill');
   const btnJump = document.getElementById('btn-jump');
+  const stickEl = document.getElementById('stick');
+  const knobEl  = document.getElementById('knob');
 
-  /*** スマホ縦向け解像度スケール（見た目はCSSに委ね、内部は論理解像度で固定） ***/
-  const GAME_W = 384;   // 論理横幅（マリオ系カメラ感）
-  const GAME_H = 384 * 0.62 / (1 - 0); // 実際はCanvasを親の高さに合わせるため、後でfit
-  // 実描画はリサイズ関数で毎フレームに近い頻度で調整
-
-  /*** 汎用 ***/
-  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  const lerp  = (a, b, t) => a + (b - a) * t;
-  const sign  = (n) => (n < 0 ? -1 : 1);
-
-  /*** 入力管理（キーボード＋タッチ） ***/
-  const Input = {
-    left:false, right:false, up:false,
-    atk1:false, atk2:false, skill:false,
-    // 長押し（▲/●）
-    atk2Hold:0, skillHold:0,
-    // 内部
-    _keys:{
-      ArrowLeft:'left', ArrowRight:'right', ArrowUp:'up', ' ':'up',
-      a:'atk1', A:'atk1', s:'atk2', S:'atk2', d:'skill', D:'skill'
-    }
-  };
-
-  // キー
-  addEventListener('keydown', (e) => {
-    const k = Input._keys[e.key]; if(!k) return;
-    if(k==='atk2') { /* hold開始 */ }
-    if(k==='skill'){ /* hold開始 */ }
-    Input[k] = true;
-    e.preventDefault();
-  }, {passive:false});
-  addEventListener('keyup', (e) => {
-    const k = Input._keys[e.key]; if(!k) return;
-    Input[k] = false;
-    e.preventDefault();
-  }, {passive:false});
-
-  // バーチャルスティック
-  let stickCenter = {x:0,y:0};
-  let stickVec = {x:0,y:0};
-  const maxStick = 48;
-
-  const touchId = { stick:null, atk1:null, atk2:null, skill:null, jump:null };
-
-  function bindPressHold(el, keyName, holdName){
-    const start = (e) => {
-      const t = (e.changedTouches? e.changedTouches[0]: e);
-      touchId[keyName] = t.identifier ?? 'mouse';
-      Input[keyName] = true;
-      e.preventDefault();
-    };
-    const move = (e)=>{ /* noop */ };
-    const end  = (e) => {
-      const changed = (e.changedTouches? [...e.changedTouches]: [e]).some(t => (t.identifier??'mouse')===touchId[keyName]);
-      if(changed){
-        Input[keyName] = false;
-        touchId[keyName] = null;
-      }
-      e.preventDefault();
-    };
-    el.addEventListener('touchstart', start, {passive:false});
-    el.addEventListener('touchend',   end,   {passive:false});
-    el.addEventListener('touchcancel',end,   {passive:false});
-    el.addEventListener('mousedown',  start, {passive:false});
-    addEventListener('mouseup',       end,   {passive:false});
+  /*** デバッグ：ロード状態を可視化 ***/
+  const loadState = { ok:[], ng:[], pending:[] };
+  function pushDbg(msg){ logs.push(msg); showDbg(); }
+  function showDbg(){
+    const lines = [
+      `<b>ASSETS:</b> <code>${ASSETS}</code>`,
+      `<b>Loaded:</b> ${loadState.ok.length}`,
+      `<b>Failed:</b> <span style="color:#ff8080">${loadState.ng.length}</span>`,
+    ];
+    if(loadState.ng.length){ lines.push(`<b>Missing:</b> <code>${loadState.ng.join(", ")}</code>`); }
+    dbgEl.style.display='block';
+    dbgEl.innerHTML = lines.join("<br/>");
   }
+  const logs=[];
 
-  // 反応しないバグ対策：すべてのボタンに確実にバインド
-  bindPressHold(btnAtk1,'atk1');
-  bindPressHold(btnAtk2,'atk2');
-  bindPressHold(btnSkill,'skill');
-  bindPressHold(btnJump,'up');
-
-  // スティック操作
-  const stickStart = (e)=>{
-    const t = e.changedTouches? e.changedTouches[0]: e;
-    touchId.stick = t.identifier ?? 'mouse';
-    const r = stickEl.getBoundingClientRect();
-    stickCenter.x = r.left + r.width/2;
-    stickCenter.y = r.top  + r.height/2;
-    updateStick(t.clientX, t.clientY);
-    e.preventDefault();
-  };
-  const stickMove = (e)=>{
-    const ts = e.changedTouches? [...e.changedTouches]: [e];
-    const got = ts.find(t => (t.identifier??'mouse')===touchId.stick);
-    if(!got) return;
-    updateStick(got.clientX, got.clientY);
-    e.preventDefault();
-  };
-  const stickEnd = (e)=>{
-    const ts = e.changedTouches? [...e.changedTouches]: [e];
-    const changed = ts.find(t => (t.identifier??'mouse')===touchId.stick);
-    if(!changed) return;
-    stickVec.x = stickVec.y = 0;
-    knobEl.style.left = '50%'; knobEl.style.top = '50%';
-    Input.left=false; Input.right=false;
-    touchId.stick = null;
-    e.preventDefault();
-  };
-  function updateStick(cx, cy){
-    let dx = cx - stickCenter.x;
-    let dy = cy - stickCenter.y; // 今回は左右のみ使う
-    const len = Math.hypot(dx,dy);
-    if(len>maxStick){ dx*=maxStick/len; dy*=maxStick/len; }
-    stickVec.x = dx; stickVec.y = dy;
-    knobEl.style.left = `${50 + (dx/maxStick)*50}%`;
-    knobEl.style.top  = `${50 + (dy/maxStick)*50}%`;
-    Input.left  = (dx < -8);
-    Input.right = (dx >  8);
-  }
-  stickEl.addEventListener('touchstart', stickStart, {passive:false});
-  stickEl.addEventListener('touchmove',  stickMove,  {passive:false});
-  stickEl.addEventListener('touchend',   stickEnd,   {passive:false});
-  stickEl.addEventListener('touchcancel',stickEnd,   {passive:false});
-  stickEl.addEventListener('mousedown',  stickStart, {passive:false});
-  addEventListener('mousemove',          stickMove,  {passive:false});
-  addEventListener('mouseup',            stickEnd,   {passive:false});
-
-  /*** リサイズ：親サイズにフィット ***/
   function fitCanvas(){
-    const wrap = document.getElementById('game-wrap');
-    const r = wrap.getBoundingClientRect();
-    // 物理ピクセルに最適化
+    const wrap = document.getElementById('game-wrap').getBoundingClientRect();
     const dpr = Math.max(1, Math.min(2, devicePixelRatio||1));
-    canvas.width  = Math.floor(r.width  * dpr);
-    canvas.height = Math.floor(r.height * dpr);
+    canvas.width  = Math.floor(wrap.width  * dpr);
+    canvas.height = Math.floor(wrap.height * dpr);
     ctx.setTransform(dpr,0,0,dpr,0,0);
   }
   const ro = new ResizeObserver(fitCanvas);
   ro.observe(document.getElementById('phone'));
   ro.observe(document.getElementById('game-wrap'));
 
-  /*** 画像管理：読み込み＆共通スケール ***/
   class Sprite {
-    constructor(src){ this.image = new Image(); this.image.src = ASSETS + src; this.w=0; this.h=0; this.loaded=false;
-      this.image.onload = ()=>{ this.w=this.image.naturalWidth; this.h=this.image.naturalHeight; this.loaded=true; };
+    constructor(name, src){
+      this.name=name;
+      this.image=new Image();
+      this.image.src = ASSETS + src;
+      this.w=0; this.h=0; this.loaded=false; this.failed=false;
+      loadState.pending.push(name);
+      this.image.onload=()=>{
+        this.w=this.image.naturalWidth; this.h=this.image.naturalHeight; this.loaded=true;
+        loadState.ok.push(name);
+        loadState.pending = loadState.pending.filter(n=>n!==name);
+        showDbg();
+      };
+      this.image.onerror=()=>{
+        this.failed=true;
+        loadState.ng.push(name);
+        loadState.pending = loadState.pending.filter(n=>n!==name);
+        console.warn("[ASSET MISSING]", ASSETS+src);
+        showDbg();
+      };
     }
   }
-  const Sprites = {
-    p_stand: new Sprite(IMG.stand),
-    p_walk:  IMG.walk.map(f=>new Sprite(f)),
-    kPose:   new Sprite(IMG.kPose),
-    k1:      new Sprite(IMG.k1),
-    k2:      new Sprite(IMG.k2),
-    k3:      new Sprite(IMG.k3),
-    k5:      new Sprite(IMG.k5),
-    spin:    IMG.spin.map(f=>new Sprite(f)),
-    tile:    new Sprite(IMG.tile),
 
-    e_stand: new Sprite(IMG.enStand),
-    e_walk:  IMG.enWalk.map(f=>new Sprite(f)),
-    e_lite:  IMG.enLite.map(f=>new Sprite(f)),
-    e_mid:   IMG.enMid.map(f=>new Sprite(f)),
+  const Spr = {
+    p_stand: new Sprite("M1-1", IMG.stand),
+    p_walk : IMG.walk.map((f,i)=>new Sprite("M1-"+(i+2), f)),
+    kPose  : new Sprite("K1-3", IMG.kPose),
+    k1     : new Sprite("K1-1", IMG.k1),
+    k2     : new Sprite("K1-2", IMG.k2),
+    k3     : new Sprite("K1-4", IMG.k3),
+    k5     : new Sprite("K1-5", IMG.k5),
+    spin   : IMG.spin.map((f,i)=>new Sprite("h"+(i+1), f)),
+    tile   : new Sprite("S1", IMG.tile),
+    e_stand: new Sprite("EN1-1", IMG.enStand),
+    e_walk : IMG.enWalk.map((f,i)=>new Sprite("EN1-"+(i+2), f)),
+    e_lite : IMG.enLite.map((f,i)=>new Sprite("EN1-4/5-"+i, f)),
+    e_mid  : IMG.enMid.map((f,i)=>new Sprite("EN1-4/6-"+i, f)),
   };
 
-  /*** 統一スケールのための基準高さ（キャラの見え方を揃える） ***/
-  const BASE_H = 96; // キャラクターの表示高さ（画像の縦横比は保持）
-  const ENEMY_H= 92;
+  /* ====== 以降は前版と同ロジック（省略せず貼付）・ただし“画像なしでも見える暫定描画”を追加 ====== */
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const lerp=(a,b,t)=>a+(b-a)*t;
+  const sign=(n)=>(n<0?-1:1);
 
-  /*** ステージ（タイル） ***/
-  const TILE_W = 48;  // 表示幅（S1.png はループ前提）
-  const TILE_H = 48;
-  const FLOOR_Y = 260; // 地面のy位置（プレイヤーの“足”がここに乗る）
+  const Input={left:false,right:false,up:false,atk1:false,atk2:false,skill:false,_keys:{ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',' ':'up',a:'atk1',A:'atk1',s:'atk2',S:'atk2',d:'skill',D:'skill'}};
+  addEventListener('keydown',(e)=>{const k=Input._keys[e.key]; if(!k)return; Input[k]=true; e.preventDefault();},{passive:false});
+  addEventListener('keyup',(e)=>{const k=Input._keys[e.key]; if(!k)return; Input[k]=false; e.preventDefault();},{passive:false});
 
-  /*** 物理とカメラ ***/
-  const GRAVITY = 1800;  // px/s^2（内部時間基準）
-  const JUMP_V  = 650;
-  const MOVE_V  = 240;   // 地上移動速度
-  const AIR_V   = 210;   // 空中の減衰速度
-  const FRICTION= 1800;  // 地上摩擦
-  const CAM_LERP= 0.12;
-
-  /*** ダメージ＆ノックバック ***/
-  const HURT_FLASH_T = 0.22; // 赤点滅1サイクル
-  const HURT_FLOAT_V = 240;  // ちょい浮き
-  const HURT_PUSH_V  = 180;  // 少し弾く
-
-  /*** 死亡演出 ***/
-  const DEATH_SPIN_V = 16*Math.PI; // 回転速度
-  const DEATH_FLY_V  = 400;        // 吹っ飛び速度
-  const DEATH_FADE_T = 1.2;
-
-  /*** 攻撃仕様（依頼文準拠） ***/
-  const DMG = { A1:5, A1B:8, A1C:10, A2:15, A2_CH:18, SPIN:25, SPIN_CH:40 };
-  const A_POSE_1 = 0.3, A_ACT_1 = 0.4;   // 攻撃①
-  const A_POSE_2 = 0.5, A_ACT_2 = 0.4;   // 攻撃②（チャージでポーズが1.0秒に）
-  const CHARGE_MAX = 1.0;                // ▲/●最大1秒
-
-  const SPIN_LOOP_T = 0.08; // h1-h4の1コマ時間
-
-  /*** コンボキュー：キャンセル不可・出し切り型。ただし“次の入力”の予約はOK ***/
-  class ComboQueue {
-    constructor(){ this.q=[]; }
-    push(tag){ this.q.push(tag); }
-    shift(){ return this.q.shift(); }
-    clear(){ this.q.length=0; }
-    get length(){ return this.q.length; }
+  const touchId={stick:null,atk1:null,atk2:null,skill:null,jump:null};
+  function bindPressHold(el,keyName){
+    const start=(e)=>{const t=(e.changedTouches?e.changedTouches[0]:e); touchId[keyName]=t.identifier??'mouse'; Input[keyName]=true; e.preventDefault();};
+    const end=(e)=>{const changed=(e.changedTouches?[...e.changedTouches]:[e]).some(t=>(t.identifier??'mouse')===touchId[keyName]); if(changed){Input[keyName]=false; touchId[keyName]=null;} e.preventDefault();};
+    el.addEventListener('touchstart',start,{passive:false});
+    el.addEventListener('touchend',end,{passive:false});
+    el.addEventListener('touchcancel',end,{passive:false});
+    el.addEventListener('mousedown',start,{passive:false});
+    addEventListener('mouseup',end,{passive:false});
   }
+  bindPressHold(btnAtk1,'atk1'); bindPressHold(btnAtk2,'atk2'); bindPressHold(btnSkill,'skill'); bindPressHold(btnJump,'up');
 
-  /*** エンティティ基底 ***/
-  class Entity {
-    constructor(x,y){
-      this.x=x; this.y=y; this.vx=0; this.vy=0;
-      this.dir=1; // 1=右, -1=左
-      this.onGround=false;
-      this.state='idle';
-      this.hp=1000; this.hpMax=1000;
-      this.hurtT=0;
-      this.dead=false; this.deathT=0; this.deathA=0; this.deathVX=0; this.deathVY=0;
-      this.width=42; this.height=BASE_H;
-      this.yOffset=0; // 画像上下の余白調整
-    }
-    rect(){ return {x:this.x-16, y:this.y-this.height, w:32, h:this.height}; } // 簡易当たり
-    takeDamage(dmg, fromDir){
-      if(this.dead) return;
-      this.hp = Math.max(0, this.hp - dmg);
-      this.hurtT = HURT_FLASH_T;
-      // ちょい浮き＆ノックバック
-      this.vy = -HURT_FLOAT_V;
-      this.vx = fromDir * -HURT_PUSH_V;
-      if(this.hp<=0){ this.die(fromDir); }
-    }
-    die(fromDir){
-      this.dead = true; this.deathT=0;
-      this.deathA = 0;
-      this.deathVX = fromDir * DEATH_FLY_V;
-      this.deathVY = -DEATH_FLY_V*0.6;
-      this.state='dead';
-    }
+  let stickCenter={x:0,y:0}, stickVec={x:0,y:0}; const maxStick=48;
+  const stickStart=(e)=>{const t=e.changedTouches?e.changedTouches[0]:e; touchId.stick=t.identifier??'mouse'; const r=stickEl.getBoundingClientRect(); stickCenter.x=r.left+r.width/2; stickCenter.y=r.top+r.height/2; updateStick(t.clientX,t.clientY); e.preventDefault();};
+  const stickMove=(e)=>{const ts=e.changedTouches?[...e.changedTouches]:[e]; const got=ts.find(t=>(t.identifier??'mouse')===touchId.stick); if(!got)return; updateStick(got.clientX,got.clientY); e.preventDefault();};
+  const stickEnd=(e)=>{const ts=e.changedTouches?[...e.changedTouches]:[e]; const changed=ts.find(t=>(t.identifier??'mouse')===touchId.stick); if(!changed)return; stickVec.x=stickVec.y=0; knobEl.style.left='50%'; knobEl.style.top='50%'; Input.left=false; Input.right=false; touchId.stick=null; e.preventDefault();};
+  function updateStick(cx,cy){let dx=cx-stickCenter.x, dy=cy-stickCenter.y; const len=Math.hypot(dx,dy); if(len>maxStick){dx*=maxStick/len; dy*=maxStick/len;} stickVec.x=dx; stickVec.y=dy; knobEl.style.left=`${50+(dx/maxStick)*50}%`; knobEl.style.top=`${50+(dy/maxStick)*50}%`; Input.left=(dx<-8); Input.right=(dx>8);}
+  stickEl.addEventListener('touchstart',stickStart,{passive:false});
+  stickEl.addEventListener('touchmove',stickMove,{passive:false});
+  stickEl.addEventListener('touchend',stickEnd,{passive:false});
+  stickEl.addEventListener('touchcancel',stickEnd,{passive:false});
+  stickEl.addEventListener('mousedown',stickStart,{passive:false});
+  addEventListener('mousemove',stickMove,{passive:false});
+  addEventListener('mouseup',stickEnd,{passive:false});
+
+  function fit(){ fitCanvas(); }
+  const BASE_H=96, ENEMY_H=92, TILE_W=48, TILE_H=48, FLOOR_Y=260;
+  const GRAVITY=1800, JUMP_V=650, MOVE_V=240, AIR_V=210, FRICTION=1800, CAM_LERP=0.12;
+  const HURT_FLASH_T=0.22, HURT_FLOAT_V=240, HURT_PUSH_V=180;
+  const DEATH_SPIN_V=16*Math.PI, DEATH_FLY_V=400, DEATH_FADE_T=1.2;
+  const DMG={A1:5,A1B:8,A1C:10,A2:15,A2_CH:18,SPIN:25,SPIN_CH:40};
+  const A_POSE_1=0.3, A_ACT_1=0.4, A_POSE_2=0.5, A_ACT_2=0.4, CHARGE_MAX=1.0, SPIN_LOOP_T=0.08;
+
+  class ComboQueue{constructor(){this.q=[];} push(t){this.q.push(t);} shift(){return this.q.shift();} clear(){this.q.length=0;} get length(){return this.q.length;}}
+  class Entity{
+    constructor(x,y){this.x=x;this.y=y;this.vx=0;this.vy=0;this.dir=1;this.onGround=false;this.state='idle';this.hp=1000;this.hpMax=1000;this.hurtT=0;this.dead=false;this.deathT=0;this.deathA=0;this.deathVX=0;this.deathVY=0;this.width=42;this.height=BASE_H;this.yOffset=0;}
+    rect(){return{x:this.x-16,y:this.y-this.height,w:32,h:this.height};}
+    takeDamage(dmg,fromDir){if(this.dead)return; this.hp=Math.max(0,this.hp-dmg); this.hurtT=HURT_FLASH_T; this.vy=-HURT_FLOAT_V; this.vx=fromDir*-HURT_PUSH_V; if(this.hp<=0){this.die(fromDir);}}
+    die(fromDir){this.dead=true; this.deathT=0; this.deathA=0; this.deathVX=fromDir*DEATH_FLY_V; this.deathVY=-DEATH_FLY_V*0.6; this.state='dead';}
   }
+  class Player extends Entity{constructor(x,y){super(x,y);this.hp=1000;this.hpMax=1000;this.combo=new ComboQueue();this.animT=0;this.walkIndex=0;this.chargeT=0;this.skillChargeT=0;this.lockInput=false;this.skillSpins=0;this.skillIndex=0;this.skillFrameT=0;}}
+  class Enemy extends Entity{constructor(x,y){super(x,y);this.hp=500;this.hpMax=500;this.aiT=0;this.cool=0;this.walkIndex=0;this.animT=0;}}
 
-  /*** プレイヤー ***/
-  class Player extends Entity {
-    constructor(x,y){
-      super(x,y);
-      this.hp=1000; this.hpMax=1000;
-      this.combo = new ComboQueue();
-      this.animT=0; this.walkIndex=0;
-      this.chargeT=0; this.skillChargeT=0;
-      this.lockInput=false; // 攻撃/スキル中は移動不可
-      this.skillSpins=0; this.skillIndex=0; this.skillFrameT=0;
-      this.hasEnemyRef=null; // 最も近い敵を参照して当て判定簡易化
-    }
-  }
-
-  /*** 敵（ノーマルAI） ***/
-  class Enemy extends Entity {
-    constructor(x,y){
-      super(x,y);
-      this.hp=500; this.hpMax=500;
-      this.aiT=0;
-      this.cool=0;
-      this.walkIndex=0; this.animT=0;
-    }
-  }
-
-  /*** ゲーム世界 ***/
-  const Game = {
-    time:0, dt:0, last:performance.now(),
-    player: new Player(100, FLOOR_Y),
-    enemies: [],
-    camX:0,
-
-    // ステージ生成（無限タイル風）
+  const Game={time:0,dt:0,last:performance.now(),player:new Player(100,FLOOR_Y),enemies:[],camX:0,
     drawFloor(scrollX){
-      if(!Sprites.tile.loaded) return;
-      const wrap = document.getElementById('game-wrap').getBoundingClientRect();
-      const W = wrap.width, H = wrap.height;
-      const tw = TILE_W, th = TILE_H;
-      const startX = -((scrollX)%tw) - tw;
-      for(let x=startX; x<W+tw; x+=tw){
-        ctx.drawImage(Sprites.tile.image, x, FLOOR_Y, tw, th);
+      // 画像が無い時でも床を可視化（暫定グリッド）
+      const wrap=document.getElementById('game-wrap').getBoundingClientRect();
+      const W=wrap.width;
+      if(Spr.tile.loaded){
+        const tw=TILE_W, th=TILE_H;
+        const startX = -((scrollX)%tw) - tw;
+        for(let x=startX;x<W+tw;x+=tw){ ctx.drawImage(Spr.tile.image, x, FLOOR_Y, tw, th); }
+      }else{
+        // 代替：ネイビーの帯＋ストライプ
+        ctx.fillStyle='#0d1840'; ctx.fillRect(0,FLOOR_Y,W, TIL E_H);
+        ctx.fillStyle='#0f215e'; for(let x=0;x<W;x+=TILE_W){ ctx.fillRect(x,FLOOR_Y,TILE_W-2,TILE_H); }
       }
     }
   };
+  Game.enemies.push(new Enemy(420,FLOOR_Y));
 
-  // 敵を1体だけ（テスト）
-  Game.enemies.push(new Enemy(420, FLOOR_Y));
-
-  /*** 衝突：床のみ（角の引っかかり回避） ***/
-  function applyPhysics(ent, dt){
-    // 死亡時は物理別処理
-    if(ent.dead){
-      ent.deathT += dt;
-      ent.deathA += DEATH_SPIN_V * dt;
-      ent.x += ent.deathVX * dt;
-      ent.y += ent.deathVY * dt;
-      ent.deathVY += GRAVITY * 0.25 * dt;
-      return;
-    }
-    // 重力
-    ent.vy += GRAVITY * dt;
-    // 速度適用
-    ent.x += ent.vx * dt;
-    ent.y += ent.vy * dt;
-
-    // 床判定
-    if(ent.y >= FLOOR_Y){
-      ent.y = FLOOR_Y;
-      ent.vy = 0;
-      ent.onGround = true;
-    } else {
-      ent.onGround = false;
-    }
+  function applyPhysics(ent,dt){
+    if(ent.dead){ ent.deathT+=dt; ent.deathA+=DEATH_SPIN_V*dt; ent.x+=ent.deathVX*dt; ent.y+=ent.deathVY*dt; ent.deathVY+=GRAVITY*0.25*dt; return; }
+    ent.vy+=GRAVITY*dt; ent.x+=ent.vx*dt; ent.y+=ent.vy*dt;
+    if(ent.y>=FLOOR_Y){ ent.y=FLOOR_Y; ent.vy=0; ent.onGround=true; } else ent.onGround=false;
   }
 
-  /*** プレイヤー更新 ***/
-  function updatePlayer(p, dt){
-    // 入力（攻撃/スキル中は移動不可）
+  function updatePlayer(p,dt){
     if(!p.lockInput){
-      const wantLeft  = Input.left;
-      const wantRight = Input.right;
-      if(wantLeft ^ wantRight){
-        const toward = wantRight? 1 : -1;
-        p.dir = toward; // 向き更新（左はミラー描画）
-        const v = p.onGround ? MOVE_V : AIR_V;
-        p.vx = toward * v;
-        if(p.onGround && p.state!=='walk' && p.state!=='attack' && p.state!=='skill'){ p.state='walk'; p.animT=0; }
-      }else{
-        // 減速
-        if(p.onGround){
-          const s = Math.abs(p.vx);
-          const dec = FRICTION * dt;
-          p.vx = (s<=dec)? 0 : p.vx - sign(p.vx)*dec;
-        }
-        if(p.onGround && p.state!=='idle' && p.state!=='attack' && p.state!=='skill'){ p.state='idle'; }
-      }
-      // ジャンプ
-      if(Input.up && p.onGround && p.state!=='attack' && p.state!=='skill'){
-        p.vy = -JUMP_V; p.onGround=false; Input.up=false;
-      }
+      const L=Input.left, R=Input.right;
+      if(L^R){ const toward=R?1:-1; p.dir=toward; const v=p.onGround?MOVE_V:AIR_V; p.vx=toward*v; if(p.onGround && p.state!=='walk' && p.state!=='attack' && p.state!=='skill'){ p.state='walk'; p.animT=0; } }
+      else{ if(p.onGround){ const s=Math.abs(p.vx), dec=FRICTION*dt; p.vx=(s<=dec)?0:p.vx-sign(p.vx)*dec; } if(p.onGround && p.state!=='idle' && p.state!=='attack' && p.state!=='skill'){ p.state='idle'; } }
+      if(Input.up && p.onGround && p.state!=='attack' && p.state!=='skill'){ p.vy=-JUMP_V; p.onGround=false; Input.up=false; }
     }
+    if(p.hurtT>0){ p.hurtT-=dt; if(p.hurtT<0)p.hurtT=0; }
 
-    // 被弾赤点滅タイマ
-    if(p.hurtT>0){ p.hurtT -= dt; if(p.hurtT<0) p.hurtT=0; }
-
-    // 攻撃・スキル処理
-    // ▲(atk2) と ●(skill) は長押しチャージ
-    if(Input.atk2){ p.chargeT = clamp(p.chargeT + dt, 0, CHARGE_MAX); } else if(p.chargeT>0 && !Input.atk2){
-      // 離した：攻撃2を開始
-      queueAttack2(p, p.chargeT>=CHARGE_MAX*0.999);
-      p.chargeT=0;
-    }
-    if(Input.skill){ p.skillChargeT = clamp(p.skillChargeT + dt, 0, CHARGE_MAX);
-      showFloatUI(p, p.skillChargeT/CHARGE_MAX);
-    } else if(p.skillChargeT>0 && !Input.skill){
-      // 離した：スキル回転
-      queueSkillSpin(p, p.skillChargeT>=CHARGE_MAX*0.999);
-      p.skillChargeT=0;
-      hideFloatUI();
-    }
-
-    // 攻撃1のトリガ（単押し分：入力予約→出し切り）
-    if(Input.atk1){
-      queueAttack1Chain(p);
-      Input.atk1=false;
-    }
-
-    // 実行フェーズ
-    runCombatState(p, dt);
-
-    // アニメ
-    if(p.state==='walk'){ p.animT+=dt; if(p.animT>0.18){ p.animT=0; p.walkIndex=(p.walkIndex+1)%Sprites.p_walk.length; } }
+    if(Input.atk2){ p.chargeT=clamp(p.chargeT+dt,0,CHARGE_MAX); } else if(p.chargeT>0 && !Input.atk2){ queueAttack2(p, p.chargeT>=CHARGE_MAX*0.999); p.chargeT=0; }
+    if(Input.skill){ p.skillChargeT=clamp(p.skillChargeT+dt,0,CHARGE_MAX); showFloatUI(p,p.skillChargeT/CHARGE_MAX); } else if(p.skillChargeT>0 && !Input.skill){ queueSkillSpin(p, p.skillChargeT>=CHARGE_MAX*0.999); p.skillChargeT=0; hideFloatUI(); }
+    if(Input.atk1){ queueAttack1Chain(p); Input.atk1=false; }
+    runCombatState(p,dt);
+    if(p.state==='walk'){ p.animT+=dt; if(p.animT>0.18){ p.animT=0; p.walkIndex=(p.walkIndex+1)%Spr.p_walk.length; } }
   }
 
-  /*** 攻撃キュー（出し切り／キャンセル不可だが“次の段”は予約可） ***/
-  function queueAttack1Chain(p){
-    // すでに攻撃・スキル中なら、次段として予約（最大3段まで）
-    if(p.state==='attack' || p.state==='skill'){
-      if(p.combo.length<3) p.combo.push('A1_NEXT');
-      return;
-    }
-    // 非戦闘状態なら最初の攻撃①開始
-    startAttack1(p, 1);
-  }
-  function queueAttack2(p, charged){
-    if(p.state==='attack' || p.state==='skill'){ p.combo.push(charged? 'A2C' : 'A2'); return; }
-    startAttack2(p, charged);
-  }
-  function queueSkillSpin(p, charged){
-    if(p.state==='attack' || p.state==='skill'){ p.combo.push(charged? 'SPINC' : 'SPIN'); return; }
-    startSkill(p, charged);
-  }
+  class Combo{static Q=class{constructor(){this.q=[];} push(t){this.q.push(t);} shift(){return this.q.shift();} get length(){return this.q.length;}}}
 
-  /*** 攻撃①／連撃①／連撃② ***/
-  function startAttack1(p, step){
+  function queueAttack1Chain(p){ if(p.state==='attack'||p.state==='skill'){ if(p.combo.length<3) p.combo.push('A1_NEXT'); return; } startAttack1(p,1); }
+  function queueAttack2(p,charged){ if(p.state==='attack'||p.state==='skill'){ p.combo.push(charged?'A2C':'A2'); return; } startAttack2(p,charged); }
+  function queueSkillSpin(p,charged){ if(p.state==='attack'||p.state==='skill'){ p.combo.push(charged?'SPINC':'SPIN'); return; } startSkill(p,charged); }
+
+  function startAttack1(p,step){
     p.lockInput=true; p.state='attack';
-    const poseT = A_POSE_1, actT = A_ACT_1;
+    const poseT=A_POSE_1, actT=A_ACT_1;
     let time=0, acted=false;
-    const spritePose = Sprites.kPose, spriteAct = (step===1? Sprites.k1 : step===2? Sprites.k2 : Sprites.k3);
-    const dmg = (step===1? DMG.A1 : step===2? DMG.A1B : DMG.A1C);
-    const forward = (step>=2)? 70 : 0;
-
-    p._attackRunner = (dt)=>{
-      time+=dt;
-      // 構え
-      if(time <= poseT){
-        drawTag = 'pose';
-      }else{
-        // 攻撃発動
-        if(!acted){
-          acted=true;
-          // 少しだけ前進
-          p.x += p.dir * forward * 0.1;
-          hitCheck(p, dmg);
-        }
-        if(time >= poseT + actT){
-          // 終了 → 次段が予約されていれば続行
-          const nxt = p.combo.shift();
-          if(nxt==='A1_NEXT'){
-            const nextStep = (step===1?2: step===2?3:1);
-            startAttack1(p, nextStep);
-          }else if(nxt==='A2' || nxt==='A2C'){
-            startAttack2(p, nxt==='A2C');
-          }else if(nxt==='SPIN' || nxt==='SPINC'){
-            startSkill(p, nxt==='SPINC');
-          }else{
-            p.lockInput=false; p.state='idle';
-          }
-        }
+    const spritePose=Spr.kPose, spriteAct=(step===1?Spr.k1:step===2?Spr.k2:Spr.k3);
+    const dmg=(step===1?DMG.A1:step===2?DMG.A1B:DMG.A1C);
+    const forward=(step>=2)?70:0;
+    p._attackRunner=(dt)=>{ time+=dt;
+      if(time<=poseT){ /* pose */ }
+      else{ if(!acted){ acted=true; p.x+=p.dir*forward*0.1; hitCheck(p,dmg); }
+        if(time>=poseT+actT){ const nxt=p.combo.shift(); if(nxt==='A1_NEXT'){ startAttack1(p, step===1?2:step===2?3:1); } else if(nxt==='A2'||nxt==='A2C'){ startAttack2(p, nxt==='A2C'); } else if(nxt==='SPIN'||nxt==='SPINC'){ startSkill(p, nxt==='SPINC'); } else { p.lockInput=false; p.state='idle'; } }
       }
-      // 描画はメインループで
-      p._attackSprite = (time<=poseT)? spritePose : spriteAct;
+      p._attackSprite=(time<=poseT)?spritePose:spriteAct;
     };
   }
-
-  /*** 攻撃②（チャージ対応） ***/
-  function startAttack2(p, charged){
+  function startAttack2(p,charged){
     p.lockInput=true; p.state='attack';
-    const poseT = charged? 1.0 : A_POSE_2;
-    const actT  = A_ACT_2;
-    const dmg   = charged? DMG.A2_CH : DMG.A2;
+    const poseT=charged?1.0:A_POSE_2, actT=A_ACT_2, dmg=charged?DMG.A2_CH:DMG.A2;
     let time=0, acted=false;
-
-    p._attackRunner = (dt)=>{
-      time+=dt;
-      if(time<=poseT){
-        // 震え表現：微小オフセット
-        p._shake = (Math.sin(time*50)*2);
-        p._attackSprite = Sprites.kPose;
-        // プレイヤーが光る演出（描画時に加算合成）
-        p._glow = true;
-      }else{
-        p._glow = false;
-        p._shake = 0;
-        p._attackSprite = Sprites.k5;
-        if(!acted){
-          acted=true;
-          p.x += p.dir * 60 * 0.2; // 少し前進
-          hitCheck(p, dmg);
-        }
-        if(time>=poseT+actT){
-          const nxt = p.combo.shift();
-          if(nxt==='A1_NEXT'){ startAttack1(p, 2); }
-          else if(nxt==='A2' || nxt==='A2C'){ startAttack2(p, nxt==='A2C'); }
-          else if(nxt==='SPIN' || nxt==='SPINC'){ startSkill(p, nxt==='SPINC'); }
-          else { p.lockInput=false; p.state='idle'; }
-        }
+    p._attackRunner=(dt)=>{ time+=dt;
+      if(time<=poseT){ p._shake=(Math.sin(time*50)*2); p._attackSprite=Spr.kPose; p._glow=true; }
+      else{ p._glow=false; p._shake=0; p._attackSprite=Spr.k5; if(!acted){ acted=true; p.x+=p.dir*60*0.2; hitCheck(p,dmg); }
+        if(time>=poseT+actT){ const nxt=p.combo.shift(); if(nxt==='A1_NEXT'){ startAttack1(p,2); } else if(nxt==='A2'||nxt==='A2C'){ startAttack2(p, nxt==='A2C'); } else if(nxt==='SPIN'||nxt==='SPINC'){ startSkill(p, nxt==='SPINC'); } else { p.lockInput=false; p.state='idle'; } }
       }
     };
   }
-
-  /*** スキル：高速回転（2周 or 4周） ***/
-  function startSkill(p, charged){
+  const SPIN_LOOP=0.08;
+  function startSkill(p,charged){
     p.lockInput=true; p.state='skill';
-    p.skillSpins = charged? 4 : 2; // h1-h4 を N 周
-    p.skillIndex = 0; p.skillFrameT = 0;
-    const dmg = charged? DMG.SPIN_CH : DMG.SPIN;
-    let totalFrames = p.skillSpins * Sprites.spin.length;
-    let framesDone = 0;
-
-    p._skillRunner = (dt)=>{
-      p.vx = 0; // 期間中は移動不可
-      p.skillFrameT += dt;
-      if(p.skillFrameT>=SPIN_LOOP_T){
-        p.skillFrameT -= SPIN_LOOP_T;
-        p.skillIndex = (p.skillIndex+1) % Sprites.spin.length;
-        framesDone++;
-        // 1フレーム毎に多段ヒットではなく、1周に1度ヒット扱い
-        if(p.skillIndex===0){ hitCheck(p, dmg); }
-        if(framesDone>=totalFrames){
-          // 終了
-          const nxt = p.combo.shift();
-          if(nxt==='A1_NEXT'){ startAttack1(p,1); }
-          else if(nxt==='A2' || nxt==='A2C'){ startAttack2(p, nxt==='A2C'); }
-          else if(nxt==='SPIN' || nxt==='SPINC'){ startSkill(p, nxt==='SPINC'); }
-          else { p.lockInput=false; p.state='idle'; }
-        }
+    p.skillSpins=charged?4:2; p.skillIndex=0; p.skillFrameT=0;
+    const dmg=charged?DMG.SPIN_CH:DMG.SPIN; let totalFrames=p.skillSpins*Spr.spin.length; let framesDone=0;
+    p._skillRunner=(dt)=>{ p.vx=0; p.skillFrameT+=dt;
+      if(p.skillFrameT>=SPIN_LOOP){ p.skillFrameT-=SPIN_LOOP; p.skillIndex=(p.skillIndex+1)%Spr.spin.length; framesDone++; if(p.skillIndex===0){ hitCheck(p,dmg); } if(framesDone>=totalFrames){ const nxt=p.combo.shift(); if(nxt==='A1_NEXT'){ startAttack1(p,1); } else if(nxt==='A2'||nxt==='A2C'){ startAttack2(p, nxt==='A2C'); } else if(nxt==='SPIN'||nxt==='SPINC'){ startSkill(p, nxt==='SPINC'); } else { p.lockInput=false; p.state='idle'; } } }
+    };
+  }
+  function runCombatState(p,dt){ if(p.state==='attack'&&p._attackRunner){p._attackRunner(dt);} if(p.state==='skill'&&p._skillRunner){p._skillRunner(dt);} }
+  function hitCheck(p,dmg){ const rangeX=48, rangeY=54; const rx=p.x+p.dir*36; const ry=p.y-p.height/2; const hit={x:rx-rangeX/2,y:ry-rangeY/2,w:rangeX,h:rangeY}; for(const e of Game.enemies){ if(e.dead)continue; if(AABB(hit,e.rect())) e.takeDamage(dmg,p.dir); } }
+  function AABB(a,b){return !(a.x+a.w<b.x||b.x+b.w<a.x||a.y+a.h<b.y||b.y+b.h<a.y);}
+  function updateEnemy(en,dt){
+    if(en.dead) return;
+    if(en.hurtT>0){en.hurtT-=dt; if(en.hurtT<0)en.hurtT=0;}
+    en.aiT+=dt; if(en.cool>0) en.cool-=dt;
+    const p=Game.player; const dx=p.x-en.x; en.dir=dx>=0?1:-1; const dist=Math.abs(dx);
+    if(dist>62 && en.cool<=0 && (en.state==='idle'||en.state==='walk')){ en.vx=en.dir*(MOVE_V*0.6); en.state='walk'; }
+    else{ en.vx=0; if(en.cool<=0 && dist<70){ startEnemyCombo(en,p); } else if(en.state!=='attack'){ en.state='idle'; } }
+    if(en.state==='walk'){ en.animT+=dt; if(en.animT>0.24){ en.animT=0; en.walkIndex=(en.walkIndex+1)%Spr.e_walk.length; } }
+  }
+  function startEnemyCombo(en,p){
+    en.state='attack'; en.cool=0.9; let step=0,time=0,acted=false;
+    const seq=[{pose:0.15,act:0.35,dmg:5,type:'lite'},{pose:0.15,act:0.55,dmg:8,type:'mid'}];
+    en._runner=(dt)=>{ time+=dt; const cur=seq[step];
+      if(time<=cur.pose){ en._spr=(cur.type==='lite'?Spr.e_lite[0]:Spr.e_mid[0]); }
+      else{ en._spr=(cur.type==='lite'?Spr.e_lite[1]:Spr.e_mid[1]);
+        if(!acted){ acted=true; en.x+=en.dir*(cur.type==='lite'?40:30)*0.2; const hit={x:en.x+en.dir*30-30,y:en.y-en.height/2-24,w:60,h:48}; if(AABB(hit,p.rect())){ p.takeDamage(cur.dmg,en.dir); if(cur.type==='mid'){ p.vy=-HURT_FLOAT_V*0.9; } } }
+        if(time>=cur.pose+cur.act){ step++; time=0; acted=false; if(step>=seq.length){ en.state='idle'; en._runner=null; } }
       }
     };
   }
-
-  /*** 攻撃・スキル実行ランナー ***/
-  function runCombatState(p, dt){
-    if(p.state==='attack' && p._attackRunner){ p._attackRunner(dt); }
-    if(p.state==='skill'  && p._skillRunner ){ p._skillRunner(dt); }
-  }
-
-  /*** 当て判定（簡易）：プレイヤー前方の矩形で敵とヒットチェック ***/
-  function hitCheck(p, dmg){
-    const rangeX = 48, rangeY = 54;
-    const rx = p.x + p.dir*36;
-    const ry = p.y - p.height/2;
-    const hitBox = {x: rx - rangeX/2, y: ry - rangeY/2, w: rangeX, h: rangeY};
-    for(const e of Game.enemies){
-      if(e.dead) continue;
-      if(AABB(hitBox, e.rect())){
-        e.takeDamage(dmg, p.dir);
-      }
-    }
-  }
-  function AABB(a,b){
-    return !(a.x+a.w<b.x || b.x+b.w<a.x || a.y+a.h<b.y || b.y+b.h<a.y);
-  }
-
-  /*** 敵AI：ゆっくり接近→クールダウンを挟みつつ小→中の連撃 ***/
-  function updateEnemy(en, dt){
-    if(en.dead){
-      // 死亡演出
-      return;
-    }
-    if(en.hurtT>0){ en.hurtT-=dt; if(en.hurtT<0) en.hurtT=0; }
-    en.aiT += dt;
-    if(en.cool>0) en.cool-=dt;
-
-    // プレイヤーへの距離
-    const p = Game.player;
-    const dx = p.x - en.x;
-    en.dir = dx>=0? 1 : -1;
-
-    const dist = Math.abs(dx);
-    // 接近（プレイヤーより遅い）
-    if(dist>62 && en.cool<=0 && (en.state==='idle' || en.state==='walk')){
-      en.vx = en.dir * (MOVE_V*0.6);
-      en.state='walk';
-    } else {
-      en.vx = 0;
-      if(en.cool<=0 && dist<70){
-        // 連撃：小 → 中
-        startEnemyCombo(en, p);
-      } else if(en.state!=='attack'){
-        en.state = 'idle';
-      }
-    }
-
-    // アニメ
-    if(en.state==='walk'){ en.animT+=dt; if(en.animT>0.24){ en.animT=0; en.walkIndex=(en.walkIndex+1)%Sprites.e_walk.length; } }
-  }
-
-  function startEnemyCombo(en, p){
-    en.state='attack'; en.cool = 0.9;
-    let step=0; let time=0; let acted=false;
-    const seq = [
-      {pose:0.15, act:0.35, dmg:5,  type:'lite'}, // 突進
-      {pose:0.15, act:0.55, dmg:8,  type:'mid' }  // アッパー（少し浮かす）
-    ];
-    en._runner = (dt)=>{
-      time+=dt;
-      const cur = seq[step];
-      if(time<=cur.pose){
-        en._spr = (cur.type==='lite'? Sprites.e_lite[0]: Sprites.e_mid[0]);
-      }else{
-        en._spr = (cur.type==='lite'? Sprites.e_lite[1]: Sprites.e_mid[1]);
-        if(!acted){
-          acted=true;
-          // 少し前に出てヒット
-          en.x += en.dir * (cur.type==='lite'? 40: 30) * 0.2;
-          // 当て判定：プレイヤー矩形
-          const hit = {x: en.x + en.dir*30 - 30, y: en.y - en.height/2 - 24, w:60, h:48};
-          if(AABB(hit, p.rect())){
-            p.takeDamage(cur.dmg, en.dir);
-            if(cur.type==='mid'){ p.vy = -HURT_FLOAT_V*0.9; }
-          }
-        }
-        if(time>=cur.pose+cur.act){
-          step++; time=0; acted=false;
-          if(step>=seq.length){ en.state='idle'; en._runner=null; }
-        }
-      }
-    };
-  }
-
-  /*** 頭上UI（スキル充電表示） ***/
-  function showFloatUI(p, ratio){
-    floatUI.style.display='';
-    const wrap = document.getElementById('game-wrap').getBoundingClientRect();
-    const px = worldToScreenX(p.x - Game.camX, wrap.width);
-    const py = worldToScreenY(p.y - p.height - 16, wrap.height);
-    floatUI.style.left = px+'px';
-    floatUI.style.top  = py+'px';
-    chargeBar.style.width = Math.round(ratio*100)+'%';
-    floatLabel.textContent = 'CHARGE';
+  function showFloatUI(p,ratio){
+    const wrap=document.getElementById('game-wrap').getBoundingClientRect();
+    const px=worldToScreenX(p.x-Game.camX,wrap.width), py=worldToScreenY(p.y-p.height-16,wrap.height);
+    floatUI.style.display=''; floatUI.style.left=px+'px'; floatUI.style.top=py+'px'; chargeBar.style.width=Math.round(ratio*100)+'%'; floatLabel.textContent='CHARGE';
   }
   function hideFloatUI(){ floatUI.style.display='none'; }
+  function updateCamera(dt){ const target=Game.player.x-120; Game.camX=lerp(Game.camX,target,0.12); }
 
-  /*** カメラ ***/
-  function updateCamera(dt){
-    const target = Game.player.x - 120;
-    Game.camX = lerp(Game.camX, target, CAM_LERP);
-  }
-
-  /*** メインループ ***/
   function loop(now){
-    const sec = now/1000;
-    Game.dt = Math.min(1/30, (now - Game.last)/1000);
-    Game.last = now;
-    Game.time += Game.dt;
-
-    // 入力：atk2/skill 長押し蓄積（キーボードも同様）
-    if(Input.atk2)   Game.player.chargeT    = clamp(Game.player.chargeT    + Game.dt, 0, CHARGE_MAX);
-    if(Input.skill)  Game.player.skillChargeT = clamp(Game.player.skillChargeT + Game.dt, 0, CHARGE_MAX);
-
-    // 更新
-    updatePlayer(Game.player, Game.dt);
-    for(const en of Game.enemies){
-      if(en._runner) en._runner(Game.dt);
-      updateEnemy(en, Game.dt);
-    }
-
-    applyPhysics(Game.player, Game.dt);
-    for(const en of Game.enemies) applyPhysics(en, Game.dt);
-
+    Game.dt=Math.min(1/30,(now-Game.last)/1000); Game.last=now; Game.time+=Game.dt;
+    if(Input.atk2) Game.player.chargeT=clamp(Game.player.chargeT+Game.dt,0,CHARGE_MAX);
+    if(Input.skill) Game.player.skillChargeT=clamp(Game.player.skillChargeT+Game.dt,0,CHARGE_MAX);
+    updatePlayer(Game.player,Game.dt); for(const en of Game.enemies){ if(en._runner) en._runner(Game.dt); updateEnemy(en,Game.dt); }
+    applyPhysics(Game.player,Game.dt); for(const en of Game.enemies) applyPhysics(en,Game.dt);
     updateCamera(Game.dt);
-
-    // タイマー（mm:ss）
-    const t = Math.floor(Game.time);
-    const mm = String(Math.floor(t/60)).padStart(2,'0');
-    const ss = String(t%60).padStart(2,'0');
-    hudTimer.textContent = `${mm}:${ss}`;
-    // HP
-    const hpRatio = clamp(Game.player.hp/Game.player.hpMax, 0, 1);
-    hudHPFill.style.width = Math.round(hpRatio*100)+'%';
-    hudHPText.textContent = `${Game.player.hp} / ${Game.player.hpMax}`;
-
-    // 描画
-    render();
-
-    requestAnimationFrame(loop);
+    const t=Math.floor(Game.time), mm=String(Math.floor(t/60)).padStart(2,'0'), ss=String(t%60).padStart(2,'0'); hudTimer.textContent=`${mm}:${ss}`;
+    const hpRatio=clamp(Game.player.hp/Game.player.hpMax,0,1); hudHPFill.style.width=Math.round(hpRatio*100)+'%'; hudHPText.textContent=`${Game.player.hp} / ${Game.player.hpMax}`;
+    render(); requestAnimationFrame(loop);
   }
 
-  /*** ワールド→スクリーン ***/
-  function worldToScreenX(wx, screenW){
-    return Math.round((wx - Game.camX) + screenW*0.3); // 画面左1/3過ぎにプレイヤーを配置する感じ
-  }
-  function worldToScreenY(wy, screenH){
-    return Math.round(wy);
-  }
+  function worldToScreenX(wx,screenW){return Math.round((wx-Game.camX)+screenW*0.3);}
+  function worldToScreenY(wy,screenH){return Math.round(wy);}
 
-  /*** 描画 ***/
-  function drawSprite(sprite, x, y, h, facing, shake=0, glow=false, hurtT=0){
-    if(!sprite || !sprite.loaded) return;
-    const r = document.getElementById('game-wrap').getBoundingClientRect();
-    const W=r.width, H=r.height;
-    const ratio = h / sprite.h;
-    const dw = sprite.w * ratio;
-    const dh = h;
-    const sx = worldToScreenX(x, W);
-    const sy = worldToScreenY(y, H);
-    const dx = Math.round(sx - (facing===1? dw*0.5 : dw*0.5)); // 中心合わせ
-    const dy = Math.round(sy - dh + (shake||0));
-
-    ctx.save();
-    // 加算発光
-    if(glow){ ctx.globalCompositeOperation='lighter'; }
-    // 左向きはミラー
-    if(facing===-1){
-      ctx.translate(dx+dw, dy);
-      ctx.scale(-1,1);
-      ctx.drawImage(sprite.image, 0,0, dw, dh);
+  /* ▼ 画像が無くても見える暫定描画：床/プレイヤー/敵のプレースホルダー */
+  function drawSprite(sprite,x,y,h,facing,shake=0,glow=false,hurtT=0, placeholderColor="#6cf"){
+    const wrap=document.getElementById('game-wrap').getBoundingClientRect(); const W=wrap.width, H=wrap.height;
+    const has = sprite && sprite.loaded;
+    if(has){
+      const ratio=h/sprite.h, dw=sprite.w*ratio, dh=h;
+      const sx=worldToScreenX(x,W), sy=worldToScreenY(y,H), dx=Math.round(sx-dw*0.5), dy=Math.round(sy-dh+(shake||0));
+      ctx.save();
+      if(glow) ctx.globalCompositeOperation='lighter';
+      if(facing===-1){ ctx.translate(dx+dw,dy); ctx.scale(-1,1); ctx.drawImage(sprite.image,0,0,dw,dh); }
+      else ctx.drawImage(sprite.image,dx,dy,dw,dh);
+      if(hurtT>0){ const alpha=0.35 + 0.35*Math.sin((HURT_FLASH_T-hurtT)*28); ctx.globalCompositeOperation='multiply'; ctx.fillStyle=`rgba(255,48,48,${alpha})`; ctx.fillRect(facing===-1?dx:dx,dy,dw,dh); }
+      ctx.restore();
     }else{
-      ctx.drawImage(sprite.image, dx, dy, dw, dh);
+      // プレースホルダー（矩形と矢印）
+      const dw=h*0.66, dh=h;
+      const sx=worldToScreenX(x,W), sy=worldToScreenY(y,H), dx=Math.round(sx-dw*0.5), dy=Math.round(sy-dh+(shake||0));
+      ctx.save();
+      ctx.fillStyle=placeholderColor; ctx.globalAlpha=0.8; ctx.fillRect(dx,dy,dw,dh);
+      ctx.globalAlpha=1; ctx.fillStyle="#fff"; ctx.font="12px ui-monospace"; ctx.fillText(sprite?.name||"MISSING", dx+6, dy+14);
+      // 向き
+      ctx.beginPath(); ctx.moveTo(facing===1?dx+dw-10:dx+10, dy+dh/2); ctx.lineTo(facing===1?dx+dw-24:dx+24, dy+dh/2-8); ctx.lineTo(facing===1?dx+dw-24:dx+24, dy+dh/2+8); ctx.closePath(); ctx.fill();
+      if(hurtT>0){ const alpha=0.3 + 0.3*Math.sin((HURT_FLASH_T-hurtT)*28); ctx.fillStyle=`rgba(255,48,48,${alpha})`; ctx.fillRect(dx,dy,dw,dh); }
+      ctx.restore();
     }
-    // 被弾赤点滅（四角バグ回避：直後に赤乗算で“スプライト自身”を赤く）
-    if(hurtT>0){
-      const alpha = 0.35 + 0.35*Math.sin((HURT_FLASH_T - hurtT)*28);
-      ctx.globalCompositeOperation='multiply';
-      ctx.fillStyle = `rgba(255,48,48,${alpha})`;
-      ctx.fillRect(facing===-1? dx:dx, dy, dw, dh);
-    }
-    ctx.restore();
   }
 
   function render(){
-    fitCanvas(); // レイアウト変化にも強い
-    const wrap = document.getElementById('game-wrap').getBoundingClientRect();
-    const W=wrap.width, H=wrap.height;
-
-    // 背景
+    fit();
+    const wrap=document.getElementById('game-wrap').getBoundingClientRect(); const W=wrap.width, H=wrap.height;
     ctx.clearRect(0,0,W,H);
-    ctx.fillStyle='#0a0e18';
-    ctx.fillRect(0,0,W,H);
+    // 背景
+    ctx.fillStyle='#061022'; ctx.fillRect(0,0,W,H);
+    // 遠景グラデ（可視化）
+    const g=ctx.createLinearGradient(0,0,0,H); g.addColorStop(0,'#0b1a38'); g.addColorStop(1,'#091326'); ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
 
-    // 床タイル
+    // 床
     Game.drawFloor(Game.camX % TILE_W);
 
     // 敵
     for(const en of Game.enemies){
-      // 立ち/歩き/攻撃
-      let spr = Sprites.e_stand;
-      if(en.state==='walk') spr = Sprites.e_walk[en.walkIndex];
+      let spr = Spr.e_stand;
+      if(en.state==='walk') spr = Spr.e_walk[en.walkIndex];
       if(en.state==='attack' && en._spr) spr = en._spr;
-      // 死亡
       if(en.dead){
-        ctx.save();
-        const sx = worldToScreenX(en.x, W), sy = worldToScreenY(en.y, H);
-        ctx.translate(sx, sy);
-        ctx.rotate(en.deathA);
-        drawSprite(spr, 0, 0, ENEMY_H, en.dir, 0, false, 0); // 回転は親Transformに任せる
-        ctx.restore();
+        ctx.save(); const sx=worldToScreenX(en.x,W), sy=worldToScreenY(en.y,H); ctx.translate(sx,sy); ctx.rotate(en.deathA);
+        drawSprite(spr,0,0,ENEMY_H,en.dir,0,false,0,"#f96"); ctx.restore();
       }else{
-        drawSprite(spr, en.x, en.y, ENEMY_H, en.dir, 0, false, en.hurtT);
+        drawSprite(spr,en.x,en.y,ENEMY_H,en.dir,0,false,en.hurtT,"#f96");
       }
     }
 
     // プレイヤー
-    const p = Game.player;
-    let pspr = Sprites.p_stand;
-    if(p.state==='walk') pspr = Sprites.p_walk[p.walkIndex];
-    if(p.state==='attack' && p._attackSprite) pspr = p._attackSprite;
-    if(p.state==='skill'){ pspr = Sprites.spin[p.skillIndex]; }
-    if(p.dead){
-      ctx.save();
-      const sx = worldToScreenX(p.x, W), sy = worldToScreenY(p.y, H);
-      ctx.translate(sx, sy);
-      ctx.rotate(p.deathA);
-      drawSprite(pspr, 0, 0, BASE_H, p.dir, 0, false, 0);
-      ctx.restore();
-    }else{
-      drawSprite(pspr, p.x, p.y, BASE_H, p.dir, p._shake||0, p._glow||false, p.hurtT);
-    }
+    const p=Game.player;
+    let pspr=Spr.p_stand;
+    if(p.state==='walk') pspr=Spr.p_walk[p.walkIndex];
+    if(p.state==='attack' && p._attackSprite) pspr=p._attackSprite;
+    if(p.state==='skill') pspr=Spr.spin[p.skillIndex];
+    if(p.dead){ ctx.save(); const sx=worldToScreenX(p.x,W), sy=worldToScreenY(p.y,H); ctx.translate(sx,sy); ctx.rotate(p.deathA); drawSprite(pspr,0,0,BASE_H,p.dir,0,false,0,"#6cf"); ctx.restore(); }
+    else { drawSprite(pspr,p.x,p.y,BASE_H,p.dir,p._shake||0,p._glow||false,p.hurtT,"#6cf"); }
   }
 
-  /*** 落下死＆リスポーン（画外落下） ***/
-  function checkFallRespawn(){
-    const p = Game.player;
-    if(p.y - p.height > canvas.height + 200){
-      // リスポーン：簡易（HP据え置き・位置戻す）
-      p.x = 100; p.y = FLOOR_Y; p.vx = p.vy = 0; p.state='idle'; p.lockInput=false;
-    }
-  }
+  function checkFall(){ const p=Game.player; if(p.y - p.height > canvas.height + 200){ p.x=100; p.y=FLOOR_Y; p.vx=p.vy=0; p.state='idle'; p.lockInput=false; } }
 
-  /*** 初期化 ***/
-  function init(){
-    fitCanvas();
-    Game.last = performance.now();
-    requestAnimationFrame(loop);
-    setInterval(checkFallRespawn, 200);
-
-    // Walk素材サイズ差の吸収は drawSprite の高さ固定で自動対応（縦横比保持）
-  }
-
+  function init(){ fit(); Game.last=performance.now(); requestAnimationFrame(loop); setInterval(checkFall,200); showDbg(); }
   init();
-
-})(); // IIFE
+})();
 </script>
 </body>
 </html>
