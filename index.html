@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Rev21b (Queue: 弱い順に1体ずつ)</title>
+<title>MOB Side Action – Rev22a (Double Jump + Faster A1)</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
 :root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
@@ -64,11 +64,11 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
 </div>
 
 <script>
-/* ===================== Rev21b (Queue) ======================
- - 弱い順に1体ずつ出現。倒すたびに次をスポーン
- - 新敵「MOB巨神」実装（Rev21aの仕様を継承）
- - SL8.png名修正の維持、タッチcalcバッククォート修正
-=============================================================*/
+/* ===================== Rev22a ======================
+ - プレイヤー2段ジャンプ対応（相手を飛び越えやすく）
+ - ■攻撃（A1）を高速化：準備/ヒット時間短縮＆微前進量UP
+ - Queue出現（弱い順1体ずつ）と巨神を維持
+====================================================*/
 (function(){
 'use strict';
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
@@ -267,6 +267,11 @@ class Player extends CharacterBase{
     this.assets=assets; this.world=world; this.effects=effects;
     this.x=100; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD;
     this.hp=1000; this.maxhp=1000; this.lives=3;
+
+    // ▼▼ 二段ジャンプ設定 ▼▼
+    this.maxJumps=2;          // 合計2回
+    this.jumpsLeft=this.maxJumps;
+
     this.comboStep=0; this.comboGraceT=0; this.comboGraceMax=0.24;
     this.bufferA1=false; this.queueA2=null; this.queueSK=null;
     this.actionAir=false; this.actionAirVx=0; this.a2LockoutT=0; this.skillCDT=0;
@@ -329,30 +334,44 @@ class Player extends CharacterBase{
       if(hb){ for(const e of enemies){ if(!e || e.dead || e.invulnT>0) continue; if(rectsOverlap({x:hb.x,y:hb.y,w:hb.w,h:hb.h}, e.aabb())){ const hit = e.hurt(hb.power, hb.dir, {lift:hb.lift, kbMul:hb.kbMul, kbuMul:hb.kbuMul}, this.effects); if(hit && rectsOverlap(this.aabb(), e.aabb())){ e.x = this.x + hb.dir * (this.w*0.55); } } } }
       this._updateAction(dt,world); world.updateTimer(dt); return;
     }
+
     if(input.edge.a1) this.bufferA1=true;
     if(this.comboGraceT>0) this.comboGraceT=Math.max(0,this.comboGraceT-dt);
     if(this.queueSK){ const q=this.queueSK; this.queueSK=null; this.bufferA1=false; this._startSpin(q.charged); return; }
     if(this.queueA2 && this.a2LockoutT<=0){ const q=this.queueA2; this.queueA2=null; this.bufferA1=false; this._startA2(q.charged, q.minShake); return; }
     if(this.bufferA1 && this.comboStep<3){ this.bufferA1=false; this._startA1(); return; }
 
+    // ---- 移動/ジャンプ（2段） ----
     let ax=0; if(input.left){ ax-=MOVE; this.face=-1; } if(input.right){ ax+=MOVE; this.face=1; }
     this.vx = ax!==0 ? (ax>0?MOVE:-MOVE) : 0;
-    if(input.consumeJump() && this.onGround){ this.vy=-JUMP_V; this.onGround=false; }
+
+    if(input.consumeJump() && this.jumpsLeft>0){
+      this.vy=-JUMP_V; this.onGround=false; this.jumpsLeft--;
+    }
+
     this.updatePhysics(dt);
+
+    // 地上でジャンプリセット
+    if(this.onGround) this.jumpsLeft=this.maxJumps;
+
     this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
     this.animT += dt;
 
     if(input.attack2Charging && this.state!=='atk' && this.state!=='skill'){ this.state='chargeA2'; }
     world.updateTimer(dt);
   }
+  // ■攻撃 高速化（prep短縮・hit短縮・前進量UPで爽快感UP）
   _startA1(){
     this.state='atk'; this.animT=0; this.comboStep=Math.min(this.comboStep+1,3);
     this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? Math.max(-40,Math.min(40,this.vx)) : 0;
-    const seq=[ {kind:'prep',dur:0.10,frame:'k1prep',dx:0,power:0} ];
-    let frame='k1a', power=5, dx=0;
-    if(this.comboStep===2){ frame='k1b'; power=8; dx=10; }
-    else if(this.comboStep===3){ frame='k1c'; power=10; dx=10; }
-    seq.push({kind:'hit',dur:0.25,frame,dx,power, kbMul:1.0, kbuMul:1.0});
+
+    const seq=[ {kind:'prep',dur:0.06,frame:'k1prep',dx:0,power:0} ]; // ← 0.10 → 0.06
+
+    let frame='k1a', power=5, dx=10;                                 // ← dx初期値10（前進感）
+    if(this.comboStep===2){ frame='k1b'; power=8; dx=14; }            // ← dx 10→14
+    else if(this.comboStep===3){ frame='k1c'; power=10; dx=16; }      // ← dx 10→16
+
+    seq.push({kind:'hit',dur:0.18,frame,dx,power, kbMul:1.0, kbuMul:1.0}); // ← 0.25 → 0.18
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
   _startA2(charged, minShake){
@@ -399,6 +418,7 @@ class Player extends CharacterBase{
     this.queueA2=null; this.queueSK=null; this.actionAir=false; this.actionAirVx=0;
     this.invulnT=0.6; this.hp=this.maxhp; document.getElementById('hpfill').style.width='100%'; document.getElementById('hpnum').textContent=this.hp;
     this.x=world.camX+80; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.vx=0; this.vy=0;
+    this.jumpsLeft=this.maxJumps; // 二段ジャンプリセット
   }
   draw(ctx,world){
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
@@ -728,7 +748,7 @@ class Kozou extends CharacterBase{
   }
 }
 
-/* ===== 新敵：MOB巨神（プレイアブル想定） ===== */
+/* ===== 新敵：MOB巨神 ===== */
 class MOBGiant extends CharacterBase{
   constructor(world,effects,assets,x=1650){
     super(76,90);
@@ -1037,6 +1057,7 @@ Player.prototype.hurt = function(amount,dir,opts,effects){
     this._actionSeq = null; this._actionIndex = 0; this._actionTime = 0;
     this.bufferA1 = false; this.queueA2 = null; this.queueSK = null; this.comboStep = 0; this.comboGraceT = 0; this.a2LockoutT = 0;
     this.overhead?.root && (this.overhead.root.style.display='none'); this.actionAir = false; this.actionAirVx = 0;
+    this.jumpsLeft=this.maxJumps; // 被弾時もジャンプ回数を安定化
   }
   return hit;
 };
