@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Rev14 (Full)</title>
+<title>MOB Side Action – Rev15 (WaruMOB x2)</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
   :root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
@@ -61,12 +61,14 @@
   </div>
 
 <script>
-/* ===================== Rev14 (Full) ======================
- - 既存敵を「突進攻撃」AIへ：中距離から突進、攻撃後2sクール（連撃なし）、CT中はバックステップ
- - 敵の頭上にHPバー表示
- - プレイヤーと敵の「すり抜け防止」：X方向の重なりを分離
- - 新敵「ワルMOB」追加：HP100 / 攻10 / 低頻度射撃（teki7.png弾）
- - 既存のUI/操作/スキルCD等は維持
+/* ===================== Rev15 (Full) ======================
+ - ノーマル敵を完全削除
+ - WaruMOBのみ：確実に移動＆射撃。2体同時出現
+ - WaruMOB：HP100/攻10、低頻度射撃（teki1→teki3後に弾teki7）、遅め移動
+ - 近づきすぎたら少し離れるAI、攻撃レンジなら毎フレーム判断しクール後即撃つ
+ - すり抜け防止：プレイヤーと各敵のX分離
+ - 敵頭上HPバー、小型表示
+ - プレイヤーの既存仕様（コンボ、A2溜め、スキルCT5s 等）を維持
 ========================================================== */
 (function(){
   'use strict';
@@ -188,7 +190,7 @@
 
   /* Constants */
   const GRAV=2000, MOVE=260, JUMP_V=760, MAX_FALL=1200;
-  const EN_MOVE=140, GROUND_TOP_Y=360, FOOT_PAD=2;
+  const GROUND_TOP_Y=360, FOOT_PAD=2;
 
   const rectsOverlap=(a,b)=>Math.abs(a.x-b.x)*2 < (a.w+b.w) && Math.abs(a.y-b.y)*2 < (a.h+b.h);
 
@@ -232,7 +234,6 @@
       if(this.dead){ this.deathT += dt; this.spinAngle += this.spinSpeed*dt; this.fade = clamp(1 - this.deathT/1.2, 0, 1); }
     }
     drawHPBar(ctx,world){
-      // 小さいHPバー
       const w=36, h=4, x=this.x-world.camX, y=this.y-world.camY - this.h/2 - 10;
       const ratio=Math.max(0,this.hp/this.maxhp);
       ctx.save();
@@ -255,7 +256,7 @@
       this.comboStep=0; this.comboGraceT=0; this.comboGraceMax=0.24; this.bufferA1=false;
       this.queueA2=null; this.queueSK=null;
 
-      this.actionAir=false; this.actionAirVx=0; this.airVXCap=40; this.airDamp=0.90;
+      this.actionAir=false; this.actionAirVx=0;
 
       this.a2LockoutT=0;
       this.skillCDT=0;
@@ -266,13 +267,11 @@
         k2prep:'K1-3.png', k2:'K1-5.png', spin:['h1.png','h2.png','h3.png','h4.png'],
       };
 
-      // 頭上ゲージ（A2/スキル充電表示）
       this.overhead=this._createOverheadGauge();
       document.querySelector('.gamewrap').appendChild(this.overhead.root);
     }
     _getFramePath(key, i=0){ const v=this.frames[key]; return Array.isArray(v)? v[Math.max(0,Math.min(v.length-1,i))] : v; }
     _imgByKey(key,i=0){ return this.world.assets.img(this._getFramePath(key,i)); }
-
     _createOverheadGauge(){
       const root=document.createElement('div'); root.className='overhead';
       const g=document.createElement('div'); g.className='gauge';
@@ -290,7 +289,6 @@
       this.overhead.root.style.display=show?'flex':'none';
       this.overhead.label.textContent=text; this.overhead.fill.style.width=((ratio*100)|0)+'%';
     }
-
     currentHitbox(){
       if(!(this.state==='atk'||this.state==='skill') || !this._actionSeq) return null;
       const cur=this._actionSeq[this._actionIndex]; if(!cur) return null;
@@ -304,7 +302,6 @@
       }
       return null;
     }
-
     update(dt,input,world,enemies){
       input.beginFrame();
       this._posOverhead();
@@ -330,7 +327,6 @@
         input.skillChargeT=0;
       }
 
-      // 攻撃/スキル中：ヒット処理（複数敵対応）
       if(this.state==='atk'||this.state==='skill'||this.state==='hurt'){
         const hb=this.currentHitbox();
         if(hb){
@@ -364,11 +360,10 @@
       if(input.attack2Charging && this.state!=='atk' && this.state!=='skill'){ this.state='chargeA2'; }
       world.updateTimer(dt);
     }
-
     _startA1(){
       this.state='atk'; this.animT=0;
       this.comboStep=Math.min(this.comboStep+1,3);
-      this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? clamp(this.vx, -40, 40) : 0;
+      this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? Math.max(-40,Math.min(40,this.vx)) : 0;
       const seq=[ {kind:'prep',dur:0.10,frame:'k1prep',dx:0,power:0} ];
       let frame='k1a', power=5, dx=0;
       if(this.comboStep===2){ frame='k1b'; power=8; dx=10; }
@@ -376,10 +371,9 @@
       seq.push({kind:'hit',dur:0.25,frame,dx,power, kbMul:1.0, kbuMul:1.0});
       this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
     }
-
     _startA2(charged, minShake){
       this.state='atk'; this.animT=0;
-      this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? clamp(this.vx, -40, 40) : 0;
+      this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? Math.max(-40,Math.min(40,this.vx)) : 0;
       const power=charged?18:15, lift=1, kbm=charged?1.2:1.1, kbum=charged?1.25:1.15;
       this._actionSeq=[
         {kind:'prepShake',dur:minShake,frame:'k2prep',dx:0,power:0},
@@ -388,10 +382,9 @@
       this._actionIndex=0; this._actionTime=0;
       this.a2LockoutT = 0.5;
     }
-
     _startSpin(charged){
       this.state='skill'; this.animT=0;
-      this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? clamp(this.vx, -40, 40) : 0;
+      this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? Math.max(-40,Math.min(40,this.vx)) : 0;
       const rounds=charged?4:2, power=charged?40:25;
       const kbm  = charged?1.9:1.6, kbum = charged?1.5:1.3;
       const frames=this.frames.spin; const seq=[];
@@ -404,11 +397,9 @@
       }
       this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
     }
-
     _updateAction(dt){
       if(this.actionAir){ this.actionAirVx *= 0.90; this.x += this.actionAirVx*dt; }
       this.updatePhysics(dt);
-
       if(this._actionSeq){
         this._actionTime+=dt;
         const cur=this._actionSeq[this._actionIndex];
@@ -430,7 +421,6 @@
       }
       this.animT+=dt;
     }
-
     _respawn(world){
       this.dead=false; this.fade=1; this.spinAngle=0; this.spinSpeed=0;
       this.state='idle'; this.comboStep=0; this.comboGraceT=0; this.bufferA1=false;
@@ -438,7 +428,6 @@
       this.hp=this.maxhp; document.getElementById('hpfill').style.width='100%'; document.getElementById('hpnum').textContent=this.hp;
       this.x=world.camX+80; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.vx=0; this.vy=0;
     }
-
     draw(ctx,world){
       ctx.save();
       ctx.translate(this.x-world.camX, this.y-world.camY);
@@ -461,122 +450,12 @@
     }
   }
 
-  /* Enemy (Dash type) */
-  class DashEnemy extends CharacterBase{
-    constructor(world,effects){
-      super(56,64);
-      this.world=world; this.effects=effects;
-      this.x=360; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
-      this.maxhp=500; this.hp=500;
-      this.cool=0; // 攻撃クール
-      this._seq=null; this._idx=0; this._t=0;
-      this.backstepT=0;
-    }
-    imgByKey(key){
-      const a=this.world.assets, map={ idle:'EN1-1.png', walk2:'EN1-2.png', walk3:'EN1-3.png', atk1:'EN1-4.png', atk2:'EN1-5.png' };
-      return a.img(map[key]||'EN1-1.png');
-    }
-    currentHitbox(){
-      if(!this._seq) return null; const cur=this._seq[this._idx]; if(!cur) return null;
-      if(cur.kind==='hit'){ // 突進の広めヒット
-        const w=56,h=40; const x=this.x + this.face*(this.w*0.35 + w*0.5); const y=this.y - 6;
-        return {x,y,w,h,power:10,dir:this.face, lift:0};
-      }
-      return null;
-    }
-    aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.85}; }
-
-    // 突進攻撃（レンジ: 80〜240）
-    decide(player){
-      if(this.cool>0 || this.state==='atk' || this.state==='hurt' || this.dead) return;
-      const dx=player.x - this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
-      if(adx>=80 && adx<=240){
-        // 予備動作→突進→停止（連撃なし）
-        this._seq=[
-          {kind:'pose',dur:0.12,key:'atk1',dx:0},
-          {kind:'dash',dur:0.22,key:'atk2',dx: (this.onGround? 480:260)}, // 速度ベース
-          {kind:'hit', dur:0.10,key:'atk2',dx: 60}, // 追い
-        ];
-        this.cool=2.0; // 攻撃後のクール
-        this.state='atk'; this._idx=0; this._t=0; this.vx=0;
-      } else {
-        // 間合い調整
-        this.vx = (dx>0?EN_MOVE:-EN_MOVE);
-      }
-    }
-
-    update(dt,player){
-      if(this.dead){ this.updatePhysics(dt); return; }
-      if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
-
-      if(this.state==='atk'){
-        // シーケンス進行
-        this.updatePhysics(dt);
-        if(this._seq){
-          this._t+=dt; const cur=this._seq[this._idx];
-          if(cur){
-            const scale=this.onGround?1:0.6;
-            if(cur.kind==='dash'){
-              // 突進は速度で
-              this.vx = this.face * (cur.dx*scale);
-            }else{
-              if(cur.dx) this.x += this.face*(cur.dx*scale*dt/Math.max(0.001,cur.dur));
-              this.vx *= 0.9;
-            }
-            if(this._t>=cur.dur){
-              this._idx++; this._t=0; this.vx=0;
-              if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; this.backstepT=0.35; }
-            }
-          }
-        }
-      } else if(this.state==='hurt'){
-        this.updatePhysics(dt);
-        if(this.onGround) this.state='idle';
-      } else {
-        // クール中はバックステップで離脱
-        const dx=player.x - this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
-        if(this.cool>0){
-          if(this.backstepT>0){ // バクステ中
-            this.backstepT=Math.max(0,this.backstepT-dt);
-            const sp=260; this.vx = -this.face*sp;
-          } else {
-            // 小移動：様子見
-            this.vx = (adx<120)? (-this.face*120) : 0;
-          }
-        } else {
-          // 攻め寄る
-          this.vx = adx>100 ? (dx>0?EN_MOVE:-EN_MOVE) : 0;
-          // 毎フレーム決断
-          this.decide(player);
-        }
-        this.updatePhysics(dt);
-        this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
-      }
-      this.animT+=dt;
-    }
-
-    draw(ctx,world){
-      ctx.save();
-      ctx.translate(this.x-world.camX, this.y-world.camY);
-      if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
-      if(this.face<0 && !this.dead) ctx.scale(-1,1);
-      let img=null; 
-      if(this.dead){ img=this.imgByKey('idle'); }
-      else if(this.state==='atk' && this._seq){ const cur=this._seq[this._idx]; img=this.imgByKey(cur.key||'atk2');
-      } else if(this.state==='run'){ const f=Math.floor(this.animT*10)%2; img=this.imgByKey(f? 'walk2':'walk3');
-      } else { img=this.imgByKey('idle'); }
-      const scale=this.h/img.height, w=img.width*scale, h=this.h;
-      ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
-      ctx.restore();
-      this.drawHPBar(ctx,world);
-    }
-  }
-
-  /* Projectile for WaruMOB */
+  /* Projectile */
   class Projectile{
     constructor(world,x,y,dir,img,power=10){
-      this.world=world; this.x=x; this.y=y; this.dir=dir; this.vx=320*dir; this.vy=0;
-      this.img=img; this.power=power; this.life=2.5; this.dead=false; this.w=24; this.h=16;
+      this.world=world; this.x=x; this.y=y; this.dir=dir;
+      this.vx=300*dir; this.vy=0; this.img=img; this.power=power;
+      this.life=2.8; this.dead=false; this.w=24; this.h=16;
     }
     aabb(){ return {x:this.x, y:this.y, w:this.w*0.7, h:this.h*0.7}; }
     update(dt){ if(this.dead) return; this.x+=this.vx*dt; this.y+=this.vy*dt; this.life-=dt; if(this.life<=0) this.dead=true; }
@@ -591,7 +470,7 @@
     }
   }
 
-  /* WaruMOB (ranged) */
+  /* WaruMOB */
   class WaruMob extends CharacterBase{
     constructor(world,effects,assets,x=520){
       super(52,60);
@@ -601,7 +480,6 @@
       this.cool=0; // 攻撃間隔（低頻度）
       this._seq=null; this._idx=0; this._t=0;
       this.projectiles=[];
-      this.step=0;
     }
     imgByKey(key){
       const a=this.assets;
@@ -613,7 +491,7 @@
       const ox=this.face*28; const oy=-8;
       this.projectiles.push(new Projectile(this.world,this.x+ox,this.y+oy,this.face,img,this.attack));
     }
-    currentHitbox(){ return null; } // 近接は無し
+    currentHitbox(){ return null; }
     aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.85}; }
 
     update(dt,player){
@@ -628,29 +506,42 @@
         this.updatePhysics(dt);
         if(this._seq){
           this._t+=dt; const cur=this._seq[this._idx];
-          if(cur){
-            if(this._t>=cur.dur){
-              this._idx++; this._t=0;
-              if(this._idx===2){ // 発射タイミング
-                this.addBullet();
-              }
-              if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; }
-            }
-          } else { this._seq=null; this.state='idle'; }
+          if(cur && this._t>=cur.dur){
+            this._idx++; this._t=0;
+            if(this._idx===2){ this.addBullet(); }
+            if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; }
+          }
         }
       } else if(this.state==='hurt'){
         this.updatePhysics(dt);
         if(this.onGround) this.state='idle';
       } else {
-        // 遅めの徘徊＋低頻度射撃
+        // ---- AI：毎フレーム判断（攻撃レンジ/接近/離脱）----
         const dx=player.x - this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
-        const patrol=60; // 遅い
-        this.vx = adx>180 ? (dx>0?patrol:-patrol) : 0;
 
-        if(this.cool<=0 && adx<260){
-          // 予備動作（2段）→発射
+        const patrol=70;           // 通常徘徊速度（遅め）
+        const approachRange=220;   // これより遠いと接近
+        const holdMin=120, holdMax=180; // この帯に入るよう立ち回り
+        const fireRange=260;       // ここより近ければ攻撃可能
+
+        // 立ち位置調整
+        if(adx>approachRange){
+          // 接近
+          this.vx = (dx>0?patrol:-patrol);
+        } else if(adx<holdMin){
+          // 近すぎ→少し下がる
+          this.vx = (dx>0?-patrol:patrol);
+        } else if(adx>holdMax){
+          // ちょい近づく
+          this.vx = (dx>0?patrol:-patrol);
+        } else {
+          this.vx = 0;
+        }
+
+        // 射程内＆クール0なら即攻撃開始（低頻度だが確実）
+        if(this.cool<=0 && adx<fireRange){
           this._seq=[ {kind:'pose',dur:0.18,key:'prep1'}, {kind:'pose',dur:0.22,key:'prep2'} ];
-          this.cool=2.4; // 低頻度
+          this.cool=1.8; // 低頻度
           this.state='atk'; this._idx=0; this._t=0; this.vx=0;
         }
 
@@ -751,21 +642,21 @@
         'M1-1.png','M1-2.png','M1-3.png','M1-4.png',
         'K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png',
         'h1.png','h2.png','h3.png','h4.png',
-        'EN1-1.png','EN1-2.png','EN1-3.png','EN1-4.png','EN1-5.png','EN1-6.png',
         'teki1.png','teki2.png','teki3.png','teki7.png'
       ];
       await this.assets.load(imgs);
       this.world=new World(this.assets,this.canvas,this.effects);
       this.player=new Player(this.assets,this.world,this.effects);
-      // 敵2体：突進型＋ワルMOB
-      this.enemies=[ new DashEnemy(this.world,this.effects), new WaruMob(this.world,this.effects,this.assets,520) ];
+
+      // WaruMOBを2体出現（距離をずらす）
+      this.enemies=[ new WaruMob(this.world,this.effects,this.assets,420), new WaruMob(this.world,this.effects,this.assets,640) ];
+
       updateHPUI(this.player.hp,this.player.maxhp);
 
       this.lastT=now();
       const loop=()=>{
         const t=now(); let dt=(t-this.lastT)/1000; if(dt>0.05) dt=0.05; this.lastT=t;
 
-        // 演出ヒットストップ
         if(this.effects.hitstop>0){
           this.effects.update(dt);
           this.world.updateCam(this.player);
@@ -774,33 +665,17 @@
           return;
         }
 
-        // 更新
         this.player.update(dt,this.input,this.world,this.enemies);
 
-        // 敵更新と敵→プレイヤー攻撃判定
+        // 敵更新と弾ヒット
         for(const e of this.enemies){
           e.update(dt,this.player);
-
-          // DashEnemyの近接ヒット
-          if(e instanceof DashEnemy && !e.dead){
-            const hb=e.currentHitbox();
-            if(hb && this.player.invulnT<=0){
-              if(rectsOverlap({x:hb.x,y:hb.y,w:hb.w,h:hb.h}, this.player.aabb())){
-                const hit=this.player.hurt(10, hb.dir, {lift:0}, this.effects);
+          for(const p of e.projectiles){
+            if(!p.dead && this.player.invulnT<=0){
+              if(rectsOverlap(p.aabb(), this.player.aabb())){
+                p.dead=true;
+                const hit=this.player.hurt(p.power, p.dir, {lift:0}, this.effects);
                 if(hit) updateHPUI(this.player.hp,this.player.maxhp);
-              }
-            }
-          }
-
-          // WaruMobの弾ヒット
-          if(e instanceof WaruMob){
-            for(const p of e.projectiles){
-              if(!p.dead && this.player.invulnT<=0){
-                if(rectsOverlap(p.aabb(), this.player.aabb())){
-                  p.dead=true;
-                  const hit=this.player.hurt(p.power, p.dir, {lift:0}, this.effects);
-                  if(hit) updateHPUI(this.player.hp,this.player.maxhp);
-                }
               }
             }
           }
@@ -818,10 +693,8 @@
             const dir = dx>=0? 1 : -1;
             const overlapX = (a.w + b.w)/2 - Math.abs(this.player.x - e.x);
             if(overlapX>0){
-              // 互いに半分ずつ押し合い
               this.player.x += dir * (overlapX*0.6);
               e.x          -= dir * (overlapX*0.4);
-              // 少しだけ反発
               this.player.vx += dir * 20;
               e.vx -= dir * 20;
             }
@@ -839,7 +712,7 @@
     }
   }
 
-  // HPバーUI更新を伴う Player.hurt
+  // HPバーUI連動
   Player.prototype.hurt = function(amount,dir,opts,effects){
     const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
     if(hit) updateHPUI(this.hp,this.maxhp);
