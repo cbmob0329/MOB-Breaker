@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Rev11</title>
+<title>MOB Side Action – Rev12</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
   :root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
@@ -20,8 +20,9 @@
   .stick{width:120px;height:120px;border-radius:50%;background:#0d1828;outline:2px solid #22324d;position:relative}
   .stickThumb{width:64px;height:64px;border-radius:50%;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#1a2a45;outline:2px solid #2e4a73;box-shadow: inset 0 0 0 4px #0c1422}
   .buttons{display:grid;grid-template-columns: repeat(2,1fr);grid-template-rows: repeat(2,1fr);gap:12px}
-  .btn{border:none;border-radius:14px;background:#0d1828;outline:2px solid #22324d;color:var(--fg);font-size:26px;display:grid;place-items:center;touch-action:none;box-shadow:inset 0 -4px 0 rgba(255,255,255,.04)}
+  .btn{border:none;border-radius:14px;background:#0d1828;outline:2px solid #22324d;color:var(--fg);font-size:26px;display:grid;place-items:center;touch-action:none;box-shadow:inset 0 -4px 0 rgba(255,255,255,.04);transition:opacity .15s ease}
   .btn:active{transform:scale(.98)}
+  .btn[disabled]{opacity:.35;pointer-events:none}
   .btn.attack1{background:#112033} .btn.attack2{background:#1a2436} .btn.skill{background:#132a22} .btn.jump{background:#2a1a1a}
   header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex;gap:10px;align-items:center;z-index:10;pointer-events:none}
   .chip{background:var(--hud-bg);outline:1px solid #0e1522;border-radius:12px;padding:6px 10px;font-weight:600;font-size:12px;display:flex;gap:8px;align-items:center}
@@ -60,12 +61,11 @@
   </div>
 
 <script>
-/* ===================== Rev11 ======================
- - 敵AI攻撃（小/中/連撃＋クールタイム維持）
- - EN_MOVE=150（少し遅く）
- - スキル：広い多段ヒットに強化（円形相当の矩形で毎フレーム判定）
- - 0HP：超ぶっ飛び＋高速回転＋フェードアウト（敵は退場、プレイヤーは演出後リスポーン）
- - A1高速・A2打ち上げ・空中時前進抑制など Rev10の操作感は維持
+/* ===================== Rev12 ======================
+ - 敵が攻めて来ない問題：レンジ拡大＆意思決定頻度UP＆確率依存を軽減
+ - 攻撃②：最低震え0.35s（溜め時0.6s）→発動、終了後0.5sロックアウト
+ - スキル：クールタイム5s（ボタン無効化＆半透明）
+ - 既存の操作感（A1高速／空中移動抑制／スキル広判定／0HPぶっ飛び）は維持
 =================================================== */
 (function(){
   'use strict';
@@ -186,7 +186,7 @@
   }
 
   // 共通
-  const GRAV=2000, MOVE=260, EN_MOVE=150, JUMP_V=760, MAX_FALL=1200;
+  const GRAV=2000, MOVE=260, EN_MOVE=140, JUMP_V=760, MAX_FALL=1200;
   const GROUND_TOP_Y=360, FOOT_PAD=2;
 
   function rectsOverlap(a,b){ return Math.abs(a.x-b.x)*2 < (a.w+b.w) && Math.abs(a.y-b.y)*2 < (a.h+b.h); }
@@ -218,10 +218,9 @@
       // 0HP → 超ぶっ飛び回転フェード
       if(this.hp<=0){
         this.dead=true;
-        // さらに上乗せ
         this.vx = dir * (520 * (kbMul||1));
         this.vy = - (520 * (kbuMul||1));
-        this.spinSpeed = 18; // ラジアン/秒相当（見た目）
+        this.spinSpeed = 18;
         this.deathT = 0; this.fade = 1;
       }
       return true;
@@ -253,6 +252,10 @@
 
       // 攻撃中空中慣性（抑制）
       this.actionAir=false; this.actionAirVx=0; this.airVXCap=40; this.airDamp=0.90;
+
+      // A2ロックアウト & スキルCD
+      this.a2LockoutT=0;
+      this.skillCDT=0;
 
       this.frames={
         idle:['M1-1.png'], walk:['M1-2.png','M1-3.png','M1-4.png'],
@@ -290,9 +293,9 @@
       if(!(this.state==='atk'||this.state==='skill') || !this._actionSeq) return null;
       const cur=this._actionSeq[this._actionIndex]; if(!cur) return null;
 
-      // スキルは広範囲・毎フレーム多段
+      // スキルは広範囲・毎フレーム多段（Rev11から踏襲）
       if(this.state==='skill'){
-        const W=80,H=60; // 強化
+        const W=80,H=60;
         const x=this.x + this.face*(this.w*0.2);
         return {x, y:this.y, w:W, h:H, power:cur.power||0, dir:this.face, lift:cur.lift||0, kbMul:cur.kbMul||1.6, kbuMul:cur.kbuMul||1.3};
       }
@@ -307,6 +310,13 @@
     update(dt,input,world,enemy){
       input.beginFrame();
       this._posOverhead();
+
+      // クールダウン減衰＆UI
+      if(this.a2LockoutT>0) this.a2LockoutT=Math.max(0,this.a2LockoutT-dt);
+      const skBtn=document.getElementById('btnSK');
+      if(this.skillCDT>0){ this.skillCDT=Math.max(0,this.skillCDT-dt); skBtn.setAttribute('disabled',''); }
+      else { skBtn.removeAttribute('disabled'); }
+
       if(this.dead){
         // 演出後リスポーン
         this.updatePhysics(dt);
@@ -315,14 +325,22 @@
         return;
       }
 
-      // 溜めUI
+      // 溜めUI（スキルはCD中は開始しない）
       if(input.attack2Charging){ input.attack2ChargeT=Math.min(1,input.attack2ChargeT+dt); this._showGauge(true,'▲ Charge', input.attack2ChargeT); }
-      else if(input.skillCharging){ input.skillChargeT=Math.min(1,input.skillChargeT+dt); this._showGauge(true,'● Charge', input.skillChargeT); }
+      else if(input.skillCharging && this.skillCDT<=0){ input.skillChargeT=Math.min(1,input.skillChargeT+dt); this._showGauge(true,'● Charge', input.skillChargeT); }
       else this._showGauge(false);
 
       // 離しでキュー
-      if(input.edge.a2Release && input.attack2ChargeT>0){ this.queueA2={charged:input.attack2ChargeT>=0.5}; input.attack2ChargeT=0; }
-      if(input.edge.skillRelease && input.skillChargeT>0){ this.queueSK={charged:input.skillChargeT>=0.5}; input.skillChargeT=0; }
+      if(input.edge.a2Release && input.attack2ChargeT>0){
+        // A2は最低震え時間を保証（0.35s / 溜め>=0.5で0.6s）
+        const charged = input.attack2ChargeT>=0.5;
+        this.queueA2={charged, minShake: charged?0.6:0.35};
+        input.attack2ChargeT=0;
+      }
+      if(input.edge.skillRelease && input.skillChargeT>0 && this.skillCDT<=0){
+        this.queueSK={charged: input.skillChargeT>=0.5};
+        input.skillChargeT=0;
+      }
 
       // 行動中（攻撃/スキル/被弾）
       if(this.state==='atk'||this.state==='skill'||this.state==='hurt'){
@@ -342,9 +360,9 @@
       if(input.edge.a1) this.bufferA1=true;
       if(this.comboGraceT>0) this.comboGraceT=Math.max(0,this.comboGraceT-dt);
 
-      // 優先度：SK＞A2＞A1
+      // 優先度：SK（CDチェック）＞A2（ロックアウトチェック）＞A1
       if(this.queueSK){ const q=this.queueSK; this.queueSK=null; this.bufferA1=false; this._startSpin(q.charged); return; }
-      if(this.queueA2){ const q=this.queueA2; this.queueA2=null; this.bufferA1=false; this._startA2(q.charged); return; }
+      if(this.queueA2 && this.a2LockoutT<=0){ const q=this.queueA2; this.queueA2=null; this.bufferA1=false; this._startA2(q.charged, q.minShake); return; }
       if(this.bufferA1 && this.comboStep<3){ this.bufferA1=false; this._startA1(); return; }
 
       // 通常移動
@@ -365,7 +383,7 @@
     _startA1(){
       this.state='atk'; this.animT=0;
       this.comboStep=Math.min(this.comboStep+1,3);
-      this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? clamp(this.vx, -this.airVXCap, this.airVXCap) : 0;
+      this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? clamp(this.vx, -40, 40) : 0;
       const seq=[ {kind:'prep',dur:0.10,frame:'k1prep',dx:0,power:0} ];
       let frame='k1a', power=5, dx=0;
       if(this.comboStep===2){ frame='k1b'; power=8; dx=10; }
@@ -373,28 +391,31 @@
       seq.push({kind:'hit',dur:0.25,frame,dx,power, kbMul:1.0, kbuMul:1.0});
       this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
     }
-    _startA2(charged){
+
+    // A2：震えてから発動＋連射防止ロックアウト
+    _startA2(charged, minShake){
       this.state='atk'; this.animT=0;
-      this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? clamp(this.vx, -this.airVXCap, this.airVXCap) : 0;
+      this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? clamp(this.vx, -40, 40) : 0;
       const power=charged?18:15, lift=1, kbm=charged?1.2:1.1, kbum=charged?1.25:1.15;
       this._actionSeq=[
-        {kind:'prepShake',dur:0.12,frame:'k2prep',dx:0,power:0},
+        {kind:'prepShake',dur:minShake,frame:'k2prep',dx:0,power:0}, // 最低震え
         {kind:'hit',dur:0.34,frame:'k2',dx:12,power:power, lift, kbMul:kbm, kbuMul:kbum}
       ];
       this._actionIndex=0; this._actionTime=0;
+      this.a2LockoutT = 0.5; // 終了までに減るが、次の受付は0.5s後
     }
+
     _startSpin(charged){
       this.state='skill'; this.animT=0;
-      this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? clamp(this.vx, -this.airVXCap, this.airVXCap) : 0;
+      this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? clamp(this.vx, -40, 40) : 0;
       const rounds=charged?4:2, power=charged?40:25;
-      const kbm  = charged?1.9:1.6;   // 横
-      const kbum = charged?1.5:1.3;   // 縦
+      const kbm  = charged?1.9:1.6;
+      const kbum = charged?1.5:1.3;
       const frames=this.frames.spin; const seq=[];
       for(let r=0;r<rounds;r++){
         for(let i=0;i<frames.length;i++){
-          // すべてのフレームを軽ヒット化し、1フレームごとに当たる
           const p = power*(i===1?1:0.6);
-          const lift = (i===1?1:0); // たまに持ち上げ
+          const lift = (i===1?1:0);
           seq.push({kind:'sp',dur:0.07,frame:frames[i],dx:0,power:p, lift, kbMul:kbm, kbuMul:kbum});
         }
       }
@@ -403,26 +424,25 @@
 
     // --- 行動中 ---
     _updateAction(dt){
-      // 空中慣性 抑制
-      if(this.actionAir){ this.actionAirVx *= this.airDamp; this.x += this.actionAirVx*dt; }
-
-      // 物理
+      if(this.actionAir){ this.actionAirVx *= 0.90; this.x += this.actionAirVx*dt; }
       this.updatePhysics(dt);
 
-      // シーケンス
       if(this._actionSeq){
         this._actionTime+=dt;
         const cur=this._actionSeq[this._actionIndex];
         if(cur){
-          const dxScale = this.onGround?1:0.5; // 空中は抑制
+          const dxScale = this.onGround?1:0.5;
           if(cur.dx) this.x += this.face*(cur.dx*dxScale*dt/cur.dur);
           if(this._actionTime>=cur.dur){
             this._actionIndex++; this._actionTime=0;
             if(this._actionIndex>=this._actionSeq.length){
+              // スキル終了時にCD開始
+              if(this.state==='skill'){ this.skillCDT=5.0; }
               if(this.state==='atk' && this.comboStep>0) this.comboGraceT=this.comboGraceMax;
               if(this.state==='atk' && this.comboStep>=3){ this.comboStep=0; this.bufferA1=false; }
-              if(this.queueSK){ const q=this.queueSK; this.queueSK=null; this._startSpin(q.charged); return; }
-              if(this.queueA2){ const q=this.queueA2; this.queueA2=null; this._startA2(q.charged); return; }
+              // 優先
+              if(this.queueSK && this.skillCDT<=0){ const q=this.queueSK; this.queueSK=null; this._startSpin(q.charged); return; }
+              if(this.queueA2 && this.a2LockoutT<=0){ const q=this.queueA2; this.queueA2=null; this._startA2(q.charged, q.minShake); return; }
               this.state='idle'; this._actionSeq=null;
             }
           }
@@ -482,34 +502,35 @@
       return null;
     }
     aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.8}; }
+
+    // より積極的な意思決定（レンジ拡大＆頻度UP）
     decide(player){
       if(this.cool>0) return;
       const dx=player.x - this.x, adx=Math.abs(dx); this.face = dx>=0?1:-1;
-      const close = adx<70, mid = adx<110;
-      if(close && Math.random()<0.55){
+      const close = adx<120, mid = adx<180;
+
+      if(close){
+        // 近距離は確定で小→中の連撃
         this._seq=[
-          {kind:'pose',dur:0.1, key:'atkS1'},
-          {kind:'hit', dur:0.4, key:'atkS2', dx:60, power:5},
-          {kind:'pose',dur:0.1, key:'atkM1'},
-          {kind:'hit', dur:0.3, key:'atkM2', dx:40, power:8, lift:1}
+          {kind:'pose',dur:0.08, key:'atkS1'},
+          {kind:'hit', dur:0.32, key:'atkS2', dx:70, power:5},
+          {kind:'pose',dur:0.08, key:'atkM1'},
+          {kind:'hit', dur:0.30, key:'atkM2', dx:50, power:8, lift:1}
         ];
-        this.cool=0.9;
+        this.cool=0.75;
       } else if(mid){
-        this._seq=[ {kind:'pose',dur:0.1,key:'atkS1'}, {kind:'hit',dur:0.5,key:'atkS2',dx:80,power:5} ];
-        this.cool=0.7;
-      } else if(close){
-        this._seq=[ {kind:'pose',dur:0.12,key:'atkM1'}, {kind:'hit',dur:0.4,key:'atkM2',dx:60,power:8,lift:1} ];
-        this.cool=0.8;
+        // 中距離は小攻撃で差し込み
+        this._seq=[ {kind:'pose',dur:0.08,key:'atkS1'}, {kind:'hit',dur:0.4,key:'atkS2',dx:90,power:5} ];
+        this.cool=0.6;
       } else {
-        this.vx = (dx>0?EN_MOVE:-EN_MOVE); return;
+        this.vx = (dx>0?EN_MOVE:-EN_MOVE);
+        return;
       }
       this.state='atk'; this._idx=0; this._t=0; this.vx=0;
     }
+
     update(dt,player){
-      if(this.dead){
-        this.updatePhysics(dt);
-        return;
-      }
+      if(this.dead){ this.updatePhysics(dt); return; }
       if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
 
       if(this.state==='atk'){
@@ -532,11 +553,13 @@
         const dx=player.x - this.x; this.face=dx>=0?1:-1;
         this.vx = Math.abs(dx)>60 ? (dx>0?EN_MOVE:-EN_MOVE) : 0;
         this.updatePhysics(dt);
-        this.aiT-=dt; if(this.aiT<=0){ this.decide(player); this.aiT=0.15; }
+        // 意思決定頻度UP
+        this.aiT-=dt; if(this.aiT<=0){ this.decide(player); this.aiT=0.10; }
         this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
       }
       this.animT+=dt;
     }
+
     draw(ctx,world){
       ctx.save();
       ctx.translate(this.x-world.camX, this.y-world.camY);
