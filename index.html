@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Rev12</title>
+<title>MOB Side Action – Rev13 (Full)</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
   :root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
@@ -61,19 +61,19 @@
   </div>
 
 <script>
-/* ===================== Rev12 ======================
- - 敵が攻めて来ない問題：レンジ拡大＆意思決定頻度UP＆確率依存を軽減
- - 攻撃②：最低震え0.35s（溜め時0.6s）→発動、終了後0.5sロックアウト
- - スキル：クールタイム5s（ボタン無効化＆半透明）
- - 既存の操作感（A1高速／空中移動抑制／スキル広判定／0HPぶっ飛び）は維持
-=================================================== */
+/* ===================== Rev13 (Full) ======================
+ - 敵：レンジ内は毎フレームdecide、滞在1.5sで強制発火、レンジ拡大(近140/中220)
+ - 攻撃②：最低震え(非溜め0.35/溜め0.6)→発動、0.5sロックアウト
+ - スキル：クールタイム5s（CT中は充電開始不可＆ボタン無効）
+ - スキル広範囲多段/0HPぶっ飛び回転フェード/空中慣性抑制 等を維持
+========================================================== */
 (function(){
   'use strict';
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
   const lerp=(a,b,t)=>a+(b-a)*t;
   const now=()=>performance.now();
 
-  // ====== Effect System ======
+  /* Effects: spark, shake, hitstop */
   class Effects{
     constructor(){ this.sparks=[]; this.shakeT=0; this.shakeAmp=0; this.hitstop=0; }
     addSpark(x,y,strong=false){
@@ -185,13 +185,13 @@
     }
   }
 
-  // 共通
+  /* Constants */
   const GRAV=2000, MOVE=260, EN_MOVE=140, JUMP_V=760, MAX_FALL=1200;
   const GROUND_TOP_Y=360, FOOT_PAD=2;
 
-  function rectsOverlap(a,b){ return Math.abs(a.x-b.x)*2 < (a.w+b.w) && Math.abs(a.y-b.y)*2 < (a.h+b.h); }
+  const rectsOverlap=(a,b)=>Math.abs(a.x-b.x)*2 < (a.w+b.w) && Math.abs(a.y-b.y)*2 < (a.h+b.h);
 
-  // ========= 基底 =========
+  /* Base Character */
   class CharacterBase{
     constructor(w,h){
       this.w=w; this.h=h; this.x=0; this.y=0; this.vx=0; this.vy=0;
@@ -200,28 +200,23 @@
       this.spinAngle=0; this.spinSpeed=0; this.fade=1;
     }
     aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.8}; }
-    // opts: {lift:boolean, kbMul:number, kbuMul:number}
     hurt(amount, dir, opts={}, effects){
       if(this.invulnT>0||this.dead) return false;
       this.hp=Math.max(0,this.hp-amount);
       const kbMul = opts.kbMul||1, kbuMul=opts.kbuMul||1;
       const baseKb  = 140 + amount*12;
       const baseKbu = opts.lift ? 360 : (amount>=15? 300 : 230);
-      // 攻撃者の向きへ飛ばす＋分離
       this.vx = dir * baseKb * kbMul;
       this.vy = - baseKbu * kbuMul;
-      this.x += dir * 4;
-      this.face = -dir;
+      this.x += dir * 4; this.face = -dir;
       this.state='hurt'; this.animT=0; this.invulnT=0.28;
       if(effects) effects.addSpark(this.x, this.y-10, amount>=15);
 
-      // 0HP → 超ぶっ飛び回転フェード
       if(this.hp<=0){
         this.dead=true;
         this.vx = dir * (520 * (kbMul||1));
         this.vy = - (520 * (kbuMul||1));
-        this.spinSpeed = 18;
-        this.deathT = 0; this.fade = 1;
+        this.spinSpeed = 18; this.deathT = 0; this.fade = 1;
       }
       return true;
     }
@@ -233,13 +228,11 @@
         this.y = top - this.h/2 + FOOT_PAD; this.vy=0; this.onGround=true;
       } else this.onGround=false;
       if(this.invulnT>0) this.invulnT=Math.max(0,this.invulnT-dt);
-      if(this.dead){
-        this.deathT += dt; this.spinAngle += this.spinSpeed*dt; this.fade = clamp(1 - this.deathT/1.2, 0, 1);
-      }
+      if(this.dead){ this.deathT += dt; this.spinAngle += this.spinSpeed*dt; this.fade = clamp(1 - this.deathT/1.2, 0, 1); }
     }
   }
 
-  // ========= プレイヤー =========
+  /* Player */
   class Player extends CharacterBase{
     constructor(assets, world, effects){
       super(56,64);
@@ -250,10 +243,8 @@
       this.comboStep=0; this.comboGraceT=0; this.comboGraceMax=0.24; this.bufferA1=false;
       this.queueA2=null; this.queueSK=null;
 
-      // 攻撃中空中慣性（抑制）
       this.actionAir=false; this.actionAirVx=0; this.airVXCap=40; this.airDamp=0.90;
 
-      // A2ロックアウト & スキルCD
       this.a2LockoutT=0;
       this.skillCDT=0;
 
@@ -263,7 +254,6 @@
         k2prep:'K1-3.png', k2:'K1-5.png', spin:['h1.png','h2.png','h3.png','h4.png'],
       };
 
-      // 頭上ゲージ
       this.overhead=this._createOverheadGauge();
       document.querySelector('.gamewrap').appendChild(this.overhead.root);
     }
@@ -288,18 +278,14 @@
       this.overhead.label.textContent=text; this.overhead.fill.style.width=((ratio*100)|0)+'%';
     }
 
-    // --- ヒットボックス ---
     currentHitbox(){
       if(!(this.state==='atk'||this.state==='skill') || !this._actionSeq) return null;
       const cur=this._actionSeq[this._actionIndex]; if(!cur) return null;
 
-      // スキルは広範囲・毎フレーム多段（Rev11から踏襲）
       if(this.state==='skill'){
-        const W=80,H=60;
-        const x=this.x + this.face*(this.w*0.2);
+        const W=80,H=60; const x=this.x + this.face*(this.w*0.2);
         return {x, y:this.y, w:W, h:H, power:cur.power||0, dir:this.face, lift:cur.lift||0, kbMul:cur.kbMul||1.6, kbuMul:cur.kbuMul||1.3};
       }
-
       if(cur.kind==='hit' || cur.kind==='sp'){
         const w=50, h=40, x=this.x + this.face*(this.w*0.3 + w*0.5), y=this.y - 6;
         return {x,y,w,h, power:cur.power||0, dir:this.face, lift:cur.lift||0, kbMul:cur.kbMul||1, kbuMul:cur.kbuMul||1};
@@ -311,28 +297,18 @@
       input.beginFrame();
       this._posOverhead();
 
-      // クールダウン減衰＆UI
       if(this.a2LockoutT>0) this.a2LockoutT=Math.max(0,this.a2LockoutT-dt);
       const skBtn=document.getElementById('btnSK');
       if(this.skillCDT>0){ this.skillCDT=Math.max(0,this.skillCDT-dt); skBtn.setAttribute('disabled',''); }
       else { skBtn.removeAttribute('disabled'); }
 
-      if(this.dead){
-        // 演出後リスポーン
-        this.updatePhysics(dt);
-        if(this.fade<=0){ this._respawn(world); }
-        world.updateTimer(dt);
-        return;
-      }
+      if(this.dead){ this.updatePhysics(dt); if(this.fade<=0){ this._respawn(world); } world.updateTimer(dt); return; }
 
-      // 溜めUI（スキルはCD中は開始しない）
       if(input.attack2Charging){ input.attack2ChargeT=Math.min(1,input.attack2ChargeT+dt); this._showGauge(true,'▲ Charge', input.attack2ChargeT); }
       else if(input.skillCharging && this.skillCDT<=0){ input.skillChargeT=Math.min(1,input.skillChargeT+dt); this._showGauge(true,'● Charge', input.skillChargeT); }
       else this._showGauge(false);
 
-      // 離しでキュー
       if(input.edge.a2Release && input.attack2ChargeT>0){
-        // A2は最低震え時間を保証（0.35s / 溜め>=0.5で0.6s）
         const charged = input.attack2ChargeT>=0.5;
         this.queueA2={charged, minShake: charged?0.6:0.35};
         input.attack2ChargeT=0;
@@ -342,7 +318,6 @@
         input.skillChargeT=0;
       }
 
-      // 行動中（攻撃/スキル/被弾）
       if(this.state==='atk'||this.state==='skill'||this.state==='hurt'){
         const hb=this.currentHitbox();
         if(hb && enemy && !enemy.dead && enemy.invulnT<=0){
@@ -356,30 +331,24 @@
         return;
       }
 
-      // 入力受付
       if(input.edge.a1) this.bufferA1=true;
       if(this.comboGraceT>0) this.comboGraceT=Math.max(0,this.comboGraceT-dt);
 
-      // 優先度：SK（CDチェック）＞A2（ロックアウトチェック）＞A1
       if(this.queueSK){ const q=this.queueSK; this.queueSK=null; this.bufferA1=false; this._startSpin(q.charged); return; }
       if(this.queueA2 && this.a2LockoutT<=0){ const q=this.queueA2; this.queueA2=null; this.bufferA1=false; this._startA2(q.charged, q.minShake); return; }
       if(this.bufferA1 && this.comboStep<3){ this.bufferA1=false; this._startA1(); return; }
 
-      // 通常移動
       let ax=0; if(input.left){ ax-=MOVE; this.face=-1; } if(input.right){ ax+=MOVE; this.face=1; }
       this.vx = ax!==0 ? (ax>0?MOVE:-MOVE) : 0;
       if(input.consumeJump() && this.onGround){ this.vy=-JUMP_V; this.onGround=false; }
 
       this.updatePhysics(dt);
-
-      // 状態
       this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
       this.animT += dt;
       if(input.attack2Charging && this.state!=='atk' && this.state!=='skill'){ this.state='chargeA2'; }
       world.updateTimer(dt);
     }
 
-    // --- 攻撃開始 ---
     _startA1(){
       this.state='atk'; this.animT=0;
       this.comboStep=Math.min(this.comboStep+1,3);
@@ -392,25 +361,23 @@
       this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
     }
 
-    // A2：震えてから発動＋連射防止ロックアウト
     _startA2(charged, minShake){
       this.state='atk'; this.animT=0;
       this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? clamp(this.vx, -40, 40) : 0;
       const power=charged?18:15, lift=1, kbm=charged?1.2:1.1, kbum=charged?1.25:1.15;
       this._actionSeq=[
-        {kind:'prepShake',dur:minShake,frame:'k2prep',dx:0,power:0}, // 最低震え
+        {kind:'prepShake',dur:minShake,frame:'k2prep',dx:0,power:0},
         {kind:'hit',dur:0.34,frame:'k2',dx:12,power:power, lift, kbMul:kbm, kbuMul:kbum}
       ];
       this._actionIndex=0; this._actionTime=0;
-      this.a2LockoutT = 0.5; // 終了までに減るが、次の受付は0.5s後
+      this.a2LockoutT = 0.5;
     }
 
     _startSpin(charged){
       this.state='skill'; this.animT=0;
       this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? clamp(this.vx, -40, 40) : 0;
       const rounds=charged?4:2, power=charged?40:25;
-      const kbm  = charged?1.9:1.6;
-      const kbum = charged?1.5:1.3;
+      const kbm  = charged?1.9:1.6, kbum = charged?1.5:1.3;
       const frames=this.frames.spin; const seq=[];
       for(let r=0;r<rounds;r++){
         for(let i=0;i<frames.length;i++){
@@ -422,7 +389,6 @@
       this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
     }
 
-    // --- 行動中 ---
     _updateAction(dt){
       if(this.actionAir){ this.actionAirVx *= 0.90; this.x += this.actionAirVx*dt; }
       this.updatePhysics(dt);
@@ -431,16 +397,14 @@
         this._actionTime+=dt;
         const cur=this._actionSeq[this._actionIndex];
         if(cur){
-          const dxScale = this.onGround?1:0.5;
+          const dxScale=this.onGround?1:0.5;
           if(cur.dx) this.x += this.face*(cur.dx*dxScale*dt/cur.dur);
           if(this._actionTime>=cur.dur){
             this._actionIndex++; this._actionTime=0;
             if(this._actionIndex>=this._actionSeq.length){
-              // スキル終了時にCD開始
               if(this.state==='skill'){ this.skillCDT=5.0; }
               if(this.state==='atk' && this.comboStep>0) this.comboGraceT=this.comboGraceMax;
               if(this.state==='atk' && this.comboStep>=3){ this.comboStep=0; this.bufferA1=false; }
-              // 優先
               if(this.queueSK && this.skillCDT<=0){ const q=this.queueSK; this.queueSK=null; this._startSpin(q.charged); return; }
               if(this.queueA2 && this.a2LockoutT<=0){ const q=this.queueA2; this.queueA2=null; this._startA2(q.charged, q.minShake); return; }
               this.state='idle'; this._actionSeq=null;
@@ -481,15 +445,16 @@
     }
   }
 
-  // ========= 敵 =========
+  /* Enemy */
   class Enemy extends CharacterBase{
     constructor(world,effects){
       super(56,64);
       this.world=world; this.effects=effects;
       this.x=380; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
       this.maxhp=500; this.hp=500;
-      this.aiT=0; this.cool=0;
+      this.cool=0;
       this._seq=null; this._idx=0; this._t=0;
+      this.stickInRangeT=0;
     }
     imgByKey(key){
       const a=this.world.assets, map={ idle:'EN1-1.png', walk2:'EN1-2.png', walk3:'EN1-3.png', atkS1:'EN1-4.png', atkS2:'EN1-5.png', atkM1:'EN1-4.png', atkM2:'EN1-6.png' };
@@ -503,25 +468,26 @@
     }
     aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.8}; }
 
-    // より積極的な意思決定（レンジ拡大＆頻度UP）
     decide(player){
       if(this.cool>0) return;
-      const dx=player.x - this.x, adx=Math.abs(dx); this.face = dx>=0?1:-1;
-      const close = adx<120, mid = adx<180;
+      const dx = player.x - this.x;
+      const adx = Math.abs(dx);
+      this.face = dx>=0?1:-1;
 
-      if(close){
-        // 近距離は確定で小→中の連撃
+      const close = adx < 140;
+      const mid   = adx < 220;
+
+      if (close){
         this._seq=[
           {kind:'pose',dur:0.08, key:'atkS1'},
           {kind:'hit', dur:0.32, key:'atkS2', dx:70, power:5},
           {kind:'pose',dur:0.08, key:'atkM1'},
           {kind:'hit', dur:0.30, key:'atkM2', dx:50, power:8, lift:1}
         ];
-        this.cool=0.75;
-      } else if(mid){
-        // 中距離は小攻撃で差し込み
-        this._seq=[ {kind:'pose',dur:0.08,key:'atkS1'}, {kind:'hit',dur:0.4,key:'atkS2',dx:90,power:5} ];
-        this.cool=0.6;
+        this.cool=0.70;
+      } else if (mid){
+        this._seq=[ {kind:'pose',dur:0.08,key:'atkS1'}, {kind:'hit',dur:0.40,key:'atkS2',dx:90,power:5} ];
+        this.cool=0.55;
       } else {
         this.vx = (dx>0?EN_MOVE:-EN_MOVE);
         return;
@@ -550,11 +516,25 @@
         this.updatePhysics(dt);
         if(this.onGround) this.state='idle';
       } else {
-        const dx=player.x - this.x; this.face=dx>=0?1:-1;
-        this.vx = Math.abs(dx)>60 ? (dx>0?EN_MOVE:-EN_MOVE) : 0;
+        const dx=player.x - this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
+
+        // レンジ内は毎フレーム判断（クールなし・非行動時）
+        if(this.cool<=0 && adx < 200){
+          this.decide(player);
+        } else {
+          // レンジ外は寄る
+          this.vx = adx>60 ? (dx>0?EN_MOVE:-EN_MOVE) : 0;
+        }
+
+        // レンジ滞在時間で保険（1.5s以上いたら強制発火）
+        if(adx < 180 && this.cool<=0 && this.state!=='atk' && this.state!=='hurt'){
+          this.stickInRangeT += dt;
+          if(this.stickInRangeT > 1.5){ this.decide(player); this.stickInRangeT = 0; }
+        } else {
+          this.stickInRangeT = 0;
+        }
+
         this.updatePhysics(dt);
-        // 意思決定頻度UP
-        this.aiT-=dt; if(this.aiT<=0){ this.decide(player); this.aiT=0.10; }
         this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
       }
       this.animT+=dt;
@@ -576,7 +556,7 @@
     }
   }
 
-  // ========= ワールド =========
+  /* World */
   class World{
     constructor(assets, canvas, effects){
       this.assets=assets; this.effects=effects;
@@ -591,7 +571,7 @@
       const bg=this.assets.img('back1.png');
       if(bg){ this.bgScale = this.gameH / bg.height; this.bgDW = bg.width*this.bgScale; this.bgDH = bg.height*this.bgScale; }
       else { this.bgScale=1; this.bgDW=this.gameW; this.bgDH=this.gameH; }
-      this.tileOverlap=1; this.bgSpeed=1.0;
+      this.bgSpeed=1.0;
     }
     resize(){ const r=this.canvas.getBoundingClientRect(); this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH; }
     updateCam(p){
@@ -620,7 +600,7 @@
         const g=ctx.createLinearGradient(0,0,0,this.gameH); g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18');
         ctx.fillStyle=g; ctx.fillRect(0,0,this.gameW,this.gameH);
       }
-      // 床ライン補助
+      // 床ライン目安（地面判定は画像ではなくライン基準）
       ctx.fillStyle='#0b0f17'; const yTop=Math.floor(GROUND_TOP_Y); ctx.fillRect(0,yTop-1,this.gameW,1);
 
       if(enemy) enemy.draw(ctx,this);
@@ -629,12 +609,9 @@
     }
   }
 
-  function updateHPUI(hp,maxhp){
-    const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=hp;
-    fill.style.width = Math.max(0, Math.min(100, (hp/maxhp)*100)) + '%';
-  }
+  const updateHPUI=(hp,maxhp)=>{ const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=hp; fill.style.width=Math.max(0,Math.min(100,(hp/maxhp)*100))+'%'; };
 
-  // ========= Game =========
+  /* Game */
   class Game{
     constructor(){
       this.assets=new Assets(); this.canvas=document.getElementById('game');
@@ -660,7 +637,6 @@
       const loop=()=>{
         const t=now(); let dt=(t-this.lastT)/1000; if(dt>0.05) dt=0.05; this.lastT=t;
 
-        // ヒットストップ：演出だけ更新して描画（ゲーム時間は止める）
         if(this.effects.hitstop>0){
           this.effects.update(dt);
           this.world.updateCam(this.player);
@@ -669,11 +645,9 @@
           return;
         }
 
-        // 更新
         this.player.update(dt,this.input,this.world,this.enemy);
         if(this.enemy){
           this.enemy.update(dt,this.player);
-          // 敵→プレイヤー攻撃判定
           if(!this.enemy.dead){
             const hb=this.enemy.currentHitbox();
             if(hb && this.player.invulnT<=0){
@@ -683,7 +657,6 @@
               }
             }
           } else {
-            // 敵がフェード完了したら退場
             if(this.enemy.fade<=0){ this.enemy=null; }
           }
         }
@@ -699,7 +672,6 @@
     }
   }
 
-  // HPバー更新を伴う Player.hurt
   Player.prototype.hurt = function(amount,dir,opts,effects){
     const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
     if(hit) updateHPUI(this.hp,this.maxhp);
