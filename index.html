@@ -3,87 +3,34 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Player Only Rev5</title>
+<title>MOB Side Action – Player Only Rev6</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
-  :root{
-    --stage-w: 420px;
-    --stage-h: 720px;
-    --hud-bg: #0b0f17cc;
-    --fg: #e9eef7;
-    --grid-gap: 10px;
-  }
+  :root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
   html,body{height:100%;margin:0;background:#0a0d13;color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;overscroll-behavior:none}
   html,body{-webkit-user-select:none;-webkit-touch-callout:none;user-select:none}
   *{box-sizing:border-box}
-
-  #root{position:fixed;inset:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0);
-        display:grid;place-items:center;padding:10px}
-
-  #phone{
-    width:var(--stage-w);height:var(--stage-h);
-    position:relative;overflow:hidden;background:#060910;
-    border:1px solid #0f1726;border-radius:20px;
-    box-shadow:0 12px 48px rgba(0,0,0,.55);
-    touch-action:none;
-  }
-
-  .grid{
-    position:absolute;inset:0;display:grid;
-    grid-template-rows: 1fr 220px;
-    gap:var(--grid-gap); padding:var(--grid-gap);
-  }
-
-  .gamewrap{
-    position:relative;border-radius:14px;overflow:hidden;background:#05070c;
-    outline:1px solid #0e1522;
-  }
+  #root{position:fixed;inset:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0);display:grid;place-items:center;padding:10px}
+  #phone{width:var(--stage-w);height:var(--stage-h);position:relative;overflow:hidden;background:#060910;border:1px solid #0f1726;border-radius:20px;box-shadow:0 12px 48px rgba(0,0,0,.55);touch-action:none}
+  .grid{position:absolute;inset:0;display:grid;grid-template-rows: 1fr 220px;gap:var(--grid-gap);padding:var(--grid-gap)}
+  .gamewrap{position:relative;border-radius:14px;overflow:hidden;background:#05070c;outline:1px solid #0e1522}
   canvas#game{display:block;width:100%;height:100%}
-
-  .controls{
-    position:relative;border-radius:14px;background:var(--hud-bg);
-    outline:1px solid #0e1522;backdrop-filter: blur(6px);
-    padding:12px;
-    display:grid;grid-template-columns: 1fr 1fr;gap:12px;
-  }
-
-  .stickArea{
-    position:relative;border-radius:12px;background:#0a121f;outline:1px solid #152033;
-    display:grid;place-items:center;touch-action:none;
-  }
-  .stick{width:120px;height:120px;border-radius:50%;background:#0d1828;outline:2px solid #22324d;position:relative;}
-  .stickThumb{width:64px;height:64px;border-radius:50%;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-    background:#1a2a45;outline:2px solid #2e4a73;box-shadow: inset 0 0 0 4px #0c1422;}
-
-  .buttons{display:grid;grid-template-columns: repeat(2,1fr);grid-template-rows: repeat(2,1fr);gap:12px;}
-  .btn{
-    border:none;border-radius:14px;background:#0d1828;outline:2px solid #22324d;color:var(--fg);
-    font-size:26px;display:grid;place-items:center;touch-action:none;
-    box-shadow:inset 0 -4px 0 rgba(255,255,255,.04);
-  }
+  .controls{position:relative;border-radius:14px;background:var(--hud-bg);outline:1px solid #0e1522;backdrop-filter: blur(6px);padding:12px;display:grid;grid-template-columns: 1fr 1fr;gap:12px}
+  .stickArea{position:relative;border-radius:12px;background:#0a121f;outline:1px solid #152033;display:grid;place-items:center;touch-action:none}
+  .stick{width:120px;height:120px;border-radius:50%;background:#0d1828;outline:2px solid #22324d;position:relative}
+  .stickThumb{width:64px;height:64px;border-radius:50%;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#1a2a45;outline:2px solid #2e4a73;box-shadow: inset 0 0 0 4px #0c1422}
+  .buttons{display:grid;grid-template-columns: repeat(2,1fr);grid-template-rows: repeat(2,1fr);gap:12px}
+  .btn{border:none;border-radius:14px;background:#0d1828;outline:2px solid #22324d;color:var(--fg);font-size:26px;display:grid;place-items:center;touch-action:none;box-shadow:inset 0 -4px 0 rgba(255,255,255,.04)}
   .btn:active{transform:scale(.98)}
-  .btn.attack1{background:#112033}
-  .btn.attack2{background:#1a2436}
-  .btn.skill{background:#132a22}
-  .btn.jump{background:#2a1a1a}
-
-  header.hud{
-    position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex;gap:10px;align-items:center;z-index:10;
-    mix-blend-mode:normal;pointer-events:none;
-  }
+  .btn.attack1{background:#112033} .btn.attack2{background:#1a2436} .btn.skill{background:#132a22} .btn.jump{background:#2a1a1a}
+  header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex;gap:10px;align-items:center;z-index:10;pointer-events:none}
   .chip{background:var(--hud-bg);outline:1px solid #0e1522;border-radius:12px;padding:6px 10px;font-weight:600;font-size:12px;display:flex;gap:8px;align-items:center}
   .bar{--w:160px;--h:10px;width:var(--w);height:var(--h);border-radius:999px;outline:1px solid #1a263d;background:#0a1220;position:relative;overflow:hidden}
   .bar>i{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:linear-gradient(90deg,#ff9a9e,#ff6b6b)}
   .timer{margin-left:auto}
-
-  /* 頭上ゲージ（必要時のみ） */
-  .overhead{
-    position:absolute;left:50%;transform:translateX(-50%);
-    display:none;gap:6px;align-items:center;pointer-events:none;
-  }
+  .overhead{position:absolute;left:50%;transform:translateX(-50%);display:none;gap:6px;align-items:center;pointer-events:none}
   .gauge{width:64px;height:6px;border-radius:999px;outline:1px solid #1a263d;background:#0a1220;overflow:hidden}
   .gauge>i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#69d0ff,#a0ffe6)}
-
   @media (max-height: 720px){ :root{ --stage-h: 650px; } }
 </style>
 </head>
@@ -94,19 +41,13 @@
         <div class="gamewrap">
           <header class="hud">
             <div class="chip">残機 <strong id="lives">3</strong></div>
-            <div class="chip">HP
-              <span class="bar"><i id="hpfill" style="width:100%"></i></span>
-              <strong id="hpnum">1000</strong>
-            </div>
+            <div class="chip">HP <span class="bar"><i id="hpfill" style="width:100%"></i></span> <strong id="hpnum">1000</strong></div>
             <div class="chip timer">Time <strong id="time">00:00</strong></div>
           </header>
           <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
         </div>
-
         <div class="controls">
-          <div class="stickArea" id="stickArea" aria-label="Move Stick">
-            <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
-          </div>
+          <div class="stickArea" id="stickArea" aria-label="Move Stick"><div class="stick"><div class="stickThumb" id="stickThumb"></div></div></div>
           <div class="buttons">
             <button class="btn attack1" id="btnA1" aria-label="攻撃① ■">■</button>
             <button class="btn attack2" id="btnA2" aria-label="攻撃② ▲">▲</button>
@@ -119,124 +60,109 @@
   </div>
 
 <script>
-/* =========================================================
-   MOB Side Action – Player Only (Rev5)
-   修正:
-   - ▲/● の「離したら発動」を prev→current の遷移で厳密検出（1回だけ発動）
-   - 充電中のゲージ表示＆▲の震え表示は維持
-   - 地面との 1px ギャップを解消（足元を1px食い込ませ、床Yと整数スナップ）
-   - S1: 1px オーバーラップ敷設 + 床下塗り
-   ========================================================= */
+/* ===================== Rev6 修正概要 ======================
+ - ▲/●：pointerup/keyup パルス + フレーム境界エッジで確実に「離したら1回だけ」発動
+ - A1と混ざる問題：▲/●待機中はA1新規開始をブロック、A1連撃終了直後に▲/●を最優先実行
+ - 空中攻撃：開始時の横速度を保持して行動中も慣性で移動（入力による加速は不可）
+ - 地面：床上面Yと衝突Yを完全一致 + 1px食い込み。タイル整数スナップ＆1px重ね＋床上端1px塗り
+========================================================== */
 (function(){
   'use strict';
-
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
   const lerp=(a,b,t)=>a+(b-a)*t;
   const now=()=>performance.now();
 
   class Assets{
     constructor(){ this.images=new Map(); }
-    load(srcs){
-      const jobs=srcs.map(src=>new Promise((res,rej)=>{
-        const img=new Image();
-        img.onload=()=>{ this.images.set(src,img); res(); };
-        img.onerror=rej; img.src=src;
-      }));
-      return Promise.all(jobs);
-    }
+    load(srcs){ return Promise.all(srcs.map(src=>new Promise((res,rej)=>{ const img=new Image(); img.onload=()=>{this.images.set(src,img);res();}; img.onerror=rej; img.src=src; }))); }
     img(n){ return this.images.get(n); }
   }
 
   class Input{
     constructor(){
       this.left=0; this.right=0; this.jump=false;
-      this.key=new Set();
-      this.btn={a1:false,a2:false,skill:false,jump:false};
+      this.btn={a1:false,a2:false,skill:false};
       this.prev={a1:false,a2:false,skill:false};
       this.edge={a1:false, a2Release:false, skillRelease:false};
+      // イベントからの即時パルス（同フレーム内にdown→upしても取りこぼさない）
+      this.pulseRelease={a2:false,skill:false};
       this.attack2Charging=false; this.skillCharging=false;
       this.attack2ChargeT=0; this.skillChargeT=0;
       this._initKeyboard(); this._initTouch();
     }
     _initKeyboard(){
-      window.addEventListener('keydown',e=>{
-        const k=e.key; this.key.add(k);
+      addEventListener('keydown',(e)=>{
+        const k=e.key;
         if(k==='ArrowLeft'||k==='a'||k==='A') this.left=1;
         if(k==='ArrowRight'||k==='d'||k==='D') this.right=1;
         if(k===' '||k==='w'||k==='W'||k==='ArrowUp') this.jump=true;
         if(k==='j'||k==='J') this.btn.a1=true;
-        if(k==='k'||k==='K'){ this.btn.a2=true; this.attack2Charging=true; }
-        if(k==='l'||k==='L'){ this.btn.skill=true; this.skillCharging=true; }
+        if(k==='k'||k==='K'){ if(!this.btn.a2){ this.btn.a2=true; this.attack2Charging=true; this.attack2ChargeT=0; } }
+        if(k==='l'||k==='L'){ if(!this.btn.skill){ this.btn.skill=true; this.skillCharging=true; this.skillChargeT=0; } }
       },{passive:false});
-      window.addEventListener('keyup',e=>{
-        const k=e.key; this.key.delete(k);
-        if(!(this.key.has('ArrowLeft')||this.key.has('a')||this.key.has('A'))) this.left=0;
-        if(!(this.key.has('ArrowRight')||this.key.has('d')||this.key.has('D'))) this.right=0;
+      addEventListener('keyup',(e)=>{
+        const k=e.key;
+        if(k==='ArrowLeft'||k==='a'||k==='A') this.left=(this.right?1:0);
+        if(k==='ArrowRight'||k==='d'||k==='D') this.right=(this.left?1:0);
         if(k==='j'||k==='J') this.btn.a1=false;
-        if(k==='k'||k==='K'){ this.btn.a2=false; this.attack2Charging=false; }
-        if(k==='l'||k==='L'){ this.btn.skill=false; this.skillCharging=false; }
+        if(k==='k'||k==='K'){ if(this.btn.a2){ this.btn.a2=false; this.attack2Charging=false; this.pulseRelease.a2=true; } }
+        if(k==='l'||k==='L'){ if(this.btn.skill){ this.btn.skill=false; this.skillCharging=false; this.pulseRelease.skill=true; } }
       },{passive:false});
     }
     _initTouch(){
+      // 左スティック
       const stickArea=document.getElementById('stickArea');
       const thumb=document.getElementById('stickThumb');
       let stickId=-1, origin=null;
-
       const updateStick=t=>{
         if(!origin) return;
         const dx=t.clientX-origin.x, dy=t.clientY-origin.y;
         const rMax=40, len=Math.hypot(dx,dy);
         const nx=(len>rMax? dx/len*rMax:dx);
         const ny=(len>rMax? dy/len*rMax:dy);
-        thumb.style.left=`calc(50% + ${nx}px)`; thumb.style.top =`calc(50% + ${ny}px)`;
-        this.left =(nx<-8)?1:0; this.right=(nx> 8)?1:0;
+        thumb.style.left=`calc(50% + ${nx}px)`; thumb.style.top=`calc(50% + ${ny}px)`;
+        this.left =(nx<-8)?1:0; this.right=(nx>8)?1:0;
       };
       const onStart=e=>{
         for(const t of e.changedTouches){
-          const rect=stickArea.getBoundingClientRect();
-          if(t.clientX>=rect.left&&t.clientX<=rect.right&&t.clientY>=rect.top&&t.clientY<=rect.bottom){
-            stickId=t.identifier; origin={x:rect.left+rect.width/2, y:rect.top+rect.height/2};
-            updateStick(t);
+          const r=stickArea.getBoundingClientRect();
+          if(t.clientX>=r.left&&t.clientX<=r.right&&t.clientY>=r.top&&t.clientY<=r.bottom){
+            stickId=t.identifier; origin={x:r.left+r.width/2,y:r.top+r.height/2}; updateStick(t);
           }
         }
       };
       const onMove=e=>{ for(const t of e.changedTouches){ if(t.identifier===stickId) updateStick(t); } };
-      const onEnd =e=>{
-        for(const t of e.changedTouches){
-          if(t.identifier===stickId){ stickId=-1; origin=null; thumb.style.left='50%'; thumb.style.top='50%'; this.left=0; this.right=0; }
-        }
-      };
+      const onEnd =e=>{ for(const t of e.changedTouches){ if(t.identifier===stickId){ stickId=-1; origin=null; thumb.style.left='50%'; thumb.style.top='50%'; this.left=0; this.right=0; } } };
       stickArea.addEventListener('touchstart',e=>{e.preventDefault();onStart(e);},{passive:false});
       stickArea.addEventListener('touchmove', e=>{e.preventDefault();onMove(e); },{passive:false});
       stickArea.addEventListener('touchend',  e=>{e.preventDefault();onEnd(e);  },{passive:false});
       stickArea.addEventListener('touchcancel',e=>{e.preventDefault();onEnd(e);},{passive:false});
 
-      const bindBtn=(id,down,up)=>{
+      // ボタン
+      const bind=(id,onDown,onUp)=>{
         const el=document.getElementById(id);
-        el.addEventListener('pointerdown',e=>{e.preventDefault();down();el.setPointerCapture?.(e.pointerId);});
-        el.addEventListener('pointerup',  e=>{e.preventDefault();up();el.releasePointerCapture?.(e.pointerId);});
-        el.addEventListener('pointercancel',()=>{up();});
-        el.addEventListener('touchstart',e=>{e.preventDefault();down();},{passive:false});
-        el.addEventListener('touchend',  e=>{e.preventDefault();up();},{passive:false});
+        el.addEventListener('pointerdown',e=>{e.preventDefault(); onDown(); el.setPointerCapture?.(e.pointerId);});
+        el.addEventListener('pointerup',  e=>{e.preventDefault(); onUp(); el.releasePointerCapture?.(e.pointerId);});
+        el.addEventListener('pointercancel',()=>{ onUp(); });
+        // safety for quick taps
+        el.addEventListener('touchstart',e=>{e.preventDefault(); onDown();},{passive:false});
+        el.addEventListener('touchend',  e=>{e.preventDefault(); onUp();},{passive:false});
       };
-      bindBtn('btnA1', ()=>{ this.btn.a1=true; }, ()=>{ this.btn.a1=false; });
-      bindBtn('btnA2', ()=>{ this.btn.a2=true; this.attack2Charging=true; this.attack2ChargeT=0; },
-                      ()=>{ this.btn.a2=false; this.attack2Charging=false; });
-      bindBtn('btnSK', ()=>{ this.btn.skill=true; this.skillCharging=true; this.skillChargeT=0; },
-                      ()=>{ this.btn.skill=false; this.skillCharging=false; });
-      bindBtn('btnJP', ()=>{ this.jump=true; }, ()=>{ /* consumed */ });
+      bind('btnA1', ()=>{ this.btn.a1=true; }, ()=>{ this.btn.a1=false; });
+      bind('btnA2', ()=>{ if(!this.btn.a2){ this.btn.a2=true; this.attack2Charging=true; this.attack2ChargeT=0; } },
+                     ()=>{ if(this.btn.a2){ this.btn.a2=false; this.attack2Charging=false; this.pulseRelease.a2=true; } });
+      bind('btnSK', ()=>{ if(!this.btn.skill){ this.btn.skill=true; this.skillCharging=true; this.skillChargeT=0; } },
+                     ()=>{ if(this.btn.skill){ this.btn.skill=false; this.skillCharging=false; this.pulseRelease.skill=true; } });
+      bind('btnJP', ()=>{ this.jump=true; }, ()=>{});
     }
     consumeJump(){ const j=this.jump; this.jump=false; return j; }
-
-    // フレーム先頭で呼ぶ：立ち上がり/離しエッジを計算
     beginFrame(){
+      // フレーム境界エッジ
       this.edge.a1 =  this.btn.a1 && !this.prev.a1;
-      this.edge.a2Release    = (!this.btn.a2 && this.prev.a2);     // 離した瞬間
-      this.edge.skillRelease = (!this.btn.skill && this.prev.skill);
-
-      this.prev.a1 = this.btn.a1;
-      this.prev.a2 = this.btn.a2;
-      this.prev.skill = this.btn.skill;
+      this.edge.a2Release    = (!this.btn.a2 && this.prev.a2) || this.pulseRelease.a2;
+      this.edge.skillRelease = (!this.btn.skill && this.prev.skill) || this.pulseRelease.skill;
+      this.pulseRelease.a2=false; this.pulseRelease.skill=false;
+      this.prev.a1=this.btn.a1; this.prev.a2=this.btn.a2; this.prev.skill=this.btn.skill;
     }
   }
 
@@ -244,39 +170,37 @@
   const GRAV=2000, MOVE=260, JUMP_V=760, MAX_FALL=1200;
 
   // 床
-  const GROUND_TOP_Y = 360;        // タイル上面
-  const GROUND_VISUAL_PAD = 1;     // 見た目用に 1px 食い込ませて隙間防止
-  const TILE_DRAW_H  = 96;         // タイル描画高さ
-  const TILE_OVERLAP = 1;          // 横 1px 重ね
+  const GROUND_TOP_Y = 360;   // タイル上端（上面）
+  const TILE_DRAW_H  = 96;    // タイル描画高さ
+  const TILE_OVERLAP = 1;     // 横 1px 重ね
+  const FOOT_PAD     = 1;     // 足元1px食い込み（視覚隙間対策）
 
   class Player{
     constructor(assets, world){
       this.assets=assets; this.world=world;
-      this.x=100; this.y=GROUND_TOP_Y - (64/2) + GROUND_VISUAL_PAD; // 足元1px食い込み
-      this.vx=0; this.vy=0; this.w=56; this.h=64;
-      this.face=1; this.onGround=false;
+      this.w=56; this.h=64;
+      this.x=100; this.y=GROUND_TOP_Y - this.h/2 + FOOT_PAD;
+      this.vx=0; this.vy=0; this.face=1; this.onGround=false;
+
       this.hp=1000; this.maxhp=1000; this.lives=3;
       this.dead=false; this.deathT=0; this.invulnT=0;
+
       this.state='idle'; this.animT=0;
 
-      // コンボ
-      this.comboStep=0;
-      this.comboGraceT=0;
-      this.bufferA1=false;
+      // コンボ/A1
+      this.comboStep=0; this.comboGraceT=0; this.bufferA1=false;
 
-      // キュー
-      this.attackQueue=[];
+      // 優先キュー（A2/SKは多重禁止）
+      this.queueA2=null; this.queueSK=null;
 
-      // スプライト
+      // 攻撃中の慣性
+      this.actionAirVx=0; this.actionAir=false;
+
       this.frames={
         idle:['M1-1.png'],
         walk:['M1-2.png','M1-3.png','M1-4.png'],
-        k1prep:'K1-3.png',
-        k1a:'K1-1.png',
-        k1b:'K1-2.png',
-        k1c:'K1-4.png',
-        k2prep:'K1-3.png',
-        k2:'K1-5.png',
+        k1prep:'K1-3.png', k1a:'K1-1.png', k1b:'K1-2.png', k1c:'K1-4.png',
+        k2prep:'K1-3.png', k2:'K1-5.png',
         spin:['h1.png','h2.png','h3.png','h4.png'],
       };
 
@@ -293,8 +217,7 @@
       return {root, gauge:g, fill:i, label};
     }
     _updateOverheadPos(){
-      const w=this.world;
-      const headY = this.y - this.h/2 - 10;
+      const w=this.world, headY = this.y - this.h/2 - 10;
       this.overhead.root.style.left   = ((this.x - w.camX) * w.screenScaleX) + 'px';
       this.overhead.root.style.bottom = (w.gameH - (headY - w.camY)) * w.screenScaleY + 'px';
     }
@@ -307,47 +230,41 @@
     update(dt,input,world){
       input.beginFrame();
       this._updateOverheadPos();
-
-      if(this.dead){
-        this.deathT+=dt; if(this.deathT>1.2){ this._respawn(world); }
-        return;
-      }
+      if(this.dead){ this.deathT+=dt; if(this.deathT>1.2) this._respawn(world); return; }
       if(this.invulnT>0) this.invulnT=Math.max(0,this.invulnT-dt);
 
-      // 溜め中：ゲージ表示
-      if(input.attack2Charging){
-        input.attack2ChargeT=Math.min(1.0, input.attack2ChargeT+dt);
-        this._showOverhead(true,'▲ Charge', input.attack2ChargeT);
-      } else if(input.skillCharging){
-        input.skillChargeT=Math.min(1.0, input.skillChargeT+dt);
-        this._showOverhead(true,'● Charge', input.skillChargeT);
-      } else {
-        this._showOverhead(false);
-      }
+      // 溜めゲージ表示
+      if(input.attack2Charging){ input.attack2ChargeT=Math.min(1, input.attack2ChargeT+dt); this._showOverhead(true,'▲ Charge', input.attack2ChargeT); }
+      else if(input.skillCharging){ input.skillChargeT=Math.min(1, input.skillChargeT+dt); this._showOverhead(true,'● Charge', input.skillChargeT); }
+      else { this._showOverhead(false); }
 
-      // 解除エッジで 1 回だけキュー
+      // 離した瞬間だけキュー、A1より優先
       if(input.edge.a2Release && input.attack2ChargeT>0){
-        const charged = input.attack2ChargeT>=0.5;
-        if(!this._queueHas('A2') && this.state!=='atk'){ this.attackQueue.push({type:'A2',charged}); }
+        const charged=input.attack2ChargeT>=0.5;
+        this.queueA2 = {charged};  // 多重上書き（常に最新に）
         input.attack2ChargeT=0;
       }
       if(input.edge.skillRelease && input.skillChargeT>0){
-        const charged = input.skillChargeT>=0.5;
-        if(!this._queueHas('SK') && this.state!=='skill'){ this.attackQueue.push({type:'SK',charged}); }
+        const charged=input.skillChargeT>=0.5;
+        this.queueSK = {charged};
         input.skillChargeT=0;
       }
 
-      // 出し切り/被弾/スキル中は移動不可
+      // 出し切り/被弾/スキル中
       if(this.state==='atk' || this.state==='skill' || this.state==='hurt'){
         this._updateAction(dt,input,world);
         return;
       }
 
-      // ■ エッジで予約
+      // A1入力バッファ（エッジでセット）
       if(input.edge.a1){ this.bufferA1=true; }
-      if(this.comboGraceT>0){ this.comboGraceT=Math.max(0,this.comboGraceT-dt); }
+      if(this.comboGraceT>0) this.comboGraceT=Math.max(0,this.comboGraceT-dt);
 
-      // 可能ならA1を開始
+      // 優先度：SK＞A2＞A1
+      if(this.queueSK){ this._startSpin(this.queueSK.charged); this.queueSK=null; this.bufferA1=false; return; }
+      if(this.queueA2){ this._startA2(this.queueA2.charged); this.queueA2=null; this.bufferA1=false; return; }
+
+      // ■は3段まで、可能なら開始
       if(this.bufferA1 && this.comboStep<3){
         this.bufferA1=false; this._startA1(); return;
       }
@@ -361,79 +278,84 @@
       // ジャンプ
       if(input.consumeJump() && this.onGround){ this.vy=-JUMP_V; this.onGround=false; }
 
-      // 重力
-      this.vy += GRAV*dt; this.vy=Math.min(this.vy,MAX_FALL);
+      // 重力・移動
+      this.vy = Math.min(this.vy + GRAV*dt, MAX_FALL);
       this.x  += this.vx*dt; this.y += this.vy*dt;
 
-      // 地面：足元は 1px 食い込みで固定
-      const groundY = Math.floor(GROUND_TOP_Y);
-      if(this.y + this.h/2 >= groundY + GROUND_VISUAL_PAD){
-        this.y = groundY - this.h/2 + GROUND_VISUAL_PAD; this.vy=0; this.onGround=true;
+      // 地面（床上端に一致、1px食い込み）
+      const top = Math.floor(GROUND_TOP_Y);
+      if(this.y + this.h/2 >= top + FOOT_PAD){
+        this.y = top - this.h/2 + FOOT_PAD; this.vy=0; this.onGround=true;
       } else this.onGround=false;
 
       // 落下死
       if(this.y - world.camY > world.gameH + 200){ this._die(world); }
 
-      // 見た目
+      // 表示状態
       this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
       this.animT += dt;
       world.updateTimer(dt);
 
-      // ▲ 溜め中の見た目シェイク
+      // ▲溜め中の見た目シェイク（入力移動は可能にしてもいいが、仕様通り立ち表示のみ変える）
       if(input.attack2Charging && this.state!=='atk' && this.state!=='skill'){ this.state='chargeA2'; }
     }
-
-    _queueHas(type){ return this.attackQueue.some(q=>q.type===type); }
 
     _startA1(){
       this.state='atk'; this.animT=0;
       this.comboStep=Math.min((this.comboStep||0)+1,3);
+      // 攻撃開始時に“空中なら”横慣性を保持
+      this.actionAir = !this.onGround;
+      this.actionAirVx = this.actionAir ? this.vx : 0;
 
-      const seq=[ {kind:'prep', dur:0.15, frame:this.frames.k1prep, dx:0, power:0} ];
-      let atkFrame='', power=5, dx=0;
-      if(this.comboStep===1){ atkFrame=this.frames.k1a; power=5; dx=0; }
-      else if(this.comboStep===2){ atkFrame=this.frames.k1b; power=8; dx=12; }
-      else { atkFrame=this.frames.k1c; power=10; dx=12; }
-      seq.push({kind:'hit', dur:0.4, frame:atkFrame, dx, power});
+      const seq=[ {kind:'prep', dur:0.15, frame:'k1prep', dx:0, power:0} ];
+      let frame='', power=5, dx=0;
+      if(this.comboStep===1){ frame='k1a'; power=5; dx=0; }
+      else if(this.comboStep===2){ frame='k1b'; power=8; dx=12; }
+      else { frame='k1c'; power=10; dx=12; }
+      seq.push({kind:'hit', dur:0.4, frame, dx, power});
       this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
     }
 
     _startA2(charged){
       this.state='atk'; this.animT=0;
+      this.actionAir = !this.onGround;
+      this.actionAirVx = this.actionAir ? this.vx : 0;
       const power=charged?18:15;
-      const seq=[
-        {kind:'prepShake', dur:0.15, frame:this.frames.k2prep, dx:0, power:0},
-        {kind:'hit', dur:0.4, frame:this.frames.k2, dx:14, power}
+      this._actionSeq=[
+        {kind:'prepShake', dur:0.15, frame:'k2prep', dx:0, power:0},
+        {kind:'hit', dur:0.4, frame:'k2', dx:14, power}
       ];
-      this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
+      this._actionIndex=0; this._actionTime=0;
     }
 
     _startSpin(charged){
       this.state='skill'; this.animT=0;
-      const rounds = charged?4:2;
-      const power  = charged?40:25;
-      const frames = this.frames.spin;
+      this.actionAir = !this.onGround;
+      this.actionAirVx = this.actionAir ? this.vx : 0;
+      const rounds=charged?4:2, power=charged?40:25, frames=this.frames.spin;
       const seq=[];
-      for(let r=0;r<rounds;r++){
-        for(let i=0;i<frames.length;i++){
-          seq.push({kind:'sp', dur:0.08, frame:frames[i], dx:0, power:(i===1?power:0)});
-        }
-      }
+      for(let r=0;r<rounds;r++){ for(let i=0;i<frames.length;i++){ seq.push({kind:'sp', dur:0.08, frame:frames[i], dx:0, power:(i===1?power:0)}); } }
       this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
     }
 
     _updateAction(dt,input,world){
-      // 攻撃・スキル中は移動不可
-      this.vx=0;
-      this.vy+=GRAV*dt; this.vy=Math.min(this.vy,MAX_FALL); this.y+=this.vy*dt;
+      // 攻撃中：入力による加速は不可。ただし空中での慣性は維持。
+      const airVX = this.actionAir ? this.actionAirVx : 0;
+      this.x += airVX * dt;
 
-      const groundY = Math.floor(GROUND_TOP_Y);
-      if(this.y + this.h/2 >= groundY + GROUND_VISUAL_PAD){
-        this.y = groundY - this.h/2 + GROUND_VISUAL_PAD; this.vy=0; this.onGround=true;
+      // 重力
+      this.vy = Math.min(this.vy + GRAV*dt, MAX_FALL);
+      this.y += this.vy*dt;
+
+      // 地面
+      const top=Math.floor(GROUND_TOP_Y);
+      if(this.y + this.h/2 >= top + FOOT_PAD){
+        this.y = top - this.h/2 + FOOT_PAD; this.vy=0; this.onGround=true; this.actionAir=false; this.actionAirVx=0;
       } else this.onGround=false;
 
       if(this.y - world.camY > world.gameH + 200){ this._die(world); }
 
+      // シーケンス
       if(this._actionSeq){
         this._actionTime+=dt;
         const cur=this._actionSeq[this._actionIndex];
@@ -442,30 +364,21 @@
           if(this._actionTime>=cur.dur){
             this._actionIndex++; this._actionTime=0;
             if(this._actionIndex>=this._actionSeq.length){
+              // A1の連撃猶予
               if(this.state==='atk' && this.comboStep>0){ this.comboGraceT=0.22; }
-              if(this.comboStep>=3){ this.comboStep=0; this.bufferA1=false; }
-              this.state='idle'; this._actionSeq=null;
+              // A1の3段目終了でリセット
+              if(this.state==='atk' && this.comboStep>=3){ this.comboStep=0; this.bufferA1=false; }
+              // 次は優先待機のSK/A2があれば即時実行
+              if(this.queueSK){ const q=this.queueSK; this.queueSK=null; this._startSpin(q.charged); return; }
+              if(this.queueA2){ const q=this.queueA2; this.queueA2=null; this._startA2(q.charged); return; }
 
-              // A2/SKの多重を防ぎつつ優先1件だけ実行
-              if(this.attackQueue.length){
-                const next=this.attackQueue.shift();
-                if(next.type==='A2') this._startA2(next.charged);
-                else if(next.type==='SK') this._startSpin(next.charged);
-              }
+              this.state='idle'; this._actionSeq=null;
             }
           }
         }
       }
 
       this.animT+=dt; world.updateTimer(dt);
-    }
-
-    takeDamage(amount, fromDir, world){
-      if(this.invulnT>0||this.dead) return;
-      this.hp=Math.max(0,this.hp-amount); updateHPUI(this.hp,this.maxhp);
-      this.vy=-320; this.vx=(fromDir>=0?-1:1)*180;
-      this.state='hurt'; this.animT=0; this._actionSeq=null; this.invulnT=0.4;
-      if(this.hp<=0) this._die(world);
     }
 
     _die(world){
@@ -475,49 +388,42 @@
       document.getElementById('lives').textContent=this.lives;
     }
     _respawn(world){
-      this.dead=false; this.state='idle'; this.comboStep=0; this.attackQueue.length=0; this.comboGraceT=0; this.bufferA1=false;
+      this.dead=false; this.state='idle'; this.comboStep=0; this.comboGraceT=0; this.bufferA1=false;
+      this.queueA2=null; this.queueSK=null;
+      this.actionAir=false; this.actionAirVx=0;
       this.invulnT=0.6;
-      this.x=world.camX+80; this.y=Math.floor(GROUND_TOP_Y) - this.h/2 + GROUND_VISUAL_PAD; this.vx=0; this.vy=0;
-      if(this.hp<=0){ this.hp=this.maxhp; updateHPUI(this.hp,this.maxhp); }
+      this.x=world.camX+80; this.y=Math.floor(GROUND_TOP_Y) - this.h/2 + FOOT_PAD; this.vx=0; this.vy=0;
+      if(this.hp<=0){ this.hp=this.maxhp; document.getElementById('hpfill').style.width='100%'; document.getElementById('hpnum').textContent=this.hp; }
     }
 
     draw(ctx,world){
       ctx.save();
-      if(this.dead){
-        const t=this.deathT, alpha=clamp(1-t/1.0,0,1), rot=t*20;
-        ctx.globalAlpha=alpha; ctx.translate(this.x - world.camX, this.y - world.camY); ctx.rotate(rot);
-        this._drawCurrentFrame(ctx,world,0,0); ctx.restore(); return;
-      }
       ctx.translate(this.x - world.camX, this.y - world.camY);
       if(this.face<0) ctx.scale(-1,1);
       let ox=0, oy=0;
-      if(this.state==='chargeA2'){ ox = Math.sin(this.animT*40)*2; }
-      this._drawCurrentFrame(ctx,world,ox,oy);
-      ctx.restore();
-    }
-    _drawCurrentFrame(ctx,world,ox,oy){
       let frameImg=null;
-      if(this.state==='idle' || this.state==='chargeA2'){
-        frameImg = world.assets.img(this.state==='chargeA2' ? this.frames.k2prep : this.frames.idle[0]);
-      } else if(this.state==='run'){
-        const f=Math.floor(this.animT*10)%this.frames.walk.length; frameImg=world.assets.img(this.frames.walk[f]);
-      } else if(this.state==='jump'){
-        frameImg=world.assets.img(this.frames.walk[0]);
-      } else if((this.state==='atk' || this.state==='skill') && this._actionSeq){
-        const cur=this._actionSeq[this._actionIndex];
-        frameImg=world.assets.img(cur.frame);
-        if(cur.kind==='prepShake'){ const s=Math.sin(this._actionTime*40)*2; ox+=s; }
-      } else if(this.state==='hurt'){
-        frameImg=world.assets.img(this.frames.k1prep);
-      } else {
-        frameImg=world.assets.img(this.frames.idle[0]);
-      }
-      if(!frameImg) return;
+      const f=(name)=>world.assets.img(this.frames[name]||name);
 
-      const targetH=this.h, scale=targetH/frameImg.height;
-      const drawW=frameImg.width*scale, drawH=targetH;
-      ctx.imageSmoothingEnabled=false;
-      ctx.drawImage(frameImg, Math.round(-drawW/2+ox), Math.round(-drawH/2+oy), Math.round(drawW), Math.round(drawH));
+      if(this.state==='idle' || this.state==='chargeA2'){
+        frameImg = this.state==='chargeA2'? f('k2prep') : f('idle')[0];
+        if(this.state==='chargeA2'){ ox = Math.sin(this.animT*40)*2; }
+      } else if(this.state==='run'){
+        const i=Math.floor(this.animT*10)%this.frames.walk.length; frameImg=f('walk')[i];
+      } else if(this.state==='jump'){
+        frameImg=f('walk')[0];
+      } else if((this.state==='atk'||this.state==='skill') && this._actionSeq){
+        const cur=this._actionSeq[this._actionIndex];
+        frameImg= (typeof cur.frame==='string') ? f(cur.frame) : cur.frame;
+        if(cur.kind==='prepShake'){ ox+=Math.sin(this._actionTime*40)*2; }
+      } else frameImg=f('idle')[0];
+
+      if(frameImg){
+        const targetH=this.h, scale=targetH/frameImg.height;
+        const w=frameImg.width*scale, h=targetH;
+        ctx.imageSmoothingEnabled=false;
+        ctx.drawImage(frameImg, Math.round(-w/2+ox), Math.round(-h/2+oy), Math.round(w), Math.round(h));
+      }
+      ctx.restore();
     }
   }
 
@@ -534,7 +440,6 @@
 
       this.bgSpeed=0.4;
 
-      // S1.png 自動スケール
       const tile=this.assets.img('S1.png');
       if(tile){
         this.tileScale = TILE_DRAW_H / tile.height;
@@ -545,69 +450,49 @@
       }
     }
     resize(){
-      const rect=this.canvas.getBoundingClientRect();
-      this.screenScaleX=rect.width/this.gameW; this.screenScaleY=rect.height/this.gameH;
+      const r=this.canvas.getBoundingClientRect();
+      this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
     }
-
-    updateCam(player){
-      const target = player.x - this.gameW*0.35;
-      this.camX = Math.max(0, lerp(this.camX, target, 0.12));
-      this.camY = 0;
-    }
-
+    updateCam(p){ const target=p.x - this.gameW*0.35; this.camX=Math.max(0, lerp(this.camX,target,0.12)); this.camY=0; }
     updateTimer(dt){
       this._timerAcc+=dt;
-      if(this._timerAcc>=0.2){
-        this.time+=this._timerAcc; this._timerAcc=0;
-        const t=Math.floor(this.time);
-        const mm=String(Math.floor(t/60)).padStart(2,'0');
-        const ss=String(t%60).padStart(2,'0');
-        document.getElementById('time').textContent=`${mm}:${ss}`;
-      }
+      if(this._timerAcc>=0.2){ this.time+=this._timerAcc; this._timerAcc=0; const t=Math.floor(this.time);
+        const mm=String(Math.floor(t/60)).padStart(2,'0'); const ss=String(t%60).padStart(2,'0');
+        document.getElementById('time').textContent=`${mm}:${ss}`; }
     }
-
     draw(player){
-      const ctx=this.ctx;
-      ctx.clearRect(0,0,this.gameW,this.gameH);
-
+      const ctx=this.ctx; ctx.clearRect(0,0,this.gameW,this.gameH);
       // 背景
       const bg=this.assets.img('sora.png');
       if(bg){
-        const scale=this.gameH/bg.height;
-        const bw=bg.width*scale;
-        const bx = - (this.camX*this.bgSpeed) % bw;
-        for(let i=-1;i<=2;i++){
-          ctx.drawImage(bg, Math.floor(bx + i*bw), 0, Math.ceil(bw), this.gameH);
-        }
-      } else {
-        const g=ctx.createLinearGradient(0,0,0,this.gameH);
-        g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18');
-        ctx.fillStyle=g; ctx.fillRect(0,0,this.gameW,this.gameH);
-      }
+        const s=this.gameH/bg.height, bw=bg.width*s, bx= - (this.camX*this.bgSpeed) % bw;
+        for(let i=-1;i<=2;i++) ctx.drawImage(bg, Math.floor(bx+i*bw), 0, Math.ceil(bw), this.gameH);
+      } else { const g=ctx.createLinearGradient(0,0,0,this.gameH); g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18'); ctx.fillStyle=g; ctx.fillRect(0,0,this.gameW,this.gameH); }
 
-      // 床
+      // 床（上面 = GROUND_TOP_Y）
       const tile=this.assets.img('S1.png');
-      const yTop = Math.floor(GROUND_TOP_Y);              // 上面を整数に固定
-      const yDraw= yTop;                                   // ここから下にタイルを描く
+      const yTop = Math.floor(GROUND_TOP_Y);
       const th   = Math.round(this.tileDH);
       const tw   = Math.round(this.tileDW);
-      const step = Math.max(1, tw - TILE_OVERLAP);         // 横1px重ね
+      const step = Math.max(1, tw - TILE_OVERLAP);
+
+      // 上端1pxを塗って半端なラインを覆う
+      ctx.fillStyle = '#0b0f17';
+      ctx.fillRect(0, yTop-1, this.gameW, 1);
 
       if(tile && tw>0 && th>0){
         const startX = Math.floor((this.camX - this.gameW*0.2)/step)*step;
         const endX   = this.camX + this.gameW*1.2 + tw;
         for(let x=startX; x<=endX; x+=step){
           ctx.drawImage(tile, 0,0,tile.width,tile.height,
-                        Math.round(x - this.camX), yDraw, tw, th);
+                        Math.round(x - this.camX), yTop, tw, th);
         }
       } else {
-        ctx.fillStyle='#1d2a3d';
-        ctx.fillRect(0, yDraw, this.gameW, th||TILE_DRAW_H);
+        ctx.fillStyle='#1d2a3d'; ctx.fillRect(0, yTop, this.gameW, th||TILE_DRAW_H);
       }
-
-      // 床下は無地で塗る（背景の覗きを防止）
+      // 床下は無地で塗る（背景覗き防止）
       ctx.fillStyle = '#0b0f17';
-      ctx.fillRect(0, yDraw + th, this.gameW, this.gameH - (yDraw + th));
+      ctx.fillRect(0, yTop + th, this.gameW, this.gameH - (yTop + th));
 
       // プレイヤー
       player.draw(ctx,this);
@@ -615,25 +500,14 @@
   }
 
   function updateHPUI(hp,maxhp){
-    const fill=document.getElementById('hpfill');
-    document.getElementById('hpnum').textContent=hp;
+    const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=hp;
     fill.style.width = Math.max(0, Math.min(100, (hp/maxhp)*100)) + '%';
   }
 
   class Game{
-    constructor(){
-      this.assets=new Assets();
-      this.canvas=document.getElementById('game');
-      this.input=new Input();
-      this.player=null; this.world=null; this.lastT=0;
-      window.addEventListener('resize',()=>this.world?.resize());
-    }
+    constructor(){ this.assets=new Assets(); this.canvas=document.getElementById('game'); this.input=new Input(); this.player=null; this.world=null; this.lastT=0; addEventListener('resize',()=>this.world?.resize()); }
     async start(){
-      const imgs=['sora.png','S1.png',
-        'M1-1.png','M1-2.png','M1-3.png','M1-4.png',
-        'K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png',
-        'h1.png','h2.png','h3.png','h4.png'
-      ];
+      const imgs=['sora.png','S1.png','M1-1.png','M1-2.png','M1-3.png','M1-4.png','K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png','h1.png','h2.png','h3.png','h4.png'];
       await this.assets.load(imgs);
       this.world=new World(this.assets,this.canvas);
       this.player=new Player(this.assets,this.world);
@@ -650,7 +524,6 @@
       requestAnimationFrame(loop);
     }
   }
-
   new Game().start();
 })();
 </script>
