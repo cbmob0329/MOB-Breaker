@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Player Only Rev7</title>
+<title>MOB Side Action – Player vs EN Rev8</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
   :root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
@@ -60,19 +60,19 @@
   </div>
 
 <script>
-/* ===================== Rev7 完全版 ======================
- - ▲/●：離した瞬間に1回だけ発動（pointer/touch/keyboard対応）
- - 優先度：SK＞A2＞A1。▲/●待機中はA1開始をブロック、A1中に離したら区切れ直後に最優先実行
- - 空中攻撃：開始時の横慣性を保持（攻撃中も移動）。入力による加速は不可
- - 床：描画高さ=96px 自動スケール、横1pxオーバーラップ、上端整数スナップ＋上端1px塗り、足元2px食い込み
- - ゲージ：頭上・充電時のみ表示
- - 連撃：構え0.15s、猶予0.22s、3段でリセット
-========================================================== */
+/* =============== Rev8: back1.png ステージ + 敵1体 =================
+ - 背景/地面は back1.png を横ループ（継ぎ目1px重ね）
+ - GROUND_TOP_Y=360（必要なら後で調整）
+ - 敵AI：接近→（距離しだいで）小/中/連撃。攻撃間にクールタイム、移動はプレイヤーより遅い
+ - 攻撃判定：プレイヤー⇄敵ともに当たり、被弾で浮き＆ノックバック
+ - 0HP：スピンしながら吹っ飛び→フェード退場
+================================================================== */
 (function(){
   'use strict';
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
   const lerp=(a,b,t)=>a+(b-a)*t;
   const now=()=>performance.now();
+  const sign=(x)=>x<0?-1:1;
 
   class Assets{
     constructor(){ this.images=new Map(); }
@@ -163,195 +163,193 @@
     }
   }
 
-  // 物理
-  const GRAV=2000, MOVE=260, JUMP_V=760, MAX_FALL=1200;
+  // 物理/共通
+  const GRAV=2000, MOVE=260, EN_MOVE=180, JUMP_V=760, MAX_FALL=1200;
+  const GROUND_TOP_Y=360, FOOT_PAD=2;
 
-  // 床
-  const GROUND_TOP_Y = 360;   // タイル上端（上面）
-  const TILE_DRAW_H  = 96;    // タイル描画高さ
-  const TILE_OVERLAP = 1;     // 横 1px 重ね
-  const FOOT_PAD     = 2;     // 足元 2px 食い込み（視覚隙間ゼロ）
+  // 判定ヘルパ
+  function rectsOverlap(a,b){ return Math.abs(a.x-b.x)*2 < (a.w+b.w) && Math.abs(a.y-b.y)*2 < (a.h+b.h); }
 
-  class Player{
-    constructor(assets, world){
-      this.assets=assets; this.world=world;
-      this.w=56; this.h=64;
-      this.x=100; this.y=Math.floor(GROUND_TOP_Y) - this.h/2 + FOOT_PAD;
-      this.vx=0; this.vy=0; this.face=1; this.onGround=false;
-
-      this.hp=1000; this.maxhp=1000; this.lives=3;
-      this.dead=false; this.deathT=0; this.invulnT=0;
-
+  class CharacterBase{
+    constructor(w,h){
+      this.w=w; this.h=h;
+      this.x=0; this.y=0;
+      this.vx=0; this.vy=0;
+      this.face=1; this.onGround=false;
       this.state='idle'; this.animT=0;
+      this.hp=100; this.maxhp=100;
+      this.dead=false; this.deathT=0; this.invulnT=0;
+      this.spinDie=false;
+    }
+    aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.8}; } // ちょい細め
+    hurt(amount, dir){
+      if(this.invulnT>0||this.dead) return false;
+      this.hp=Math.max(0,this.hp-amount);
+      this.vy=-320; this.vx=(dir>=0?-1:1)*200;
+      this.state='hurt'; this.animT=0; this.invulnT=0.35;
+      if(this.hp<=0) this.spinDie=true;
+      return true;
+    }
+    updatePhysics(dt,world){
+      this.vy = Math.min(this.vy + GRAV*dt, MAX_FALL);
+      this.x += this.vx*dt; this.y += this.vy*dt;
 
-      // A1 連撃
+      const top=Math.floor(GROUND_TOP_Y);
+      if(this.y + this.h/2 >= top + FOOT_PAD){
+        this.y = top - this.h/2 + FOOT_PAD; this.vy=0; this.onGround=true;
+      } else this.onGround=false;
+
+      if(this.invulnT>0) this.invulnT=Math.max(0,this.invulnT-dt);
+      if(this.y - world.camY > world.gameH + 200){ this.hp=0; this.spinDie=true; this.dead=true; }
+    }
+  }
+
+  // ==== プレイヤー（Rev7ベース、敵当たり判定追加） ====
+  class Player extends CharacterBase{
+    constructor(assets, world){
+      super(56,64);
+      this.assets=assets; this.world=world;
+      this.x=100; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD;
+      this.hp=1000; this.maxhp=1000; this.lives=3;
+
       this.comboStep=0; this.comboGraceT=0; this.bufferA1=false;
-
-      // 優先キュー（多重禁止）
       this.queueA2=null; this.queueSK=null;
-
-      // 空中攻撃慣性
       this.actionAir=false; this.actionAirVx=0;
 
-      // スプライト定義
       this.frames={
-        idle:['M1-1.png'],
-        walk:['M1-2.png','M1-3.png','M1-4.png'],
+        idle:['M1-1.png'], walk:['M1-2.png','M1-3.png','M1-4.png'],
         k1prep:'K1-3.png', k1a:'K1-1.png', k1b:'K1-2.png', k1c:'K1-4.png',
-        k2prep:'K1-3.png', k2:'K1-5.png',
-        spin:['h1.png','h2.png','h3.png','h4.png'],
+        k2prep:'K1-3.png', k2:'K1-5.png', spin:['h1.png','h2.png','h3.png','h4.png'],
       };
 
-      // 頭上ゲージ
+      // ゲージ
       this.overhead=this._createOverheadGauge();
       document.querySelector('.gamewrap').appendChild(this.overhead.root);
     }
-
-    // 画像ヘルパ
-    _getFramePath(key, index=0){ const v=this.frames[key]; if(Array.isArray(v)){ const i=Math.max(0,Math.min(v.length-1,index)); return v[i]; } return v; }
-    _getImageByKey(key, index=0){ return this.world.assets.img(this._getFramePath(key,index)); }
+    _getFramePath(key, i=0){ const v=this.frames[key]; return Array.isArray(v)? v[Math.max(0,Math.min(v.length-1,i))] : v; }
+    _imgByKey(key,i=0){ return this.world.assets.img(this._getFramePath(key,i)); }
 
     _createOverheadGauge(){
       const root=document.createElement('div'); root.className='overhead';
       const g=document.createElement('div'); g.className='gauge';
       const i=document.createElement('i'); g.appendChild(i);
-      const label=document.createElement('span'); label.style.fontSize='10px'; label.style.color='#b8c7e3'; label.textContent='';
+      const label=document.createElement('span'); label.style.fontSize='10px'; label.style.color='#b8c7e3';
       root.appendChild(g); root.appendChild(label);
       return {root, gauge:g, fill:i, label};
     }
-    _updateOverheadPos(){
-      const w=this.world, headY = this.y - this.h/2 - 10;
-      this.overhead.root.style.left   = ((this.x - w.camX) * w.screenScaleX) + 'px';
-      this.overhead.root.style.bottom = (w.gameH - (headY - w.camY)) * w.screenScaleY + 'px';
+    _posOverhead(){
+      const w=this.world, headY=this.y-this.h/2-10;
+      this.overhead.root.style.left=((this.x-w.camX)*w.screenScaleX)+'px';
+      this.overhead.root.style.bottom=(w.gameH-(headY-w.camY))*w.screenScaleY+'px';
     }
-    _showOverhead(show, text='', ratio=0){
-      this.overhead.root.style.display = show ? 'flex' : 'none';
-      this.overhead.label.textContent = text;
-      this.overhead.fill.style.width = (ratio*100|0) + '%';
+    _showGauge(show, text='', ratio=0){
+      this.overhead.root.style.display=show?'flex':'none';
+      this.overhead.label.textContent=text; this.overhead.fill.style.width=((ratio*100)|0)+'%';
     }
 
-    update(dt,input,world){
+    // 攻撃の当たり（単純：前方矩形）
+    currentHitbox(){
+      if(!(this.state==='atk'||this.state==='skill') || !this._actionSeq) return null;
+      const cur=this._actionSeq[this._actionIndex];
+      if(!cur) return null;
+      // ヒットは kind 'hit' or 'sp' の一部で有効とみなす
+      if(cur.kind==='hit' || cur.kind==='sp'){
+        const w=50, h=40; // 調整可
+        const x=this.x + this.face*(this.w*0.3 + w*0.5);
+        const y=this.y - 6;
+        return {x, y, w, h, power:cur.power||0, dir:this.face};
+      }
+      return null;
+    }
+
+    update(dt,input,world,enemy){
       input.beginFrame();
-      this._updateOverheadPos();
+      this._posOverhead();
       if(this.dead){ this.deathT+=dt; if(this.deathT>1.2) this._respawn(world); return; }
-      if(this.invulnT>0) this.invulnT=Math.max(0,this.invulnT-dt);
 
-      // 溜め：ゲージ表示
-      if(input.attack2Charging){ input.attack2ChargeT=Math.min(1, input.attack2ChargeT+dt); this._showOverhead(true,'▲ Charge', input.attack2ChargeT); }
-      else if(input.skillCharging){ input.skillChargeT=Math.min(1, input.skillChargeT+dt); this._showOverhead(true,'● Charge', input.skillChargeT); }
-      else { this._showOverhead(false); }
+      // 溜めUI
+      if(input.attack2Charging){ input.attack2ChargeT=Math.min(1,input.attack2ChargeT+dt); this._showGauge(true,'▲ Charge', input.attack2ChargeT); }
+      else if(input.skillCharging){ input.skillChargeT=Math.min(1,input.skillChargeT+dt); this._showGauge(true,'● Charge', input.skillChargeT); }
+      else this._showGauge(false);
 
-      // 離した瞬間だけ上書きキュー（常に最新）
+      // 離しでキュー
       if(input.edge.a2Release && input.attack2ChargeT>0){ this.queueA2={charged:input.attack2ChargeT>=0.5}; input.attack2ChargeT=0; }
       if(input.edge.skillRelease && input.skillChargeT>0){ this.queueSK={charged:input.skillChargeT>=0.5}; input.skillChargeT=0; }
 
       // 行動中
-      if(this.state==='atk' || this.state==='skill' || this.state==='hurt'){
-        this._updateAction(dt,input,world); return;
+      if(this.state==='atk'||this.state==='skill'||this.state==='hurt'){
+        // 攻撃判定→敵
+        const hb=this.currentHitbox();
+        if(hb && enemy && !enemy.dead && enemy.invulnT<=0){
+          if(rectsOverlap({x:hb.x,y:hb.y,w:hb.w,h:hb.h}, enemy.aabb())){
+            enemy.hurt(hb.power, hb.dir);
+          }
+        }
+        this._updateAction(dt,world);
+        return;
       }
 
-      // A1入力エッジで予約
+      // 入力
       if(input.edge.a1) this.bufferA1=true;
       if(this.comboGraceT>0) this.comboGraceT=Math.max(0,this.comboGraceT-dt);
 
-      // 優先度：SK＞A2＞A1（▲/●待機中はA1開始をブロック）
+      // 優先度：SK＞A2＞A1
       if(this.queueSK){ const q=this.queueSK; this.queueSK=null; this.bufferA1=false; this._startSpin(q.charged); return; }
       if(this.queueA2){ const q=this.queueA2; this.queueA2=null; this.bufferA1=false; this._startA2(q.charged); return; }
       if(this.bufferA1 && this.comboStep<3){ this.bufferA1=false; this._startA1(); return; }
 
-      // 通常移動
-      let ax=0;
-      if(input.left){ ax-=MOVE; this.face=-1; }
-      if(input.right){ ax+=MOVE; this.face= 1; }
-      this.vx = ax!==0? (ax>0?MOVE:-MOVE) : 0;
-
-      // ジャンプ
+      // 移動
+      let ax=0; if(input.left){ ax-=MOVE; this.face=-1; } if(input.right){ ax+=MOVE; this.face=1; }
+      this.vx = ax!==0 ? (ax>0?MOVE:-MOVE) : 0;
       if(input.consumeJump() && this.onGround){ this.vy=-JUMP_V; this.onGround=false; }
 
-      // 重力・移動
-      this.vy = Math.min(this.vy + GRAV*dt, MAX_FALL);
-      this.x  += this.vx*dt; this.y += this.vy*dt;
+      this.updatePhysics(dt,world);
 
-      // 接地（足元2px食い込みで固定）
-      const top = Math.floor(GROUND_TOP_Y);
-      if(this.y + this.h/2 >= top + FOOT_PAD){
-        this.y = top - this.h/2 + FOOT_PAD; this.vy=0; this.onGround=true;
-      } else this.onGround=false;
-
-      if(this.y - world.camY > world.gameH + 200){ this._die(world); }
-
+      // 状態
       this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
-      this.animT += dt;
-      world.updateTimer(dt);
+      this.animT += dt; world.updateTimer(dt);
 
-      // ▲見た目シェイク
       if(input.attack2Charging && this.state!=='atk' && this.state!=='skill'){ this.state='chargeA2'; }
     }
 
     _startA1(){
       this.state='atk'; this.animT=0;
-      this.comboStep=Math.min((this.comboStep||0)+1,3);
-      // 空中なら慣性保持
-      this.actionAir = !this.onGround; this.actionAirVx = this.actionAir ? this.vx : 0;
-
-      const seq=[ {kind:'prep', dur:0.15, frame:'k1prep', dx:0, power:0} ];
-      let frame='', power=5, dx=0;
-      if(this.comboStep===1){ frame='k1a'; power=5; dx=0; }
-      else if(this.comboStep===2){ frame='k1b'; power=8; dx=12; }
-      else { frame='k1c'; power=10; dx=12; }
-      seq.push({kind:'hit', dur:0.4, frame, dx, power});
+      this.comboStep=Math.min(this.comboStep+1,3);
+      this.actionAir=!this.onGround; this.actionAirVx=this.actionAir?this.vx:0;
+      const seq=[ {kind:'prep',dur:0.15,frame:'k1prep',dx:0,power:0} ];
+      let frame='k1a', power=5, dx=0;
+      if(this.comboStep===2){ frame='k1b'; power=8; dx=12; }
+      else if(this.comboStep===3){ frame='k1c'; power=10; dx=12; }
+      seq.push({kind:'hit',dur:0.4,frame,dx,power});
       this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
     }
-
     _startA2(charged){
-      this.state='atk'; this.animT=0;
-      this.actionAir = !this.onGround; this.actionAirVx = this.actionAir ? this.vx : 0;
+      this.state='atk'; this.animT=0; this.actionAir=!this.onGround; this.actionAirVx=this.actionAir?this.vx:0;
       const power=charged?18:15;
-      this._actionSeq=[
-        {kind:'prepShake', dur:0.15, frame:'k2prep', dx:0, power:0},
-        {kind:'hit', dur:0.4, frame:'k2', dx:14, power}
-      ];
+      this._actionSeq=[ {kind:'prepShake',dur:0.15,frame:'k2prep',dx:0,power:0}, {kind:'hit',dur:0.4,frame:'k2',dx:14,power} ];
       this._actionIndex=0; this._actionTime=0;
     }
-
     _startSpin(charged){
-      this.state='skill'; this.animT=0;
-      this.actionAir = !this.onGround; this.actionAirVx = this.actionAir ? this.vx : 0;
-      const rounds=charged?4:2, power=charged?40:25, frames=this.frames.spin;
-      const seq=[];
-      for(let r=0;r<rounds;r++){ for(let i=0;i<frames.length;i++){ seq.push({kind:'sp', dur:0.08, frame:frames[i], dx:0, power:(i===1?power:0)}); } }
+      this.state='skill'; this.animT=0; this.actionAir=!this.onGround; this.actionAirVx=this.actionAir?this.vx:0;
+      const rounds=charged?4:2, power=charged?40:25, frames=this.frames.spin; const seq=[];
+      for(let r=0;r<rounds;r++) for(let i=0;i<frames.length;i++) seq.push({kind:'sp',dur:0.08,frame:frames[i],dx:0,power:(i===1?power:0)});
       this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
     }
-
-    _updateAction(dt,input,world){
-      // 攻撃中：入力加速は不可だが空中慣性は維持
-      const airVX = this.actionAir ? this.actionAirVx : 0;
-      this.x += airVX * dt;
-
-      // 重力
-      this.vy = Math.min(this.vy + GRAV*dt, MAX_FALL);
-      this.y += this.vy*dt;
-
-      // 接地
-      const top=Math.floor(GROUND_TOP_Y);
-      if(this.y + this.h/2 >= top + FOOT_PAD){
-        this.y = top - this.h/2 + FOOT_PAD; this.vy=0; this.onGround=true; this.actionAir=false; this.actionAirVx=0;
-      } else this.onGround=false;
-
-      if(this.y - world.camY > world.gameH + 200){ this._die(world); }
-
-      // 行動シーケンス
+    _updateAction(dt,world){
+      // 空中慣性
+      if(this.actionAir) this.x += this.actionAirVx*dt;
+      this.updatePhysics(dt,world);
       if(this._actionSeq){
         this._actionTime+=dt;
         const cur=this._actionSeq[this._actionIndex];
         if(cur){
-          if(cur.dx){ this.x += this.face * (cur.dx * dt / cur.dur); }
+          if(cur.dx) this.x += this.face*(cur.dx*dt/cur.dur);
           if(this._actionTime>=cur.dur){
             this._actionIndex++; this._actionTime=0;
             if(this._actionIndex>=this._actionSeq.length){
-              if(this.state==='atk' && this.comboStep>0){ this.comboGraceT=0.22; }
+              if(this.state==='atk' && this.comboStep>0) this.comboGraceT=0.22;
               if(this.state==='atk' && this.comboStep>=3){ this.comboStep=0; this.bufferA1=false; }
-              // 優先待機があれば即次へ
+              // ▲/●待機があれば即続行
               if(this.queueSK){ const q=this.queueSK; this.queueSK=null; this._startSpin(q.charged); return; }
               if(this.queueA2){ const q=this.queueA2; this.queueA2=null; this._startA2(q.charged); return; }
               this.state='idle'; this._actionSeq=null;
@@ -359,57 +357,171 @@
           }
         }
       }
-
-      this.animT+=dt; world.updateTimer(dt);
+      this.animT+=dt;
     }
 
-    _die(world){
-      if(this.dead) return;
-      this.dead=true; this.deathT=0; this.state='dead';
-      this.lives=Math.max(0,this.lives-1);
-      document.getElementById('lives').textContent=this.lives;
-    }
     _respawn(world){
       this.dead=false; this.state='idle'; this.comboStep=0; this.comboGraceT=0; this.bufferA1=false;
-      this.queueA2=null; this.queueSK=null;
-      this.actionAir=false; this.actionAirVx=0;
-      this.invulnT=0.6;
-      this.x=world.camX+80; this.y=Math.floor(GROUND_TOP_Y) - this.h/2 + FOOT_PAD; this.vx=0; this.vy=0;
+      this.queueA2=null; this.queueSK=null; this.actionAir=false; this.actionAirVx=0; this.invulnT=0.6;
+      this.x=world.camX+80; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.vx=0; this.vy=0;
       if(this.hp<=0){ this.hp=this.maxhp; const f=document.getElementById('hpfill'); f.style.width='100%'; document.getElementById('hpnum').textContent=this.hp; }
     }
 
     draw(ctx,world){
       ctx.save();
-      ctx.translate(this.x - world.camX, this.y - world.camY);
+      ctx.translate(this.x-world.camX, this.y-world.camY);
       if(this.face<0) ctx.scale(-1,1);
+      let ox=0, img=null;
+      if(this.state==='chargeA2'){ img=this.world.assets.img(this.frames.k2prep); ox=Math.sin(this.animT*40)*2; }
+      else if(this.state==='idle'){ img=this._imgByKey('idle',0); }
+      else if(this.state==='run'){ const i=Math.floor(this.animT*10)%this.frames.walk.length; img=this._imgByKey('walk',i); }
+      else if(this.state==='jump'){ img=this._imgByKey('walk',0); }
+      else if((this.state==='atk'||this.state==='skill') && this._actionSeq){
+        const cur=this._actionSeq[this._actionIndex]; const key=cur.frame;
+        img=this.world.assets.img(this.frames[key]?this._getFramePath(key,0):key); if(cur.kind==='prepShake') ox+=Math.sin(this._actionTime*40)*2;
+      } else img=this._imgByKey('idle',0);
+      if(!img) img=this.world.assets.img('M1-1.png');
+      const scale=this.h/img.height, w=img.width*scale, h=this.h;
+      ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2+ox), Math.round(-h/2), Math.round(w), Math.round(h));
+      ctx.restore();
+    }
+  }
 
-      let ox=0, oy=0, img=null;
-      if(this.state==='chargeA2'){
-        img = this.world.assets.img(this.frames.k2prep);
-        ox = Math.sin(this.animT*40)*2;
-      } else if(this.state==='idle'){
-        img = this._getImageByKey('idle', 0);
-      } else if(this.state==='run'){
-        const i=Math.floor(this.animT*10)%this.frames.walk.length;
-        img = this._getImageByKey('walk', i);
-      } else if(this.state==='jump'){
-        img = this._getImageByKey('walk', 0);
-      } else if((this.state==='atk' || this.state==='skill') && this._actionSeq){
-        const cur=this._actionSeq[this._actionIndex];
-        // cur.frame は 'k1a' 等のキー or 直接ファイル名
-        const key=cur.frame;
-        img = this.world.assets.img(this.frames[key] ? this._getFramePath(key,0) : key);
-        if(cur.kind==='prepShake'){ ox+=Math.sin(this._actionTime*40)*2; }
+  // ==== 敵 ====
+  class Enemy extends CharacterBase{
+    constructor(world){
+      super(56,64);
+      this.world=world;
+      this.x=380; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD;
+      this.face=-1;
+      this.maxhp=500; this.hp=500;
+      this.aiT=0; this.cool=0; this.comboCd=0;
+      this.state='idle'; this.animT=0;
+      this._seq=null; this._idx=0; this._t=0;
+      this.dead=false;
+    }
+    // 画像
+    imgByKey(key){
+      const a=this.world.assets;
+      const map={
+        idle:'EN1-1.png',
+        walk2:'EN1-2.png',
+        walk3:'EN1-3.png',
+        atkS1:'EN1-4.png', atkS2:'EN1-5.png',
+        atkM1:'EN1-4.png', atkM2:'EN1-6.png'
+      };
+      return a.img(map[key]);
+    }
+    // 当たり
+    currentHitbox(){
+      if(!this._seq) return null;
+      const cur=this._seq[this._idx]; if(!cur) return null;
+      if(cur.kind==='hit'){
+        const w=44,h=36; const x=this.x + this.face*(this.w*0.3 + w*0.5); const y=this.y - 6;
+        return {x,y,w,h,power:cur.power||0,dir:this.face, lift:cur.lift||0};
+      }
+      return null;
+    }
+    aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.8}; }
+
+    decide(player){
+      if(this.cool>0) return; // クール中は決めない
+      const dx=player.x - this.x, adx=Math.abs(dx); this.face = dx>=0?1:-1;
+
+      // 射程
+      const close = adx<70, mid = adx<110;
+
+      if(close && Math.random()<0.55){
+        // 連撃：小→中（0.7s）
+        this._seq=[
+          {kind:'pose',dur:0.1, key:'atkS1'},
+          {kind:'hit', dur:0.4, key:'atkS2', dx:60, power:5},
+          {kind:'pose',dur:0.1, key:'atkM1'},
+          {kind:'hit', dur:0.3, key:'atkM2', dx:40, power:8, lift:1}
+        ];
+        this.cool=0.9;
+      } else if(mid){
+        // 小攻撃
+        this._seq=[
+          {kind:'pose',dur:0.1, key:'atkS1'},
+          {kind:'hit', dur:0.5, key:'atkS2', dx:80, power:5}
+        ];
+        this.cool=0.7;
+      } else if(close){
+        // 中攻撃のみ
+        this._seq=[
+          {kind:'pose',dur:0.12, key:'atkM1'},
+          {kind:'hit', dur:0.4, key:'atkM2', dx:60, power:8, lift:1}
+        ];
+        this.cool=0.8;
       } else {
-        img = this._getImageByKey('idle', 0);
+        // 接近
+        this.vx = (dx>0?EN_MOVE:-EN_MOVE);
+        return;
       }
 
-      if(!img){ img = this.world.assets.img('M1-1.png'); } // フォールバック
+      // 攻撃開始
+      this.state='atk'; this._idx=0; this._t=0; this.vx=0;
+    }
 
-      const targetH=this.h, scale=targetH/img.height;
-      const w=img.width*scale, h=targetH;
-      ctx.imageSmoothingEnabled=false;
-      ctx.drawImage(img, Math.round(-w/2+ox), Math.round(-h/2+oy), Math.round(w), Math.round(h));
+    update(dt,world,player){
+      if(this.dead){ this.deathT+=dt; return; }
+      if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
+
+      if(this.state==='atk'){
+        // 重力
+        this.updatePhysics(dt,world);
+
+        if(this._seq){
+          this._t+=dt;
+          const cur=this._seq[this._idx];
+          if(cur){
+            if(cur.dx) this.x += this.face*(cur.dx*dt/cur.dur);
+            if(this._t>=cur.dur){
+              this._idx++; this._t=0;
+              if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; }
+            }
+          } else { this.state='idle'; this._seq=null; }
+        }
+      } else if(this.state==='hurt'){
+        this.updatePhysics(dt,world);
+        if(this.onGround) this.state='idle';
+      } else {
+        // 追尾移動
+        const dx=player.x - this.x; this.face=dx>=0?1:-1;
+        const targetVX = Math.abs(dx)>60 ? (dx>0?EN_MOVE:-EN_MOVE) : 0;
+        this.vx = targetVX;
+        // ジャンプはステージ平坦なので通常は不要（障害物時のための残し）
+        // 物理
+        this.updatePhysics(dt,world);
+
+        // 攻撃判断
+        this.aiT-=dt; if(this.aiT<=0){ this.decide(player); this.aiT=0.15; }
+        this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
+      }
+
+      this.animT+=dt;
+    }
+
+    draw(ctx,world){
+      ctx.save();
+      ctx.translate(this.x-world.camX, this.y-world.camY);
+      if(this.face<0) ctx.scale(-1,1);
+
+      let img=null; 
+      if(this.dead){
+        const t=this.deathT; const rot=t*20; const a=clamp(1-t/1.0,0,1);
+        ctx.globalAlpha=a; ctx.rotate(rot); img=this.imgByKey('idle');
+      } else if(this.state==='atk' && this._seq){
+        const cur=this._seq[this._idx]; img=this.imgByKey(cur.key);
+      } else if(this.state==='run'){
+        const f=Math.floor(this.animT*10)%2; img=this.imgByKey(f? 'walk2':'walk3');
+      } else {
+        img=this.imgByKey('idle');
+      }
+
+      const scale=this.h/img.height, w=img.width*scale, h=this.h;
+      ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
       ctx.restore();
     }
   }
@@ -422,76 +534,55 @@
       this.camX=0; this.camY=0;
       this.time=0; this._timerAcc=0;
 
-      const rect=canvas.getBoundingClientRect();
-      this.screenScaleX=rect.width/this.gameW; this.screenScaleY=rect.height/this.gameH;
+      const r=canvas.getBoundingClientRect();
+      this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
 
-      this.bgSpeed=0.4;
-
-      // S1.png 自動スケール
-      const tile=this.assets.img('S1.png');
-      if(tile){
-        this.tileScale = TILE_DRAW_H / tile.height;
-        this.tileDW = tile.width  * this.tileScale;
-        this.tileDH = tile.height * this.tileScale;
-      }else{
-        this.tileScale=1; this.tileDW=64; this.tileDH=TILE_DRAW_H;
+      // back1.png：背景+地面込みを横ループ
+      const bg=this.assets.img('back1.png');
+      if(bg){
+        this.bgScale = this.gameH / bg.height;
+        this.bgDW = bg.width * this.bgScale;
+        this.bgDH = bg.height* this.bgScale;
+      } else {
+        this.bgScale=1; this.bgDW=this.gameW; this.bgDH=this.gameH;
       }
+      this.tileOverlap=1;
+      this.bgSpeed=1.0; // 背景＝実世界と同速（画像に地面含むため）
     }
     resize(){
       const r=this.canvas.getBoundingClientRect();
       this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
     }
-    updateCam(p){
-      const target=p.x - this.gameW*0.35;
-      this.camX=Math.max(0, lerp(this.camX,target,0.12));
-      this.camY=0;
-    }
+    updateCam(p){ const t=p.x - this.gameW*0.35; this.camX=Math.max(0, lerp(this.camX,t,0.12)); this.camY=0; }
     updateTimer(dt){
-      this._timerAcc+=dt;
-      if(this._timerAcc>=0.2){ this.time+=this._timerAcc; this._timerAcc=0; const t=Math.floor(this.time);
-        const mm=String(Math.floor(t/60)).padStart(2,'0'); const ss=String(t%60).padStart(2,'0');
+      this._timerAcc+=dt; if(this._timerAcc>=0.2){ this.time+=this._timerAcc; this._timerAcc=0;
+        const t=Math.floor(this.time); const mm=String(Math.floor(t/60)).padStart(2,'0'); const ss=String(t%60).padStart(2,'0');
         document.getElementById('time').textContent=`${mm}:${ss}`; }
     }
-    draw(player){
+    draw(player, enemy){
       const ctx=this.ctx; ctx.clearRect(0,0,this.gameW,this.gameH);
 
-      // 背景
-      const bg=this.assets.img('sora.png');
+      // back1 を横ループ（1pxオーバーラップ）
+      const bg=this.assets.img('back1.png');
       if(bg){
-        const s=this.gameH/bg.height, bw=bg.width*s, bx= - (this.camX*this.bgSpeed) % bw;
-        for(let i=-1;i<=2;i++) ctx.drawImage(bg, Math.floor(bx+i*bw), 0, Math.ceil(bw), this.gameH);
+        const w=Math.round(this.bgDW), h=Math.round(this.bgDH);
+        const step=Math.max(1, w - this.tileOverlap);
+        const startX = Math.floor((this.camX*this.bgSpeed - this.gameW*0.2)/step)*step;
+        const endX   = this.camX*this.bgSpeed + this.gameW*1.2 + w;
+        for(let x=startX; x<=endX; x+=step){
+          ctx.drawImage(bg, 0,0,bg.width,bg.height, Math.round(x - this.camX*this.bgSpeed), 0, w, h);
+        }
       } else {
+        // フォールバック
         const g=ctx.createLinearGradient(0,0,0,this.gameH); g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18');
         ctx.fillStyle=g; ctx.fillRect(0,0,this.gameW,this.gameH);
       }
 
-      // 床
-      const tile=this.assets.img('S1.png');
-      const yTop = Math.floor(GROUND_TOP_Y);
-      const th   = Math.round(this.tileDH);
-      const tw   = Math.round(this.tileDW);
-      const step = Math.max(1, tw - TILE_OVERLAP);
+      // 床上端の補助塗り（半端な1pxライン隠し）
+      ctx.fillStyle='#0b0f17'; const yTop=Math.floor(GROUND_TOP_Y); ctx.fillRect(0,yTop-1,this.gameW,1);
 
-      // 上端1px塗り（半端ライン隠し）
-      ctx.fillStyle = '#0b0f17';
-      ctx.fillRect(0, yTop-1, this.gameW, 1);
-
-      if(tile && tw>0 && th>0){
-        const startX = Math.floor((this.camX - this.gameW*0.2)/step)*step;
-        const endX   = this.camX + this.gameW*1.2 + tw;
-        for(let x=startX; x<=endX; x+=step){
-          ctx.drawImage(tile, 0,0,tile.width,tile.height,
-                        Math.round(x - this.camX), yTop, tw, th);
-        }
-      } else {
-        ctx.fillStyle='#1d2a3d'; ctx.fillRect(0, yTop, this.gameW, th||TILE_DRAW_H);
-      }
-
-      // 床下塗り（背景覗き防止）
-      ctx.fillStyle = '#0b0f17';
-      ctx.fillRect(0, yTop + th, this.gameW, this.gameH - (yTop + th));
-
-      // プレイヤー
+      // 描画順：背景→敵→プレイヤー（前後関係は画像次第で調整可）
+      if(enemy && !enemy.dead) enemy.draw(ctx,this); else if(enemy && enemy.dead) enemy.draw(ctx,this);
       player.draw(ctx,this);
     }
   }
@@ -501,26 +592,69 @@
     fill.style.width = Math.max(0, Math.min(100, (hp/maxhp)*100)) + '%';
   }
 
+  // ===== Game =====
   class Game{
-    constructor(){ this.assets=new Assets(); this.canvas=document.getElementById('game'); this.input=new Input(); this.player=null; this.world=null; this.lastT=0; addEventListener('resize',()=>this.world?.resize()); }
+    constructor(){
+      this.assets=new Assets();
+      this.canvas=document.getElementById('game');
+      this.input=new Input();
+      this.player=null; this.enemy=null; this.world=null; this.lastT=0;
+      addEventListener('resize',()=>this.world?.resize());
+    }
     async start(){
-      const imgs=['sora.png','S1.png','M1-1.png','M1-2.png','M1-3.png','M1-4.png','K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png','h1.png','h2.png','h3.png','h4.png'];
+      const imgs=[
+        'back1.png',
+        'M1-1.png','M1-2.png','M1-3.png','M1-4.png',
+        'K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png',
+        'h1.png','h2.png','h3.png','h4.png',
+        'EN1-1.png','EN1-2.png','EN1-3.png','EN1-4.png','EN1-5.png','EN1-6.png'
+      ];
       await this.assets.load(imgs);
       this.world=new World(this.assets,this.canvas);
       this.player=new Player(this.assets,this.world);
+      this.enemy=new Enemy(this.world);
+
       updateHPUI(this.player.hp,this.player.maxhp);
 
       this.lastT=now();
       const loop=()=>{
         const t=now(); let dt=(t-this.lastT)/1000; if(dt>0.05) dt=0.05; this.lastT=t;
-        this.player.update(dt,this.input,this.world);
+
+        // 更新
+        this.player.update(dt,this.input,this.world,this.enemy);
+        if(this.enemy && !this.enemy.dead){
+          // 敵→プレイヤー攻撃判定
+          this.enemy.update(dt,this.world,this.player);
+          const hb=this.enemy.currentHitbox();
+          if(hb && this.player.invulnT<=0){
+            if(rectsOverlap({x:hb.x,y:hb.y,w:hb.w,h:hb.h}, this.player.aabb())){
+              // lift で打ち上げ
+              if(hb.lift){ this.player.vy = -420; }
+              this.player.hurt(hb.power, hb.dir, this.world);
+              updateHPUI(this.player.hp,this.player.maxhp);
+            }
+          }
+        } else if(this.enemy && this.enemy.dead){
+          this.enemy.update(dt,this.world,this.player);
+        }
+
         this.world.updateCam(this.player);
-        this.world.draw(this.player);
+        this.world.draw(this.player, this.enemy);
+
         requestAnimationFrame(loop);
       };
       requestAnimationFrame(loop);
     }
   }
+
+  // Player用に基底クラスのhurtを拡張（HPバー更新）
+  Player.prototype.hurt = function(amount,dir){
+    const hit = CharacterBase.prototype.hurt.call(this,amount,dir);
+    if(hit) updateHPUI(this.hp,this.maxhp);
+    if(this.hp<=0){ this.dead=true; }
+    return hit;
+  };
+
   new Game().start();
 })();
 </script>
