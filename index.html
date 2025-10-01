@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Player vs EN Rev8</title>
+<title>MOB Side Action – Rev9 Feel+FX</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
   :root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
@@ -60,19 +60,74 @@
   </div>
 
 <script>
-/* =============== Rev8: back1.png ステージ + 敵1体 =================
- - 背景/地面は back1.png を横ループ（継ぎ目1px重ね）
- - GROUND_TOP_Y=360（必要なら後で調整）
- - 敵AI：接近→（距離しだいで）小/中/連撃。攻撃間にクールタイム、移動はプレイヤーより遅い
- - 攻撃判定：プレイヤー⇄敵ともに当たり、被弾で浮き＆ノックバック
- - 0HP：スピンしながら吹っ飛び→フェード退場
-================================================================== */
+/* ===================== Rev9 Feel+FX ======================
+ - ヒットスパーク/ダメージ数値/画面シェイク/ヒットストップ
+ - 強攻撃ノックバック強化（威力依存スケール）
+ - 連撃猶予 0.24s、ヒット時に短いヒットストップ付与
+ - 攻撃中の空中慣性を減衰・上限 ±90px/s、前進dxは空中時60%
+ - ステージ: back1.png 横ループ（地面込み）
+========================================================== */
 (function(){
   'use strict';
   const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
   const lerp=(a,b,t)=>a+(b-a)*t;
   const now=()=>performance.now();
   const sign=(x)=>x<0?-1:1;
+
+  // ====== Effect System (sparks, float text, screen shake, hitstop) ======
+  class Effects{
+    constructor(world){ this.world=world; this.sparks=[]; this.texts=[]; this.shakeT=0; this.shakeAmp=0; this.hitstop=0; }
+    addSpark(x,y,dir,strong=false){ // simple cross spark
+      this.sparks.push({x,y,dir,t:0,life:0.18, strong});
+      if(strong){ this.shake(0.14, 8); this.addFlash(70); } else { this.shake(0.09, 4); }
+      // vibration (mobile)
+      if(navigator.vibrate) navigator.vibrate(strong?20:10);
+    }
+    addText(x,y,str,strong=false){
+      this.texts.push({x,y,vy:-60, a:1, t:0, life:0.7, str, strong});
+    }
+    addFlash(ms){ // use hitstop as cheap flash cue; canvas will hold
+      this.hitstop = Math.max(this.hitstop, ms/1000);
+    }
+    shake(dur,amp){ this.shakeT=Math.max(this.shakeT,dur); this.shakeAmp=Math.max(this.shakeAmp,amp); }
+    getCamOffset(){
+      if(this.shakeT>0){
+        const a=this.shakeAmp*(this.shakeT); // decay
+        return {x:(Math.random()*2-1)*a, y:(Math.random()*2-1)*a*0.6};
+      }
+      return {x:0,y:0};
+    }
+    update(dt){
+      if(this.hitstop>0){ this.hitstop=Math.max(0,this.hitstop-dt); } // timeScaleはGame側で
+      if(this.shakeT>0){ this.shakeT=Math.max(0,this.shakeT-dt); }
+      // sparks
+      for(const s of this.sparks){ s.t+=dt; }
+      this.sparks=this.sparks.filter(s=>s.t<s.life);
+      // texts
+      for(const t of this.texts){ t.t+=dt; t.y+=t.vy*dt; t.a=clamp(1 - t.t/t.life,0,1); }
+      this.texts=this.texts.filter(t=>t.t<t.life);
+    }
+    draw(ctx,world){
+      // sparks
+      for(const s of this.sparks){
+        const p=(s.t/s.life); const w=s.strong?2:1; ctx.save();
+        ctx.translate(s.x-world.camX, s.y-world.camY);
+        ctx.globalAlpha=1-p;
+        ctx.strokeStyle="#fff"; ctx.lineWidth=w;
+        ctx.beginPath(); ctx.moveTo(-10,0); ctx.lineTo(10,0); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0,-6); ctx.lineTo(0,6); ctx.stroke();
+        ctx.restore();
+      }
+      // texts
+      ctx.save(); ctx.font='bold 12px system-ui,Arial'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      for(const t of this.texts){
+        ctx.globalAlpha=t.a;
+        ctx.fillStyle=t.strong? '#ffe06b':'#e0f';
+        ctx.fillText(t.str, t.x-world.camX, t.y-world.camY);
+      }
+      ctx.restore();
+    }
+  }
 
   class Assets{
     constructor(){ this.images=new Map(); }
@@ -167,7 +222,7 @@
   const GRAV=2000, MOVE=260, EN_MOVE=180, JUMP_V=760, MAX_FALL=1200;
   const GROUND_TOP_Y=360, FOOT_PAD=2;
 
-  // 判定ヘルパ
+  // 便利
   function rectsOverlap(a,b){ return Math.abs(a.x-b.x)*2 < (a.w+b.w) && Math.abs(a.y-b.y)*2 < (a.h+b.h); }
 
   class CharacterBase{
@@ -181,39 +236,49 @@
       this.dead=false; this.deathT=0; this.invulnT=0;
       this.spinDie=false;
     }
-    aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.8}; } // ちょい細め
-    hurt(amount, dir){
+    aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.8}; }
+    hurt(amount, dir, lift=0, effects){
       if(this.invulnT>0||this.dead) return false;
       this.hp=Math.max(0,this.hp-amount);
-      this.vy=-320; this.vx=(dir>=0?-1:1)*200;
-      this.state='hurt'; this.animT=0; this.invulnT=0.35;
+      // ノックバック：威力でスケール
+      const kb = 140 + amount*12;           // 横
+      const kbu = lift ? 380 : (amount>=15? 320:240); // 縦
+      this.vy = -kbu;
+      this.vx = (dir>=0?-1:1) * kb;
+      this.state='hurt'; this.animT=0; this.invulnT=0.28;
+      if(effects){ 
+        effects.addSpark(this.x + this.face*20, this.y-10, dir, amount>=15); 
+        effects.addText(this.x, this.y-30, String(amount), amount>=15);
+        // ヒットストップ：通常60ms、強攻撃90ms
+        effects.hitstop = Math.max(effects.hitstop, (amount>=15?0.09:0.06));
+      }
       if(this.hp<=0) this.spinDie=true;
       return true;
     }
-    updatePhysics(dt,world){
+    updatePhysics(dt){
       this.vy = Math.min(this.vy + GRAV*dt, MAX_FALL);
       this.x += this.vx*dt; this.y += this.vy*dt;
-
       const top=Math.floor(GROUND_TOP_Y);
       if(this.y + this.h/2 >= top + FOOT_PAD){
         this.y = top - this.h/2 + FOOT_PAD; this.vy=0; this.onGround=true;
       } else this.onGround=false;
-
       if(this.invulnT>0) this.invulnT=Math.max(0,this.invulnT-dt);
-      if(this.y - world.camY > world.gameH + 200){ this.hp=0; this.spinDie=true; this.dead=true; }
     }
   }
 
-  // ==== プレイヤー（Rev7ベース、敵当たり判定追加） ====
+  // ==== プレイヤー ====
   class Player extends CharacterBase{
-    constructor(assets, world){
+    constructor(assets, world, effects){
       super(56,64);
-      this.assets=assets; this.world=world;
+      this.assets=assets; this.world=world; this.effects=effects;
       this.x=100; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD;
       this.hp=1000; this.maxhp=1000; this.lives=3;
 
       this.comboStep=0; this.comboGraceT=0; this.bufferA1=false;
+      this.comboGraceMax=0.24;
       this.queueA2=null; this.queueSK=null;
+
+      // 空中攻撃慣性（上限＆減衰）
       this.actionAir=false; this.actionAirVx=0;
 
       this.frames={
@@ -222,7 +287,6 @@
         k2prep:'K1-3.png', k2:'K1-5.png', spin:['h1.png','h2.png','h3.png','h4.png'],
       };
 
-      // ゲージ
       this.overhead=this._createOverheadGauge();
       document.querySelector('.gamewrap').appendChild(this.overhead.root);
     }
@@ -247,17 +311,15 @@
       this.overhead.label.textContent=text; this.overhead.fill.style.width=((ratio*100)|0)+'%';
     }
 
-    // 攻撃の当たり（単純：前方矩形）
     currentHitbox(){
       if(!(this.state==='atk'||this.state==='skill') || !this._actionSeq) return null;
       const cur=this._actionSeq[this._actionIndex];
       if(!cur) return null;
-      // ヒットは kind 'hit' or 'sp' の一部で有効とみなす
       if(cur.kind==='hit' || cur.kind==='sp'){
-        const w=50, h=40; // 調整可
+        const w=50, h=40;
         const x=this.x + this.face*(this.w*0.3 + w*0.5);
         const y=this.y - 6;
-        return {x, y, w, h, power:cur.power||0, dir:this.face};
+        return {x, y, w, h, power:cur.power||0, dir:this.face, lift:cur.lift||0, strong:(cur.power||0)>=15};
       }
       return null;
     }
@@ -282,7 +344,11 @@
         const hb=this.currentHitbox();
         if(hb && enemy && !enemy.dead && enemy.invulnT<=0){
           if(rectsOverlap({x:hb.x,y:hb.y,w:hb.w,h:hb.h}, enemy.aabb())){
-            enemy.hurt(hb.power, hb.dir);
+            const hit = enemy.hurt(hb.power, hb.dir, hb.lift, this.effects);
+            if(hit){
+              // 連撃の気持ちよさ：ヒット時は短いヒットストップを足す（重複はEffects側が最大を保持）
+              this.effects.hitstop = Math.max(this.effects.hitstop, hb.strong?0.08:0.05);
+            }
           }
         }
         this._updateAction(dt,world);
@@ -303,53 +369,60 @@
       this.vx = ax!==0 ? (ax>0?MOVE:-MOVE) : 0;
       if(input.consumeJump() && this.onGround){ this.vy=-JUMP_V; this.onGround=false; }
 
-      this.updatePhysics(dt,world);
+      this.updatePhysics(dt);
 
       // 状態
       this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
       this.animT += dt; world.updateTimer(dt);
-
       if(input.attack2Charging && this.state!=='atk' && this.state!=='skill'){ this.state='chargeA2'; }
     }
 
     _startA1(){
       this.state='atk'; this.animT=0;
       this.comboStep=Math.min(this.comboStep+1,3);
-      this.actionAir=!this.onGround; this.actionAirVx=this.actionAir?this.vx:0;
+      this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? clamp(this.vx, -90, 90) : 0; // 空中慣性上限
       const seq=[ {kind:'prep',dur:0.15,frame:'k1prep',dx:0,power:0} ];
       let frame='k1a', power=5, dx=0;
       if(this.comboStep===2){ frame='k1b'; power=8; dx=12; }
       else if(this.comboStep===3){ frame='k1c'; power=10; dx=12; }
-      seq.push({kind:'hit',dur:0.4,frame,dx,power});
+      seq.push({kind:'hit',dur:0.38,frame,dx,power});
       this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
     }
     _startA2(charged){
-      this.state='atk'; this.animT=0; this.actionAir=!this.onGround; this.actionAirVx=this.actionAir?this.vx:0;
+      this.state='atk'; this.animT=0;
+      this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? clamp(this.vx, -90, 90) : 0;
       const power=charged?18:15;
-      this._actionSeq=[ {kind:'prepShake',dur:0.15,frame:'k2prep',dx:0,power:0}, {kind:'hit',dur:0.4,frame:'k2',dx:14,power} ];
+      this._actionSeq=[ {kind:'prepShake',dur:0.15,frame:'k2prep',dx:0,power:0}, {kind:'hit',dur:0.4,frame:'k2',dx:14,power, lift: charged?1:0} ];
       this._actionIndex=0; this._actionTime=0;
     }
     _startSpin(charged){
-      this.state='skill'; this.animT=0; this.actionAir=!this.onGround; this.actionAirVx=this.actionAir?this.vx:0;
+      this.state='skill'; this.animT=0;
+      this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? clamp(this.vx, -90, 90) : 0;
       const rounds=charged?4:2, power=charged?40:25, frames=this.frames.spin; const seq=[];
-      for(let r=0;r<rounds;r++) for(let i=0;i<frames.length;i++) seq.push({kind:'sp',dur:0.08,frame:frames[i],dx:0,power:(i===1?power:0)});
+      for(let r=0;r<rounds;r++) for(let i=0;i<frames.length;i++) seq.push({kind:'sp',dur:0.08,frame:frames[i],dx:0,power:(i===1?power:0), lift:(i===1 && charged)?1:0});
       this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
     }
-    _updateAction(dt,world){
-      // 空中慣性
-      if(this.actionAir) this.x += this.actionAirVx*dt;
-      this.updatePhysics(dt,world);
+
+    _updateAction(dt){
+      // 空中慣性：減衰
+      if(this.actionAir){ this.actionAirVx *= 0.96; this.x += this.actionAirVx*dt; }
+
+      // 通常物理
+      this.updatePhysics(dt);
+
       if(this._actionSeq){
         this._actionTime+=dt;
         const cur=this._actionSeq[this._actionIndex];
         if(cur){
-          if(cur.dx) this.x += this.face*(cur.dx*dt/cur.dur);
+          // 前進は空中時60%
+          const dxScale = this.onGround?1:0.6;
+          if(cur.dx) this.x += this.face*(cur.dx*dxScale*dt/cur.dur);
           if(this._actionTime>=cur.dur){
             this._actionIndex++; this._actionTime=0;
             if(this._actionIndex>=this._actionSeq.length){
-              if(this.state==='atk' && this.comboStep>0) this.comboGraceT=0.22;
+              if(this.state==='atk' && this.comboStep>0) this.comboGraceT=this.comboGraceMax;
               if(this.state==='atk' && this.comboStep>=3){ this.comboStep=0; this.bufferA1=false; }
-              // ▲/●待機があれば即続行
+              // 優先待機があれば即続行
               if(this.queueSK){ const q=this.queueSK; this.queueSK=null; this._startSpin(q.charged); return; }
               if(this.queueA2){ const q=this.queueA2; this.queueA2=null; this._startA2(q.charged); return; }
               this.state='idle'; this._actionSeq=null;
@@ -378,7 +451,8 @@
       else if(this.state==='jump'){ img=this._imgByKey('walk',0); }
       else if((this.state==='atk'||this.state==='skill') && this._actionSeq){
         const cur=this._actionSeq[this._actionIndex]; const key=cur.frame;
-        img=this.world.assets.img(this.frames[key]?this._getFramePath(key,0):key); if(cur.kind==='prepShake') ox+=Math.sin(this._actionTime*40)*2;
+        img=this.world.assets.img(this.frames[key]?this._getFramePath(key,0):key);
+        if(cur.kind==='prepShake') ox+=Math.sin(this._actionTime*40)*2;
       } else img=this._imgByKey('idle',0);
       if(!img) img=this.world.assets.img('M1-1.png');
       const scale=this.h/img.height, w=img.width*scale, h=this.h;
@@ -389,50 +463,35 @@
 
   // ==== 敵 ====
   class Enemy extends CharacterBase{
-    constructor(world){
+    constructor(world,effects){
       super(56,64);
-      this.world=world;
+      this.world=world; this.effects=effects;
       this.x=380; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD;
       this.face=-1;
       this.maxhp=500; this.hp=500;
-      this.aiT=0; this.cool=0; this.comboCd=0;
+      this.aiT=0; this.cool=0;
       this.state='idle'; this.animT=0;
       this._seq=null; this._idx=0; this._t=0;
       this.dead=false;
     }
-    // 画像
     imgByKey(key){
-      const a=this.world.assets;
-      const map={
-        idle:'EN1-1.png',
-        walk2:'EN1-2.png',
-        walk3:'EN1-3.png',
-        atkS1:'EN1-4.png', atkS2:'EN1-5.png',
-        atkM1:'EN1-4.png', atkM2:'EN1-6.png'
-      };
+      const a=this.world.assets, map={ idle:'EN1-1.png', walk2:'EN1-2.png', walk3:'EN1-3.png', atkS1:'EN1-4.png', atkS2:'EN1-5.png', atkM1:'EN1-4.png', atkM2:'EN1-6.png' };
       return a.img(map[key]);
     }
-    // 当たり
     currentHitbox(){
-      if(!this._seq) return null;
-      const cur=this._seq[this._idx]; if(!cur) return null;
-      if(cur.kind==='hit'){
-        const w=44,h=36; const x=this.x + this.face*(this.w*0.3 + w*0.5); const y=this.y - 6;
-        return {x,y,w,h,power:cur.power||0,dir:this.face, lift:cur.lift||0};
-      }
+      if(!this._seq) return null; const cur=this._seq[this._idx]; if(!cur) return null;
+      if(cur.kind==='hit'){ const w=44,h=36; const x=this.x + this.face*(this.w*0.3 + w*0.5); const y=this.y - 6;
+        return {x,y,w,h,power:cur.power||0,dir:this.face, lift:cur.lift||0, strong:(cur.power||0)>=8}; }
       return null;
     }
     aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.8}; }
 
     decide(player){
-      if(this.cool>0) return; // クール中は決めない
+      if(this.cool>0) return;
       const dx=player.x - this.x, adx=Math.abs(dx); this.face = dx>=0?1:-1;
-
-      // 射程
       const close = adx<70, mid = adx<110;
 
       if(close && Math.random()<0.55){
-        // 連撃：小→中（0.7s）
         this._seq=[
           {kind:'pose',dur:0.1, key:'atkS1'},
           {kind:'hit', dur:0.4, key:'atkS2', dx:60, power:5},
@@ -441,42 +500,29 @@
         ];
         this.cool=0.9;
       } else if(mid){
-        // 小攻撃
-        this._seq=[
-          {kind:'pose',dur:0.1, key:'atkS1'},
-          {kind:'hit', dur:0.5, key:'atkS2', dx:80, power:5}
-        ];
+        this._seq=[ {kind:'pose',dur:0.1,key:'atkS1'}, {kind:'hit',dur:0.5,key:'atkS2',dx:80,power:5} ];
         this.cool=0.7;
       } else if(close){
-        // 中攻撃のみ
-        this._seq=[
-          {kind:'pose',dur:0.12, key:'atkM1'},
-          {kind:'hit', dur:0.4, key:'atkM2', dx:60, power:8, lift:1}
-        ];
+        this._seq=[ {kind:'pose',dur:0.12,key:'atkM1'}, {kind:'hit',dur:0.4,key:'atkM2',dx:60,power:8,lift:1} ];
         this.cool=0.8;
       } else {
-        // 接近
         this.vx = (dx>0?EN_MOVE:-EN_MOVE);
         return;
       }
-
-      // 攻撃開始
       this.state='atk'; this._idx=0; this._t=0; this.vx=0;
     }
 
-    update(dt,world,player){
+    update(dt,player){
       if(this.dead){ this.deathT+=dt; return; }
       if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
 
       if(this.state==='atk'){
-        // 重力
-        this.updatePhysics(dt,world);
-
+        this.updatePhysics(dt);
         if(this._seq){
-          this._t+=dt;
-          const cur=this._seq[this._idx];
+          this._t+=dt; const cur=this._seq[this._idx];
           if(cur){
-            if(cur.dx) this.x += this.face*(cur.dx*dt/cur.dur);
+            const dxScale=this.onGround?1:0.6;
+            if(cur.dx) this.x += this.face*(cur.dx*dxScale*dt/cur.dur);
             if(this._t>=cur.dur){
               this._idx++; this._t=0;
               if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; }
@@ -484,22 +530,15 @@
           } else { this.state='idle'; this._seq=null; }
         }
       } else if(this.state==='hurt'){
-        this.updatePhysics(dt,world);
+        this.updatePhysics(dt);
         if(this.onGround) this.state='idle';
       } else {
-        // 追尾移動
         const dx=player.x - this.x; this.face=dx>=0?1:-1;
-        const targetVX = Math.abs(dx)>60 ? (dx>0?EN_MOVE:-EN_MOVE) : 0;
-        this.vx = targetVX;
-        // ジャンプはステージ平坦なので通常は不要（障害物時のための残し）
-        // 物理
-        this.updatePhysics(dt,world);
-
-        // 攻撃判断
+        this.vx = Math.abs(dx)>60 ? (dx>0?EN_MOVE:-EN_MOVE) : 0;
+        this.updatePhysics(dt);
         this.aiT-=dt; if(this.aiT<=0){ this.decide(player); this.aiT=0.15; }
         this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
       }
-
       this.animT+=dt;
     }
 
@@ -507,19 +546,11 @@
       ctx.save();
       ctx.translate(this.x-world.camX, this.y-world.camY);
       if(this.face<0) ctx.scale(-1,1);
-
       let img=null; 
-      if(this.dead){
-        const t=this.deathT; const rot=t*20; const a=clamp(1-t/1.0,0,1);
-        ctx.globalAlpha=a; ctx.rotate(rot); img=this.imgByKey('idle');
-      } else if(this.state==='atk' && this._seq){
-        const cur=this._seq[this._idx]; img=this.imgByKey(cur.key);
-      } else if(this.state==='run'){
-        const f=Math.floor(this.animT*10)%2; img=this.imgByKey(f? 'walk2':'walk3');
-      } else {
-        img=this.imgByKey('idle');
-      }
-
+      if(this.dead){ const t=this.deathT; const rot=t*20; const a=clamp(1-t/1.0,0,1); ctx.globalAlpha=a; ctx.rotate(rot); img=this.imgByKey('idle');
+      } else if(this.state==='atk' && this._seq){ const cur=this._seq[this._idx]; img=this.imgByKey(cur.key);
+      } else if(this.state==='run'){ const f=Math.floor(this.animT*10)%2; img=this.imgByKey(f? 'walk2':'walk3');
+      } else { img=this.imgByKey('idle'); }
       const scale=this.h/img.height, w=img.width*scale, h=this.h;
       ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
       ctx.restore();
@@ -527,8 +558,8 @@
   }
 
   class World{
-    constructor(assets, canvas){
-      this.assets=assets; this.canvas=canvas; this.ctx=canvas.getContext('2d',{alpha:true});
+    constructor(assets, canvas, effects){
+      this.assets=assets; this.effects=effects; this.canvas=canvas; this.ctx=canvas.getContext('2d',{alpha:true});
       this.ctx.imageSmoothingEnabled=false;
       this.gameW=canvas.width; this.gameH=canvas.height;
       this.camX=0; this.camY=0;
@@ -537,23 +568,22 @@
       const r=canvas.getBoundingClientRect();
       this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
 
-      // back1.png：背景+地面込みを横ループ
+      // back1.png（背景＋地面）
       const bg=this.assets.img('back1.png');
-      if(bg){
-        this.bgScale = this.gameH / bg.height;
-        this.bgDW = bg.width * this.bgScale;
-        this.bgDH = bg.height* this.bgScale;
-      } else {
-        this.bgScale=1; this.bgDW=this.gameW; this.bgDH=this.gameH;
-      }
-      this.tileOverlap=1;
-      this.bgSpeed=1.0; // 背景＝実世界と同速（画像に地面含むため）
+      if(bg){ this.bgScale = this.gameH / bg.height; this.bgDW = bg.width*this.bgScale; this.bgDH = bg.height*this.bgScale; }
+      else { this.bgScale=1; this.bgDW=this.gameW; this.bgDH=this.gameH; }
+      this.tileOverlap=1; this.bgSpeed=1.0;
     }
     resize(){
       const r=this.canvas.getBoundingClientRect();
       this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
     }
-    updateCam(p){ const t=p.x - this.gameW*0.35; this.camX=Math.max(0, lerp(this.camX,t,0.12)); this.camY=0; }
+    updateCam(p){
+      const offs=this.effects.getCamOffset();
+      const target=p.x - this.gameW*0.35 + offs.x;
+      this.camX=Math.max(0, lerp(this.camX,target,0.12));
+      this.camY = offs.y;
+    }
     updateTimer(dt){
       this._timerAcc+=dt; if(this._timerAcc>=0.2){ this.time+=this._timerAcc; this._timerAcc=0;
         const t=Math.floor(this.time); const mm=String(Math.floor(t/60)).padStart(2,'0'); const ss=String(t%60).padStart(2,'0');
@@ -562,7 +592,7 @@
     draw(player, enemy){
       const ctx=this.ctx; ctx.clearRect(0,0,this.gameW,this.gameH);
 
-      // back1 を横ループ（1pxオーバーラップ）
+      // back1 横ループ（1px overlap）
       const bg=this.assets.img('back1.png');
       if(bg){
         const w=Math.round(this.bgDW), h=Math.round(this.bgDH);
@@ -573,17 +603,19 @@
           ctx.drawImage(bg, 0,0,bg.width,bg.height, Math.round(x - this.camX*this.bgSpeed), 0, w, h);
         }
       } else {
-        // フォールバック
         const g=ctx.createLinearGradient(0,0,0,this.gameH); g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18');
         ctx.fillStyle=g; ctx.fillRect(0,0,this.gameW,this.gameH);
       }
 
-      // 床上端の補助塗り（半端な1pxライン隠し）
+      // 床ライン補助（視覚の1pxカバー）
       ctx.fillStyle='#0b0f17'; const yTop=Math.floor(GROUND_TOP_Y); ctx.fillRect(0,yTop-1,this.gameW,1);
 
-      // 描画順：背景→敵→プレイヤー（前後関係は画像次第で調整可）
-      if(enemy && !enemy.dead) enemy.draw(ctx,this); else if(enemy && enemy.dead) enemy.draw(ctx,this);
+      // 描画
+      if(enemy) enemy.draw(ctx,this);
       player.draw(ctx,this);
+
+      // FX
+      this.effects.draw(ctx,this);
     }
   }
 
@@ -595,10 +627,9 @@
   // ===== Game =====
   class Game{
     constructor(){
-      this.assets=new Assets();
-      this.canvas=document.getElementById('game');
-      this.input=new Input();
-      this.player=null; this.enemy=null; this.world=null; this.lastT=0;
+      this.assets=new Assets(); this.canvas=document.getElementById('game');
+      this.input=new Input(); this.effects=null; this.player=null; this.enemy=null; this.world=null; this.lastT=0;
+      this.timeScale=1; // ヒットストップ用
       addEventListener('resize',()=>this.world?.resize());
     }
     async start(){
@@ -610,9 +641,10 @@
         'EN1-1.png','EN1-2.png','EN1-3.png','EN1-4.png','EN1-5.png','EN1-6.png'
       ];
       await this.assets.load(imgs);
-      this.world=new World(this.assets,this.canvas);
-      this.player=new Player(this.assets,this.world);
-      this.enemy=new Enemy(this.world);
+      this.effects=new Effects(this.world);
+      this.world=new World(this.assets,this.canvas,this.effects);
+      this.player=new Player(this.assets,this.world,this.effects);
+      this.enemy=new Enemy(this.world,this.effects);
 
       updateHPUI(this.player.hp,this.player.maxhp);
 
@@ -620,25 +652,31 @@
       const loop=()=>{
         const t=now(); let dt=(t-this.lastT)/1000; if(dt>0.05) dt=0.05; this.lastT=t;
 
+        // ヒットストップ：時間を凍結
+        if(this.effects.hitstop>0){
+          this.effects.update(dt); // エフェクト側のタイマーは回す（減衰用）
+          this.world.draw(this.player, this.enemy);
+          requestAnimationFrame(loop);
+          return;
+        }
+
         // 更新
-        this.player.update(dt,this.input,this.world,this.enemy);
+        const step=dt*this.timeScale;
+        this.player.update(step,this.input,this.world,this.enemy);
         if(this.enemy && !this.enemy.dead){
-          // 敵→プレイヤー攻撃判定
-          this.enemy.update(dt,this.world,this.player);
+          this.enemy.update(step,this.player);
           const hb=this.enemy.currentHitbox();
           if(hb && this.player.invulnT<=0){
             if(rectsOverlap({x:hb.x,y:hb.y,w:hb.w,h:hb.h}, this.player.aabb())){
-              // lift で打ち上げ
-              if(hb.lift){ this.player.vy = -420; }
-              this.player.hurt(hb.power, hb.dir, this.world);
-              updateHPUI(this.player.hp,this.player.maxhp);
+              const hit = this.player.hurt(hb.power, hb.dir, hb.lift, this.effects);
+              if(hit){ updateHPUI(this.player.hp,this.player.maxhp); }
             }
           }
-        } else if(this.enemy && this.enemy.dead){
-          this.enemy.update(dt,this.world,this.player);
-        }
+        } else if(this.enemy){ this.enemy.update(step,this.player); }
 
+        this.effects.update(step);
         this.world.updateCam(this.player);
+        this.world.updateTimer(step);
         this.world.draw(this.player, this.enemy);
 
         requestAnimationFrame(loop);
@@ -647,9 +685,9 @@
     }
   }
 
-  // Player用に基底クラスのhurtを拡張（HPバー更新）
-  Player.prototype.hurt = function(amount,dir){
-    const hit = CharacterBase.prototype.hurt.call(this,amount,dir);
+  // Playerのhurt（UI更新＆死亡管理）
+  Player.prototype.hurt = function(amount,dir,lift,effects){
+    const hit = CharacterBase.prototype.hurt.call(this,amount,dir,lift,effects);
     if(hit) updateHPUI(this.hp,this.maxhp);
     if(this.hp<=0){ this.dead=true; }
     return hit;
