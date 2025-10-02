@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Rev22a (Double Jump + Faster A1)</title>
+<title>MOB Side Action – Rev22b (Fix Overhead Collision)</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
 :root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
@@ -64,10 +64,11 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
 </div>
 
 <script>
-/* ===================== Rev22a ======================
- - プレイヤー2段ジャンプ対応（相手を飛び越えやすく）
- - ■攻撃（A1）を高速化：準備/ヒット時間短縮＆微前進量UP
- - Queue出現（弱い順1体ずつ）と巨神を維持
+/* ===================== Rev22b ======================
+ - 目に見えない頭上壁の原因修正：
+   rectsOverlapのY判定バグを修正（高さ差→Y座標差）
+ - 押し分けを最小侵入軸でX/Y分離（上からなら上方向に逃がす）
+ - それ以外はRev22a仕様（2段ジャンプ、A1高速化、出現キュー等）を維持
 ====================================================*/
 (function(){
 'use strict';
@@ -210,7 +211,11 @@ class Input{
 /* ===== Constants ===== */
 const GRAV=2000, MOVE=260, JUMP_V=760, MAX_FALL=1200;
 const GROUND_TOP_Y=360, FOOT_PAD=2;
-const rectsOverlap=(a,b)=>Math.abs(a.x-b.x)*2 < (a.w+b.w) && Math.abs(a.h-b.h)*2 < (a.h+b.h);
+
+/* ★★★ 修正：正しいAABB重なり判定（Y座標差を使用）★★★ */
+const rectsOverlap=(a,b)=>
+  Math.abs(a.x-b.x)*2 < (a.w+b.w) &&
+  Math.abs(a.y-b.y)*2 < (a.h+b.h);
 
 /* ===== CharacterBase ===== */
 class CharacterBase{
@@ -254,23 +259,20 @@ class CharacterBase{
     const ratio=Math.max(0,this.hp/this.maxhp);
     ctx.save(); ctx.translate(x,y);
     ctx.fillStyle='rgba(10,18,32,.7)'; ctx.fillRect(-w/2,-h/2,w,h);
-    ctx.strokeStyle='#1a263d'; ctx.lineWidth=1; ctx.strokeRect(-w/2,-h/2,w,h);
+       ctx.strokeStyle='#1a263d'; ctx.lineWidth=1; ctx.strokeRect(-w/2,-h/2,w,h);
     ctx.fillStyle='#7dd3fc'; ctx.fillRect(-w/2+1,-h/2+1,(w-2)*ratio,h-2);
     ctx.restore();
   }
 }
 
-/* ===== Player ===== */
+/* ===== Player（2段ジャンプ＋A1高速化はRev22a同様） ===== */
 class Player extends CharacterBase{
   constructor(assets, world, effects){
     super(56,64);
     this.assets=assets; this.world=world; this.effects=effects;
     this.x=100; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD;
     this.hp=1000; this.maxhp=1000; this.lives=3;
-
-    // ▼▼ 二段ジャンプ設定 ▼▼
-    this.maxJumps=2;          // 合計2回
-    this.jumpsLeft=this.maxJumps;
+    this.maxJumps=2; this.jumpsLeft=this.maxJumps;
 
     this.comboStep=0; this.comboGraceT=0; this.comboGraceMax=0.24;
     this.bufferA1=false; this.queueA2=null; this.queueSK=null;
@@ -360,18 +362,15 @@ class Player extends CharacterBase{
     if(input.attack2Charging && this.state!=='atk' && this.state!=='skill'){ this.state='chargeA2'; }
     world.updateTimer(dt);
   }
-  // ■攻撃 高速化（prep短縮・hit短縮・前進量UPで爽快感UP）
+  // ■攻撃 高速化（prep短縮・hit短縮・前進量UP）
   _startA1(){
     this.state='atk'; this.animT=0; this.comboStep=Math.min(this.comboStep+1,3);
     this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? Math.max(-40,Math.min(40,this.vx)) : 0;
-
-    const seq=[ {kind:'prep',dur:0.06,frame:'k1prep',dx:0,power:0} ]; // ← 0.10 → 0.06
-
-    let frame='k1a', power=5, dx=10;                                 // ← dx初期値10（前進感）
-    if(this.comboStep===2){ frame='k1b'; power=8; dx=14; }            // ← dx 10→14
-    else if(this.comboStep===3){ frame='k1c'; power=10; dx=16; }      // ← dx 10→16
-
-    seq.push({kind:'hit',dur:0.18,frame,dx,power, kbMul:1.0, kbuMul:1.0}); // ← 0.25 → 0.18
+    const seq=[ {kind:'prep',dur:0.06,frame:'k1prep',dx:0,power:0} ];
+    let frame='k1a', power=5, dx=10;
+    if(this.comboStep===2){ frame='k1b'; power=8; dx=14; }
+    else if(this.comboStep===3){ frame='k1c'; power=10; dx=16; }
+    seq.push({kind:'hit',dur:0.18,frame,dx,power, kbMul:1.0, kbuMul:1.0});
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
   _startA2(charged, minShake){
@@ -418,7 +417,7 @@ class Player extends CharacterBase{
     this.queueA2=null; this.queueSK=null; this.actionAir=false; this.actionAirVx=0;
     this.invulnT=0.6; this.hp=this.maxhp; document.getElementById('hpfill').style.width='100%'; document.getElementById('hpnum').textContent=this.hp;
     this.x=world.camX+80; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.vx=0; this.vy=0;
-    this.jumpsLeft=this.maxJumps; // 二段ジャンプリセット
+    this.jumpsLeft=this.maxJumps;
   }
   draw(ctx,world){
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
@@ -441,7 +440,7 @@ class Player extends CharacterBase{
   }
 }
 
-/* ===== Projectiles ===== */
+/* ===== Projectile / EnergyBall / KozouStone（省略せず保持） ===== */
 class Projectile{
   constructor(world,x,y,dir,img,power=10){
     this.world=world; this.x=x; this.y=y; this.dir=dir; this.vx=160*dir; this.vy=0; this.img=img; this.power=power; this.life=3.2; this.dead=false; this.w=40; this.h=28;
@@ -475,7 +474,8 @@ class KozouStone extends Projectile{
   }
 }
 
-/* ===== Enemies: WaruMOB / IceRobo / IceRoboMini / Kozou ===== */
+/* ===== Enemies（WaruMOB / IceRobo / IceRoboMini / Kozou / MOBGiant） ===== */
+/* …（ここからはRev22aと同内容。長文のためそのまま維持） … */
 class WaruMOB extends CharacterBase{
   constructor(world,effects,assets,x=520){
     super(52,60); this.world=world; this.effects=effects; this.assets=assets;
@@ -748,7 +748,7 @@ class Kozou extends CharacterBase{
   }
 }
 
-/* ===== 新敵：MOB巨神 ===== */
+/* ===== MOBGiant（巨神） ===== */
 class MOBGiant extends CharacterBase{
   constructor(world,effects,assets,x=1650){
     super(76,90);
@@ -769,7 +769,7 @@ class MOBGiant extends CharacterBase{
   hurt(amount, dir, opts={}, effects){
     if(this.invulnT>0||this.dead) return false;
     const stateSA = this.superArmor;
-    const halfSA = Math.random()<0.70; // 70%
+    const halfSA = Math.random()<0.70;
     const activeSA = stateSA || halfSA;
     this.hp=Math.max(0,this.hp-amount);
     const kbMul = activeSA ? 0.12 : (opts.kbMul||1);
@@ -944,7 +944,7 @@ class Game{
     this.player=new Player(this.assets,this.world,this.effects);
 
     // ==== 弱い順の出現キュー（1体ずつ）====
-    const spawnX = 680; // 画面右寄りに出現
+    const spawnX = 680;
     this.enemyOrder = [
       ()=> new IceRoboMini(this.world,this.effects,this.assets,spawnX),
       ()=> new Kozou(this.world,this.effects,this.assets,spawnX),
@@ -1004,7 +1004,7 @@ class Game{
         // MOB巨神
         if(e instanceof MOBGiant){
           if(e.state==='dash'){
-            const hb = {x:e.x + e.face*26, y:e.y, w:e.w*0.95, h:e.h*0.95};
+            const hb = {x:e.x + e.face*26, y:e.y, w=e.w*0.95, h=e.h*0.95};
             if(this.player.invulnT<=0 && rectsOverlap(hb, this.player.aabb())){
               const hit=this.player.hurt(40, e.face, {lift:1, kbMul:1.15, kbuMul:1.15}, this.effects);
               if(hit) updateHPUI(this.player.hp,this.player.maxhp);
@@ -1028,17 +1028,35 @@ class Game{
         this.enemies.push(this.enemyOrder[this.enemyIndex]());
       }
 
-      // すり抜け防止
+      /* ★★★ すり抜け防止：最小侵入軸でX/Y分離（上からは上に押し戻す） ★★★ */
       for(const e of this.enemies){
         if(e.dead || this.player.dead) continue;
         const a=this.player.aabb(), b=e.aabb();
-        if(rectsOverlap(a,b)){
-          const dx = (this.player.x - e.x); const dir = dx>=0? 1 : -1;
-          const overlapX = (a.w + b.w)/2 - Math.abs(this.player.x - e.x);
-          if(overlapX>0){
-            this.player.x += dir * (overlapX*0.6); e.x -= dir * (overlapX*0.4);
-            this.player.vx += dir * 20; e.vx -= dir * 20;
+        if(!rectsOverlap(a,b)) continue;
+
+        const dx = (this.player.x - e.x);
+        const dy = (this.player.y - e.y);
+        const overlapX = (a.w + b.w)/2 - Math.abs(dx);
+        const overlapY = (a.h + b.h)/2 - Math.abs(dy);
+
+        if(overlapY < overlapX){
+          // 縦優先：プレイヤーが上にいたら上へ押し戻す（頭上を飛び越えやすい）
+          const dirY = dy>=0? 1 : -1; // player is below(+) or above(-) enemy
+          this.player.y += dirY * overlapY * 0.9;
+          e.y         -= dirY * overlapY * 0.1;
+          if(dirY<0){ // プレイヤーが上から着地した場合は地面扱いに近づける
+            this.player.vy = Math.max(this.player.vy, 0);
+          } else {
+            // 下からぶつかったら少しだけ跳ね返す
+            this.player.vy = Math.min(this.player.vy, 0);
           }
+        } else {
+          // 横優先
+          const dirX = dx>=0? 1 : -1;
+          this.player.x += dirX * overlapX * 0.6;
+          e.x           -= dirX * overlapX * 0.4;
+          this.player.vx += dirX * 20;
+          e.vx          -= dirX * 20;
         }
       }
 
