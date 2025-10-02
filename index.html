@@ -3,15 +3,26 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Rev23b (ULT/Skill2 spec update)</title>
+<title>MOB Side Action – Rev24 FULL (ULT & Skill2 & ▲ chain)</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
 :root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
 html,body{height:100%;margin:0;background:#0a0d13;color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;overscroll-behavior:none}
 html,body{-webkit-user-select:none;-webkit-touch-callout:none;user-select:none}
 *{box-sizing:border-box}
-#root{position:fixed;inset:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0);display:grid;place-items:center;padding:10px}
-#phone{width:var(--stage-w);height:var(--stage-h);position:relative;overflow:hidden;background:#060910;border:1px solid #0f1726;border-radius:20px;box-shadow:0 12px 48px rgba(0,0,0,.55);touch-action:none}
+#root{
+  position:fixed; inset:0;
+  padding:
+    calc(env(safe-area-inset-top,0) + 10px)
+    calc(env(safe-area-inset-right,0) + 10px)
+    calc(env(safe-area-inset-bottom,0) + 10px)
+    calc(env(safe-area-inset-left,0) + 10px);
+  display:grid; place-items:center;
+}
+#phone{
+  width:var(--stage-w);height:var(--stage-h);position:relative;overflow:hidden;
+  background:#060910;border:1px solid #0f1726;border-radius:20px;box-shadow:0 12px 48px rgba(0,0,0,.55);touch-action:none;margin:auto;
+}
 .grid{position:absolute;inset:0;display:grid;grid-template-rows: 1fr 220px;gap:var(--grid-gap);padding:var(--grid-gap)}
 .gamewrap{position:relative;border-radius:14px;overflow:hidden;background:#05070c;outline:1px solid #0e1522}
 canvas#game{display:block;width:100%;height:100%}
@@ -20,7 +31,6 @@ canvas#game{display:block;width:100%;height:100%}
 .stick{width:120px;height:120px;border-radius:50%;background:#0d1828;outline:2px solid #22324d;position:relative}
 .stickThumb{width:64px;height:64px;border-radius:50%;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#1a2a45;outline:2px solid #2e4a73;box-shadow:inset 0 0 0 4px #0c1422}
 
-/* 右側ボタン：3x2 グリッド（5ボタン+スペーサ） */
 .buttons{display:grid;grid-template-columns: repeat(3,1fr);grid-template-rows: repeat(2,1fr);gap:12px;align-content:stretch;justify-items:stretch}
 .btn{border:none;border-radius:14px;background:#0d1828;outline:2px solid #22324d;color:var(--fg);font-size:26px;display:grid;place-items:center;touch-action:none;box-shadow:inset 0 -4px 0 rgba(255,255,255,.04);transition:opacity .15s ease;min-height:64px}
 .btn:active{transform:scale(.98)}
@@ -30,7 +40,7 @@ canvas#game{display:block;width:100%;height:100%}
 .btn.skill1 {background:#132a22} /* ● */
 .btn.skill2 {background:#1f2433} /* ◎ */
 .btn.ult    {background:#2b2030} /* U */
-.btn.spacer {opacity:0; pointer-events:none}
+.btn.jump   {background:#25202b} /* × */
 
 header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex;gap:10px;align-items:center;z-index:10;pointer-events:none}
 .chip{background:var(--hud-bg);outline:1px solid #0e1522;border-radius:12px;padding:6px 10px;font-weight:600;font-size:12px;display:flex;gap:8px;align-items:center}
@@ -38,11 +48,9 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
 .bar>i{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:linear-gradient(90deg,#ff9a9e,#ff6b6b)}
 .timer{margin-left:auto}
 .name{margin-left:6px;opacity:.85}
-
 .overhead{position:absolute;left:50%;transform:translateX(-50%);display:none;gap:6px;align-items:center;pointer-events:none}
 .gauge{width:80px;height:6px;border-radius:999px;outline:1px solid #1a263d;background:#0a1220;overflow:hidden}
 .gauge>i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#69d0ff,#a0ffe6)}
-
 @media (max-height: 720px){ :root{ --stage-h: 650px; } }
 </style>
 </head>
@@ -64,12 +72,12 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
           <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
         </div>
         <div class="buttons">
-          <button class="btn attack1" id="btnA1" aria-label="攻撃① ■">■</button>
-          <button class="btn attack2" id="btnA2" aria-label="攻撃② ▲">▲</button>
-          <button class="btn skill1"  id="btnSK" aria-label="スキル① ●">●</button>
+          <button class="btn attack1" id="btnA1"  aria-label="攻撃① ■">■</button>
+          <button class="btn attack2" id="btnA2"  aria-label="攻撃② ▲">▲</button>
+          <button class="btn skill1"  id="btnSK"  aria-label="スキル① ●">●</button>
           <button class="btn skill2"  id="btnSK2" aria-label="スキル② ◎">◎</button>
           <button class="btn ult"     id="btnULT" aria-label="ULT U">U</button>
-          <div class="btn spacer" aria-hidden="true"></div>
+          <button class="btn jump"    id="btnJMP" aria-label="ジャンプ ×">×</button>
         </div>
       </div>
     </div>
@@ -77,13 +85,6 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
 </div>
 
 <script>
-/* ===================== Rev23b ======================
-  - ULT: 基礎50、+3/0.1s、最大3s、チャージ中SA、UL1→UL2
-  - Skill2: kem.png 地面から左右に生成、80ダメ＋強ノックバック
-  - ▲: チャージ受付 0.15s に短縮、フルチャでより高打ち上げ
-  - 追撃フィニッシュ威力 50
-  - 既存のホットフィックス（コロン表記など）踏襲
-=====================================================*/
 (function(){
 'use strict';
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
@@ -139,7 +140,7 @@ class Input{
     this.left=0; this.right=0; this.jump=false;
     this.btn={a1:false,a2:false,skill:false,skill2:false,ult:false};
     this.prev={a1:false,a2:false,skill:false,skill2:false,ult:false};
-    this.edge={a1:false,a2Release:false,skillRelease:false,skill2:false,ultRelease:false};
+    this.edge={a1:false,a2Release:false,skillRelease:false,skill2:false,ultRelease:false,a2Press:false};
     this.pulseRelease={a2:false,skill:false,ult:false};
     this.attack2Charging=false; this.skillCharging=false; this.ultCharging=false;
     this.attack2ChargeT=0; this.skillChargeT=0; this.ultChargeT=0;
@@ -152,10 +153,10 @@ class Input{
       if(k==='ArrowRight'||k==='d'||k==='D') this.right=1;
       if(k===' '||k==='w'||k==='W'||k==='ArrowUp') this.jump=true;
       if(k==='j'||k==='J') this.btn.a1=true;
-      if(k==='k'||k==='K'){ if(!this.btn.a2){ this.btn.a2=true; this.attack2Charging=true; this.attack2ChargeT=0; } }
+      if(k==='k'||k==='K'){ if(!this.btn.a2){ this.btn.a2=true; this.attack2Charging=true; this.attack2ChargeT=0; this.edge.a2Press=true; } }
       if(k==='l'||k==='L'){ if(!this.btn.skill){ this.btn.skill=true; this.skillCharging=true; this.skillChargeT=0; } }
-      if(k==='o'||k==='O'){ this.edge.skill2=true; this.btn.skill2=true; }          // Skill2: tap
-      if(k==='u'||k==='U'){ if(!this.btn.ult){ this.btn.ult=true; this.ultCharging=true; this.ultChargeT=0; } } // ULT hold
+      if(k==='o'||k==='O'){ this.edge.skill2=true; this.btn.skill2=true; }
+      if(k==='u'||k==='U'){ if(!this.btn.ult){ this.btn.ult=true; this.ultCharging=true; this.ultChargeT=0; } }
     },{passive:false});
     addEventListener('keyup',(e)=>{
       const k=e.key;
@@ -178,8 +179,10 @@ class Input{
       const rMax=40, len=Math.hypot(dx,dy);
       const nx=(len>rMax? dx/len*rMax:dx);
       const ny=(len>rMax? dy/len*rMax:dy);
-      thumb.style.left=`calc(50% + ${nx}px)`; thumb.style.top =`calc(50% + ${ny}px)`;
-      this.left =(nx<-8)?1:0; this.right=(nx> 8)?1:0;
+      thumb.style.left=`calc(50% + ${nx}px)`;
+      thumb.style.top =`calc(50% + ${ny}px)`;
+      this.left =(nx<-8)?1:0;
+      this.right=(nx> 8)?1:0;
     };
     const onStart=e=>{
       for(const t of e.changedTouches){
@@ -210,13 +213,14 @@ class Input{
       el.addEventListener('touchend',  e=>{e.preventDefault();onUp();},{passive:false});
     };
     bind('btnA1', ()=>{ this.btn.a1=true; }, ()=>{ this.btn.a1=false; });
-    bind('btnA2', ()=>{ if(!this.btn.a2){ this.btn.a2=true; this.attack2Charging=true; this.attack2ChargeT=0; } },
+    bind('btnA2', ()=>{ if(!this.btn.a2){ this.btn.a2=true; this.attack2Charging=true; this.attack2ChargeT=0; this.edge.a2Press=true; } },
                    ()=>{ if(this.btn.a2){ this.btn.a2=false; this.attack2Charging=false; this.pulseRelease.a2=true; } });
     bind('btnSK', ()=>{ if(!this.btn.skill){ this.btn.skill=true; this.skillCharging=true; this.skillChargeT=0; } },
                   ()=>{ if(this.btn.skill){ this.btn.skill=false; this.skillCharging=false; this.pulseRelease.skill=true; } });
     bind('btnSK2', ()=>{ this.edge.skill2=true; this.btn.skill2=true; }, ()=>{ this.btn.skill2=false; });
     bind('btnULT', ()=>{ if(!this.btn.ult){ this.btn.ult=true; this.ultCharging=true; this.ultChargeT=0; } },
                    ()=>{ if(this.btn.ult){ this.btn.ult=false; this.ultCharging=false; this.pulseRelease.ult=true; } });
+    bind('btnJMP', ()=>{ this.jump=true; }, ()=>{ /* release */ });
   }
   consumeJump(){ const j=this.jump; this.jump=false; return j; }
   beginFrame(){
@@ -224,8 +228,8 @@ class Input{
     this.edge.a2Release = (!this.btn.a2 && this.prev.a2) || this.pulseRelease.a2;
     this.edge.skillRelease = (!this.btn.skill && this.prev.skill) || this.pulseRelease.skill;
     this.edge.ultRelease = (!this.btn.ult && this.prev.ult) || this.pulseRelease.ult;
-    this.pulseRelease.a2=false; this.pulseRelease.skill=false; this.pulseRelease.ult=false;
     this.prev.a1=this.btn.a1; this.prev.a2=this.btn.a2; this.prev.skill=this.btn.skill; this.prev.skill2=this.btn.skill2; this.prev.ult=this.btn.ult;
+    this.pulseRelease.a2=false; this.pulseRelease.skill=false; this.pulseRelease.ult=false;
   }
 }
 
@@ -282,7 +286,7 @@ class CharacterBase{
   }
 }
 
-/* ===== Projectiles / Hazards ===== */
+/* ===== Projectiles ===== */
 class Projectile{
   constructor(world,x,y,dir,img,power=10){
     this.world=world; this.x=x; this.y=y; this.dir=dir; this.vx=160*dir; this.vy=0; this.img=img; this.power=power; this.life=3.2; this.dead=false; this.w=40; this.h=28;
@@ -308,47 +312,39 @@ class EnergyBall extends Projectile{
     this.life = 3.5;
   }
 }
-/* Skill2: 地面スパイク（kem.png） */
-class GroundSpike {
-  constructor(world,x,img,damage=80){
-    this.world=world; this.x=x; this.img=img; this.damage=damage;
-    this.dead=false; this.life=0.55; // せり上がり+少しだけ滞留
-    this.w=48; this.h=64;
-    this.yBase=Math.floor(GROUND_TOP_Y);
-    this.hitApplied=false;
-  }
-  aabb(){
-    const y = this.yBase - this.h/2;
-    return {x:this.x, y:y, w:this.w*0.9, h:this.h*0.9};
-  }
-  update(dt){
-    if(this.dead) return;
-    this.life-=dt; if(this.life<=0) this.dead=true;
-  }
-  draw(ctx){
-    if(this.dead||!this.img) return;
-    const t = clamp(1 - this.life/0.55,0,1);
-    const rise = Math.sin(t*Math.PI)*16 + 8; // 地面からドンと出る
-    const y = this.yBase - rise;
-    const scale = this.h/this.img.height;
-    const w=this.img.width*scale, h=this.h;
-    ctx.save(); ctx.translate(this.x-this.world.camX, y-this.world.camY);
-    ctx.imageSmoothingEnabled=false;
-    ctx.drawImage(this.img, Math.round(-w/2), Math.round(-h), Math.round(w), Math.round(h));
-    ctx.restore();
-  }
-}
-
-/* ULT: 可変サイズ UL3 */
+/* ULT: 可変サイズUL3（最大プレイヤーサイズ相当） */
 class UltBlast extends Projectile{
   constructor(world,x,y,dir,img,chargeSec){
-    const basePower = 50 + Math.floor(clamp(chargeSec,0,3.0)/0.1)*3; // 指定通り
+    const cs = clamp(chargeSec,0,3.0);
+    const basePower = 50 + Math.floor(cs/0.1)*3; /* 指定：基礎50 + 0.1秒毎に+3（最大140） */
     super(world,x,y,dir,img,basePower);
-    const sizeMul = lerp(0.2, 1.0, clamp(chargeSec/3.0,0,1)); // とても小さい→プレイヤーサイズ
+    const sizeMul = lerp(0.2, 1.0, clamp(cs/3.0,0,1));
     this.w = Math.round(56*sizeMul);
     this.h = Math.round(56*sizeMul);
     this.vx = (240 + 80*sizeMul) * dir;
     this.life = 1.6 + 0.4*sizeMul;
+  }
+}
+/* Skill2：地面スパイク（kem.png） */
+class GroundSpike extends Projectile{
+  constructor(world,x,dir,img){
+    super(world,x,Math.floor(GROUND_TOP_Y)-8,dir,img,80);
+    this.vx = 0; this.h = 10; this.w = 40; this.life = 1.0; this.riseT=0; this.maxH=82;
+  }
+  aabb(){ return {x:this.x, y:this.y - this.h/2, w:this.w*0.9, h:this.h}; }
+  update(dt){
+    this.riseT += dt; this.h = Math.min(this.maxH, 10 + this.riseT*140);
+    this.life -= dt; if(this.life<=0) this.dead=true;
+  }
+  draw(ctx){
+    const img=this.img; if(!img) return;
+    const scaleW=this.w/img.width, scaleH=this.h/img.height;
+    ctx.save();
+    ctx.translate(this.x-this.world.camX, Math.floor(GROUND_TOP_Y)-this.world.camY);
+    ctx.scale(1,-1);
+    ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(img, Math.round(-img.width*scaleW/2), 0, Math.round(img.width*scaleW), Math.round(img.height*scaleH));
+    ctx.restore();
   }
 }
 
@@ -363,9 +359,8 @@ class Player extends CharacterBase{
     this.maxJumps=2; this.jumpsLeft=this.maxJumps;
 
     this.comboStep=0; this.comboGraceT=0; this.comboGraceMax=0.24;
-    this.bufferA1=false; this.queueA2=null; this.queueSK=null; this.queueChase=false;
-    this.actionAir=false; this.actionAirVx=0; this.a2LockoutT=0; this.skillCDT=0;
-    this.skill2CDT=0; this.ultCDT=0;
+    this.bufferA1=false; this.queueA2=null; this.queueSK=null;
+    this.a2LockoutT=0; this.skillCDT=0; this.skill2CDT=0; this.ultCDT=0;
 
     this.saT=0; // super armor timer
 
@@ -376,15 +371,13 @@ class Player extends CharacterBase{
       k2prep:'K1-3.png', k2:'K1-5.png',
       spin:['h1.png','h2.png','h3.png','h4.png'],
       chaseJump:'J.png',
-      // skill2
       y1:'Y1.png', y2:'Y2.png', y3:'Y3.png', y4:'Y4.png',
-      // ult
       ul1:'UL1.png', ul2:'UL2.png', ul3:'UL3.png'
     };
     this.overhead=this._createOverheadGauge();
     document.querySelector('.gamewrap').appendChild(this.overhead.root);
 
-    this.chargeOkSec = 0.15; // ▲のチャージ大幅短縮
+    this.chargeOkSec = 0.30; // 攻撃②の溜め基準（短縮）
   }
   _getFramePath(key, i=0){ const v=this.frames[key]; return Array.isArray(v)? v[Math.max(0,Math.min(v.length-1,i))] : v; }
   _imgByKey(key,i=0){ return this.world.assets.img(this._getFramePath(key,i)); }
@@ -403,13 +396,11 @@ class Player extends CharacterBase{
   _showGauge(show, text='', ratio=0){
     this.overhead.root.style.display=show?'flex':'none';
     this.overhead.label.textContent=text;
-    const pct = (ratio>1?1:ratio<0?0:ratio);
-    this.overhead.fill.style.width=((pct*100)|0)+'%';
+    this.overhead.fill.style.width=((ratio*100)|0)+'%';
   }
   currentHitbox(){
     if(!(this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='ult') || !this._actionSeq) return null;
     const cur=this._actionSeq[this._actionIndex]; if(!cur) return null;
-
     if(this.state==='skill' || this.state==='skill2' || this.state==='ult'){
       const W=80,H=60; const x=this.x + this.face*(this.w*0.2);
       return {x, y:this.y, w:W, h:H, power:cur.power||0, dir:this.face, lift:cur.lift||0, kbMul:cur.kbMul||1.6, kbuMul:cur.kbuMul||1.3};
@@ -428,7 +419,6 @@ class Player extends CharacterBase{
     if(this.state!=='atk' && this.state!=='skill' && this.state!=='skill2' && this.state!=='ult' && this._actionSeq){ this._actionSeq=null; }
     if(this.a2LockoutT>0) this.a2LockoutT=Math.max(0,this.a2LockoutT-dt);
 
-    // クールダウンUI
     const skBtn=document.getElementById('btnSK'); const sk2Btn=document.getElementById('btnSK2'); const ultBtn=document.getElementById('btnULT');
     if(this.skillCDT>0){ this.skillCDT=Math.max(0,this.skillCDT-dt); skBtn.setAttribute('disabled',''); } else skBtn.removeAttribute('disabled');
     if(this.skill2CDT>0){ this.skill2CDT=Math.max(0,this.skill2CDT-dt); sk2Btn.setAttribute('disabled',''); } else sk2Btn.removeAttribute('disabled');
@@ -436,16 +426,21 @@ class Player extends CharacterBase{
 
     if(this.dead){ this.updatePhysics(dt); if(this.fade<=0){ this._respawn(world); } world.updateTimer(dt); return; }
 
-    // チャージ表示
+    // チャージ表示 / SA
     if(input.attack2Charging){ input.attack2ChargeT=Math.min(1,input.attack2ChargeT+dt); this._showGauge(true,'▲ Charge', input.attack2ChargeT); }
     else if(input.skillCharging && this.skillCDT<=0){ input.skillChargeT=Math.min(1,input.skillChargeT+dt); this._showGauge(true,'● Charge', input.skillChargeT); }
-    else if(input.ultCharging && this.ultCDT<=0){ input.ultChargeT=Math.min(3,input.ultChargeT+dt); this._showGauge(true,'U Charge', input.ultChargeT/3); this.saT=0.05; } // チャージ中SA微付与
+    else if(input.ultCharging && this.ultCDT<=0){
+      input.ultChargeT=Math.min(3,input.ultChargeT+dt);
+      this._showGauge(true,'U Charge', input.ultChargeT/3);
+      this.state='ultCharge';
+      this.saT = 0.12; // ULT溜め中は常時SA
+    }
     else this._showGauge(false);
 
     // リリース受付
     if(input.edge.a2Release && input.attack2ChargeT>0){
-      const charged = input.attack2ChargeT>=this.chargeOkSec; // 0.15s
-      this.queueA2={charged, minShake: charged?0.20:0.12};
+      const charged = input.attack2ChargeT>=this.chargeOkSec; // 0.30s
+      this.queueA2={charged, minShake: charged?0.32:0.20};
       input.attack2ChargeT=0;
     }
     if(input.edge.skillRelease && input.skillChargeT>0 && this.skillCDT<=0){
@@ -457,8 +452,8 @@ class Player extends CharacterBase{
       input.ultChargeT=0;
     }
 
-    // 実行中
-    if(this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='ult'||this.state==='hurt'){
+    const busy = (this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='ult'||this.state==='ultCharge');
+    if(busy){
       const hb=this.currentHitbox();
       if(hb){
         for(const e of enemies){
@@ -472,7 +467,7 @@ class Player extends CharacterBase{
           }
         }
       }
-      this._updateAction(dt,world);
+      this._updateAction(dt,world,input);
       world.updateTimer(dt);
       return;
     }
@@ -481,30 +476,26 @@ class Player extends CharacterBase{
     if(input.edge.a1) this.bufferA1=true;
     if(this.comboGraceT>0) this.comboGraceT=Math.max(0,this.comboGraceT-dt);
 
-    // 起動優先順位
-    if(this.queueSK){ const q=this.queueSK; this.queueSK=null; this.bufferA1=false; this._startSpin(q.charged); return; }
-    if(input.edge.skill2 && this.skill2CDT<=0){ input.edge.skill2=false; this.bufferA1=false; this._startSkill2(); return; }
-    if(this.queueA2 && this.a2LockoutT<=0){ const q=this.queueA2; this.queueA2=null; this.bufferA1=false; this._startA2(q.charged, q.minShake); return; }
+    // 優先順位
+    if(this.queueSK){ const q=this.queueSK; this.queueSK=null; this.bufferA1=false; this._startSkill2(q.charged); return; }
+    if(input.edge.skill2 && this.skill2CDT<=0){ input.edge.skill2=false; this.bufferA1=false; this._startSkill2(false); return; }
+    if(this.queueA2 && this.a2LockoutT<=0){ const q=this.queueA2; this.queueA2=null; this.bufferA1=false; this._startA2(q.charged, q.minShake, input); return; }
     if(this.bufferA1 && this.comboStep<3){ this.bufferA1=false; this._startA1(); return; }
 
-    // 移動/ジャンプ（2段）
+    // 移動/ジャンプ
     let ax=0; if(input.left){ ax-=MOVE; this.face=-1; } if(input.right){ ax+=MOVE; this.face=1; }
     this.vx = ax!==0 ? (ax>0?MOVE:-MOVE) : 0;
     if(input.consumeJump() && this.jumpsLeft>0){ this.vy=-JUMP_V; this.onGround=false; this.jumpsLeft--; }
     this.updatePhysics(dt);
     if(this.onGround) this.jumpsLeft=this.maxJumps;
     this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
-    this.animT += dt;
 
-    if(input.attack2Charging && this.state!=='atk' && this.state!=='skill' && this.state!=='skill2' && this.state!=='ult'){ this.state='chargeA2'; }
-    if(input.ultCharging    && this.state!=='ult') this.state='ultCharge';
     world.updateTimer(dt);
   }
 
   /* ■ */
   _startA1(){
     this.state='atk'; this.animT=0; this.comboStep=Math.min(this.comboStep+1,3);
-    this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? Math.max(-40,Math.min(40,this.vx)) : 0;
     const seq=[ {kind:'prep',dur:0.06,frame:'k1prep',dx:0,power:0} ];
     let frame='k1a', power=5, dx=10;
     if(this.comboStep===2){ frame='k1b'; power=8; dx=14; }
@@ -513,125 +504,101 @@ class Player extends CharacterBase{
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
 
-  /* ▲ + 追撃 */
-  _startA2(charged, minShake){
-    this.state='atk'; this.animT=0; this.actionAir=!this.onGround;
-    this.actionAirVx=this.actionAir? Math.max(-40,Math.min(40,this.vx)) : 0;
+  /* ▲ + 連撃（追加入力▲で J → K1-4 50ダメ） */
+  _startA2(charged, minShake, input){
+    this.state='atk'; this.animT=0;
     const power=charged?18:15;
-    const lift = charged?1.6:1.0;                 // フルチャで高打ち上げ
-    const kbm  = charged?1.2:1.1;
-    const kbum = charged?1.35:1.15;               // 上方向も強め
+    const lift = charged? 1.5 : 1.0; // 満溜めは高く浮かせる
+    const kbm  = charged?1.25:1.1;
+    const kbum = charged?1.35:1.15;
 
     this._actionSeq=[
       {kind:'prepShake',dur:minShake,frame:'k2prep',dx:0,power:0},
-      {kind:'hit',dur:0.24,frame:'k2',dx:14,power:power, lift, kbMul:kbm, kbuMul:kbum, after:'enableChase'}
+      {kind:'hit',dur:0.22,frame:'k2',dx:14,power:power, lift, kbMul:kbm, kbuMul:kbum, after:'enableChase'}
     ];
     this._actionIndex=0; this._actionTime=0; this.a2LockoutT = 0.35;
     this._chaseWindowT = 0; this._chaseEnabled=false; this._chaseConsumed=false;
   }
   _startA2Chase(){
     this.state='atk'; this.animT=0;
-    const vxBoost = 220; this.vx = this.face*vxBoost; this.vy = -JUMP_V*0.55; this.onGround=false;
-    this._actionSeq=[
-      {kind:'pose',dur:0.12,frame:'chaseJump',dx:20,power:0},
-      {kind:'hit', dur:0.22,frame:'k1c',dx:26,power:50, lift:1, kbMul:1.2, kbuMul:1.2, tag:'chaseFinisher'}
+    const seq=[
+      {kind:'pose',dur:0.12,frame:'chaseJump',dx:22,power:0},
+      {kind:'hit', dur:0.22,frame:'k1c',dx:26,power:50, lift:1.0, kbMul:1.2, kbuMul:1.2, tag:'chaseFinisher'} // k1c=K1-4.png
     ];
-    this._actionIndex=0; this._actionTime=0;
+    this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
     this._chaseEnabled=false; this._chaseConsumed=true;
     this.a2LockoutT=0.6;
   }
 
-  /* ●（スピン） */
-  _startSpin(charged){
-    this.state='skill'; this.animT=0;
-    const rounds=charged?4:2, power=charged?40:25;
-    const kbm = charged?1.9:1.6, kbum = charged?1.5:1.3;
-    const frames=this.frames.spin; const seq=[];
-    for(let r=0;r<rounds;r++){
-      for(let i=0;i<frames.length;i++){
-        const p = power*(i===1?1:0.6); const lift=(i===1?1:0);
-        seq.push({kind:'sp',dur:0.06,frame:frames[i],dx:0,power:p,lift, kbMul:kbm, kbuMul:kbum});
-      }
-    }
-    this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
-  }
-
-  /* ◎（Skill2：地面スパイク） */
-  _startSkill2(){
+  /* ◎（Skill2）：0.5s段階 → Y4で1s震え + 左右スパイク */
+  _startSkill2(charged){
     if(this.skill2CDT>0) return;
     this.state='skill2'; this.animT=0; this.skill2CDT=10.0;
-    this._skill2Spawned=false;
     this._actionSeq=[
-      {kind:'pose',dur:0.20,frame:'y1'},
-      {kind:'pose',dur:0.20,frame:'y2'},
-      {kind:'pose',dur:0.20,frame:'y3'},
-      {kind:'pose',dur:0.20,frame:'y4'},
-      {kind:'emit',dur:1.00,frame:'y4'} // 震え中
+      {kind:'hit', dur:0.125, frame:'y1', power:5},
+      {kind:'hit', dur:0.125, frame:'y2', power:5},
+      {kind:'hit', dur:0.125, frame:'y3', power:5},
+      {kind:'hit', dur:0.125, frame:'y4', power:10},
+      {kind:'emit',dur:1.00,  frame:'y4', power:0} // 震え1秒
     ];
     this._actionIndex=0; this._actionTime=0;
-  }
-  _skill2EmitStart(){
     const kem=this.world.assets.img('kem.png');
-    const baseX=this.x;
-    const off=64; // 左右距離
-    const left = new GroundSpike(this.world, baseX - off, kem, 80);
-    const right= new GroundSpike(this.world, baseX + off, kem, 80);
-    (this.world._skillBullets||(this.world._skillBullets=[])).push(left,right);
-    this.effects.shake(0.12,6);
+    if(kem){
+      const off=68;
+      const L=new GroundSpike(this.world, this.x - off, -1, kem);
+      const R=new GroundSpike(this.world, this.x + off,  1, kem);
+      (this.world._skillBullets||(this.world._skillBullets=[])).push(L,R);
+      this.effects.shake(0.12,6);
+    }
   }
 
-  /* ULT（U） */
+  /* ULT（U）：UL1震え/手元UL3拡大→離すとUL2ポーズ・可変弾発射 */
   _releaseULT(chargeSec){
     if(this.ultCDT>0) return;
     this.state='ult'; this.animT=0;
-    const seq=[
+    this._actionSeq=[
       {kind:'pose',dur:0.10,frame:'ul2'},
       {kind:'post',dur:0.20,frame:'ul2'}
     ];
-    this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
+    this._actionIndex=0; this._actionTime=0;
     this.ultCDT=30.0;
 
     const img=this.world.assets.img(this.frames.ul3);
     const ox=this.face*30, oy=-12;
     const blast=new UltBlast(this.world, this.x+ox, this.y+oy, this.face, img, chargeSec);
     (this.world._skillBullets||(this.world._skillBullets=[])).push(blast);
-    this.saT=0;
+    this.saT=0; // 発射後はSA解除
     this.effects.addSpark(this.x+ox, this.y-14, true);
   }
 
-  _updateAction(dt){
-    if(this.actionAir){ this.actionAirVx *= 0.90; this.x += this.actionAirVx*dt; }
+  _updateAction(dt,world,input){
+    this.vx = 0;
+
+    if(this._actionSeq && this.state==='atk'){
+      const cur=this._actionSeq[this._actionIndex];
+      if(cur?.after==='enableChase'){
+        this._chaseWindowT = (this._chaseWindowT||0) + dt;
+        if(this._chaseWindowT>0.2 && !this._chaseEnabled){ this._chaseEnabled=true; }
+        if(this._chaseEnabled && input.edge.a2Press && !this._chaseConsumed){
+          input.edge.a2Press=false; this._startA2Chase(); return;
+        }
+      }
+    }
+
+    const cur=this._actionSeq?.[this._actionIndex];
+    if(cur && (cur.kind==='prepShake' || (this.state==='skill2' && (cur.frame==='y4' || cur.kind==='emit')) || this.state==='ult')){
+      const ox=Math.sin(performance.now()/25)*2; this._shakeOX = ox;
+    } else this._shakeOX=0;
+
     this.updatePhysics(dt);
-
-    if(this.state==='ultCharge'){ this.saT=0.05; }
-
     if(this._actionSeq){
       this._actionTime+=dt;
-      const cur=this._actionSeq[this._actionIndex];
-      if(cur){
-        if(cur.kind==='prepShake' || (this.state==='skill2' && this._actionIndex>=3) || this.state==='ult'){
-          const ox=Math.sin(performance.now()/25)*2; this._shakeOX = ox;
-        } else this._shakeOX=0;
-
-        if(this.state==='skill2' && cur.kind==='emit' && !this._skill2Spawned){ this._skill2Spawned=true; this._skill2EmitStart(); }
-
-        if(this.state==='atk' && cur.after==='enableChase'){
-          this._chaseWindowT = (this._chaseWindowT||0) + dt;
-          if(this._chaseWindowT>0.35 && !this._chaseEnabled){ this._chaseEnabled=true; }
-        }
-
-        if(this._actionTime>=cur.dur){
-          if(this._chaseEnabled && !this._chaseConsumed){
-            if(this.queueA2){ this.queueA2=null; this._startA2Chase(); return; }
-          }
-
-          this._actionIndex++; this._actionTime=0;
-          if(this._actionIndex>=this._actionSeq.length){
-            if(this.state==='skill'){ this.skillCDT=5.0; }
-            if(this.state==='atk' && this.comboStep>0) this.comboGraceT=this.comboGraceMax;
-            if(this.state==='atk' && this.comboStep>=3){ this.comboStep=0; this.bufferA1=false; }
-            this.state='idle'; this._actionSeq=null;
-          }
+      if(this._actionTime>=cur.dur){
+        this._actionIndex++; this._actionTime=0;
+        if(this._actionIndex>=this._actionSeq.length){
+          if(this.state==='skill'){ this.skillCDT=5.0; }
+          if(this.state==='atk' && this.comboStep>0){ this.comboGraceT=this.comboGraceMax; if(this.comboStep>=3){ this.comboStep=0; this.bufferA1=false; } }
+          this.state='idle'; this._actionSeq=null;
         }
       }
     }
@@ -641,8 +608,8 @@ class Player extends CharacterBase{
   _respawn(world){
     this.dead=false; this.fade=1; this.spinAngle=0; this.spinSpeed=0;
     this.state='idle'; this.comboStep=0; this.comboGraceT=0; this.bufferA1=false;
-    this.queueA2=null; this.queueSK=null; this.actionAir=false; this.actionAirVx=0;
-    this.invulnT=0.6; this.hp=this.maxhp; document.getElementById('hpfill').style.width='100%'; document.getElementById('hpnum').textContent=this.hp;
+    this.queueA2=null; this.queueSK=null; this.invulnT=0.6; this.hp=this.maxhp;
+    document.getElementById('hpfill').style.width='100%'; document.getElementById('hpnum').textContent=this.hp;
     this.x=world.camX+80; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.vx=0; this.vy=0;
     this.jumpsLeft=this.maxJumps; this.saT=0;
   }
@@ -653,8 +620,7 @@ class Player extends CharacterBase{
     if(this.face<0 && !this.dead) ctx.scale(-1,1);
 
     let img=null, ox=this._shakeOX||0;
-    if(this.state==='chargeA2'){ img=this.world.assets.img(this.frames.k2prep); }
-    else if(this.state==='ultCharge'){ img=this.world.assets.img(this.frames.ul1); }
+    if(this.state==='ultCharge'){ img=this.world.assets.img(this.frames.ul1); }
     else if(this.state==='idle'){ img=this._imgByKey('idle',0); }
     else if(this.state==='run'){ const i=Math.floor(this.animT*10)%this.frames.walk.length; img=this._imgByKey('walk',i); }
     else if(this.state==='jump'){ img=this._imgByKey('walk',0); }
@@ -679,7 +645,7 @@ class Player extends CharacterBase{
   }
 }
 
-/* ===== 以降：敵・World・Game ===== */
+/* ===== 以降：敵キャラ ===== */
 class KozouStone extends Projectile{
   constructor(world,x,y,dir,img){ super(world,x,y,dir,img,5); this.vx = 120*dir; this.vy = -360; this.w = 24; this.h = 24; this.gravity = 900; }
   update(dt){
@@ -687,7 +653,6 @@ class KozouStone extends Projectile{
     const ground = Math.floor(GROUND_TOP_Y); if(this.y + this.h/2 >= ground+FOOT_PAD){ this.dead=true; }
   }
 }
-
 class WaruMOB extends CharacterBase{
   constructor(world,effects,assets,x=520){
     super(52,60); this.world=world; this.effects=effects; this.assets=assets;
@@ -730,19 +695,14 @@ class WaruMOB extends CharacterBase{
     if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
     if(this.face<0 && !this.dead) ctx.scale(-1,1);
     let img=null;
-    if(this.dead){ img=this.imgByKey('idle'); }
-    else if(this.state==='atk' && this._seq){ const cur=this._seq[this._idx]; img=this.imgByKey(cur.key||'prep2'); }
+    if(this.state==='atk' && this._seq){ const cur=this._seq[this._idx]; img=this.imgByKey(cur.key||'prep2'); }
     else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.imgByKey(f? 'walk1':'walk2'); }
     else { img=this.imgByKey('idle'); }
-    if(!img){ ctx.restore(); return; }
-    const scale=this.h/img.height, w=img.width*scale, h=this.h;
-    ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
-    ctx.restore();
-    this.drawHPBar(ctx,world);
+    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); }
+    ctx.restore(); this.drawHPBar(ctx,world);
     for(const p of this.projectiles) p.draw(ctx);
   }
 }
-
 class IceRobo extends CharacterBase{
   constructor(world,effects,assets,x=900){
     super(64,70); this.world=world; this.effects=effects; this.assets=assets;
@@ -825,9 +785,7 @@ class IceRobo extends CharacterBase{
     else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.img(f? 'walk1':'walk2'); }
     else if(this.state==='jump'){ const f=Math.floor(this.animT*8)%3; img=this.img(['jump1','jump2','jump3'][f]); }
     else { img=this.img('idle'); }
-    if(!img){ ctx.restore(); return; }
-    const scale=this.h/img.height, w=img.width*scale, h=this.h;
-    ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2+ox), Math.round(-h/2), Math.round(w), Math.round(h));
+    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2+ox), Math.round(-h/2), Math.round(w), Math.round(h)); }
     if(this.state==='charge'){
       const orb=this.img('orb'); const t=this.chargeT;
       const mul = 0.6 + 0.8*(t/2); const hh=32*mul, ww=44*mul; const oxh = this.face*26, oyh=-14;
@@ -838,7 +796,6 @@ class IceRobo extends CharacterBase{
     for(const p of this.energyOrbs) p.draw(ctx);
   }
 }
-
 class IceRoboMini extends CharacterBase{
   constructor(world, effects, assets, x=1200){
     super(40,44); this.world=world; this.effects=effects; this.assets=assets;
@@ -875,7 +832,7 @@ class IceRoboMini extends CharacterBase{
     if(this.onGround && this.hopT>0.35){ this.vy=-JUMP_V*0.35; this.hopT=0; }
     if(this.cool<=0){
       if(adx<120 && Math.random()<0.7){ this.state='atk'; this.hopT=0; this.animT=0; }
-      else if(adx<220 && Math.random()<0.35){ this.state='sp'; this.hopT=0; }
+      else if(adx<220 && Math.random()<0.35){ this.state='sp'; this.hopT=0; this.animT=0; }
     }
     this.updatePhysics(dt);
     this.state = (this.state==='idle'||this.state==='run') ? (this.onGround? 'run':'jump') : this.state;
@@ -889,13 +846,10 @@ class IceRoboMini extends CharacterBase{
     let img=null; if(this.state==='sp') img=this.img('sp');
     else if(this.state==='atk'){ img=this.hopT<0.16? this.img('idle'): this.img('atk1'); }
     else if(!this.onGround) img=this.img('move'); else img=this.img('move');
-    if(!img){ ctx.restore(); return; }
-    const scale=this.h/img.height, w=img.width*scale, h=this.h;
-    ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
+    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); }
     ctx.restore(); this.drawHPBar(ctx,world);
   }
 }
-
 class Kozou extends CharacterBase{
   constructor(world,effects,assets,x=1400){
     super(50,58); this.world=world; this.effects=effects; this.assets=assets;
@@ -952,14 +906,11 @@ class Kozou extends CharacterBase{
     else if(this.guard){ img=this.img('guard'); }
     else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.img(f?'w1':'w2'); }
     else { img=this.img('idle'); }
-    if(!img){ ctx.restore(); return; }
-    const scale=this.h/img.height, w=img.width*scale, h=this.h;
-    ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
+    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); }
     ctx.restore(); this.drawHPBar(ctx,world);
     for(const p of this.projectiles) p.draw(ctx);
   }
 }
-
 class MOBGiant extends CharacterBase{
   constructor(world,effects,assets,x=1650){
     super(76,90);
@@ -1080,9 +1031,7 @@ class MOBGiant extends CharacterBase{
     else if(this.state==='jump'){
       const f=Math.floor(this.animT*8)%3; img=this.img(['j1','j2','j3'][f]);
     } else { img=this.img('idle'); }
-    if(!img){ ctx.restore(); return; }
-    const scale=this.h/img.height, w=img.width*scale, h=this.h;
-    ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2+ox), Math.round(-h/2), Math.round(w), Math.round(h));
+    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2+ox), Math.round(-h/2), Math.round(w), Math.round(h)); }
     if(this.state==='charge'){
       const orb=this.img('orb'); const t=this.chargeT;
       const mul = 0.5 + 1.0*(t/2);
@@ -1120,7 +1069,7 @@ class World{
       const endX = this.camX*this.bgSpeed + this.gameW*1.2 + w;
       for(let x=startX; x<=endX; x+=step){ ctx.drawImage(this.bgImg, 0,0,this.bgImg.width,this.bgImg.height, Math.round(x - this.camX*this.bgSpeed), 0, w, h); }
     } else {
-      const g=ctx.createLinearGradient(0,0,0,this.gameH); g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18'); ctx.fillStyle=g; ctx.fillRect(0,0,this.gameW,this.gameH);
+      const g=ctx.createLinearGradient(0,0,0,this.gameH); g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18'); ctx.fillStyle=g; ctx.fillRect(0,0,this.gameH,this.gameH);
     }
     ctx.fillStyle='#0b0f17'; const yTop=Math.floor(GROUND_TOP_Y); ctx.fillRect(0,yTop-1,this.gameW,1);
 
@@ -1154,7 +1103,7 @@ class Game{
       'P1.png','P2.png','P3.png','P4.png','P5.png','P6.png','P7.png','P10.png',
       'Y1.png','Y2.png','Y3.png','Y4.png',
       'UL1.png','UL2.png','UL3.png',
-      'kem.png' /* 新規：地面スパイク */
+      'kem.png' /* ← スキル②スパイク画像 */
     ];
     await this.assets.load(imgs);
     this.world=new World(this.assets,this.canvas,this.effects);
@@ -1234,32 +1183,19 @@ class Game{
         }
       }
 
-      // 共通弾/ハザード
       if(this.world._skillBullets){
         for(const p of this.world._skillBullets){
-          p.update?.(dt);
-          // GroundSpike は非移動、Projectile は update を持つ
+          p.update(dt);
           for(const e of this.enemies){
-            if(p.dead || e.dead) continue;
-            const pa = p.aabb?.(); if(!pa) continue;
-            if(rectsOverlap(pa, e.aabb())){
-              if(p instanceof GroundSpike){
-                if(!p.hitApplied){
-                  p.hitApplied=true;
-                  const dir = (e.x>=p.x)? 1 : -1;
-                  const hit=e.hurt(p.damage, dir, {lift:1.2,kbMul:1.1,kbuMul:1.1}, this.effects);
-                  if(hit) this.effects.addSpark(e.x, e.y-10, true);
-                }
-              } else {
-                p.dead=true;
-                const dir = (e.x>=p.x)? 1 : -1;
-                const hit=e.hurt(p.power, dir, {lift:0.3,kbMul:0.9,kbuMul:0.9}, this.effects);
-                if(hit) this.effects.addSpark(e.x, e.y-10, p.power>=40);
-              }
+            if(!p.dead && !e.dead && rectsOverlap(p.aabb(), e.aabb())){
+              p.dead=true;
+              const dir = (e.x>=p.x)? 1 : -1;
+              const hit=e.hurt(p.power, dir, {lift:0.3,kbMul:0.9,kbuMul:0.9}, this.effects);
+              if(hit) this.effects.addSpark(e.x, e.y-10, p.power>=40);
             }
           }
         }
-        this.world._skillBullets = this.world._skillBullets.filter(p=>!p.dead && (p.life==null || p.life>0));
+        this.world._skillBullets = this.world._skillBullets.filter(p=>!p.dead && p.life>0);
       }
 
       this.enemies=this.enemies.filter(e=>!(e.dead && e.fade<=0));
@@ -1269,7 +1205,6 @@ class Game{
         this.enemies.push(this.enemyOrder[this.enemyIndex]());
       }
 
-      // すり抜け/乗り上げ調整（頭上壁感の緩和込み）
       for(const e of this.enemies){
         if(e.dead || this.player.dead) continue;
         const a=this.player.aabb(), b=e.aabb();
@@ -1299,7 +1234,7 @@ class Game{
   }
 }
 
-/* ===== 被弾時のバッファ解除 & SA考慮 ===== */
+/* ===== 被弾時の行動解除 & SA考慮 ===== */
 Player.prototype.hurt = function(amount,dir,opts,effects){
   if(this.saT>0){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
   const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
@@ -1307,7 +1242,7 @@ Player.prototype.hurt = function(amount,dir,opts,effects){
     const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=this.hp; fill.style.width=Math.max(0,Math.min(100,(this.hp/this.maxhp)*100))+'%';
     this._actionSeq = null; this._actionIndex = 0; this._actionTime = 0;
     this.bufferA1 = false; this.queueA2 = null; this.queueSK = null; this.comboStep = 0; this.comboGraceT = 0; this.a2LockoutT = 0;
-    this.overhead?.root && (this.overhead.root.style.display='none'); this.actionAir = false; this.actionAirVx = 0;
+    this.overhead?.root && (this.overhead.root.style.display='none');
     this.jumpsLeft=this.maxJumps;
   }
   return hit;
