@@ -3,38 +3,32 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Rev25 (Full selectable, fixes)</title>
+<title>MOB Side Action – Rev26 (Teams + Latest Player Moves)</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
-:root{
-  --stage-w:420px; --stage-h:720px;
-  --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px;
-}
+:root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
 html,body{height:100%;margin:0;background:#0a0d13;color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;overscroll-behavior:none}
 html,body{-webkit-user-select:none;-webkit-touch-callout:none;user-select:none}
 *{box-sizing:border-box}
 #root{position:fixed;inset:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0);display:grid;place-items:center;padding:10px}
 #phone{width:var(--stage-w);height:var(--stage-h);position:relative;overflow:hidden;background:#060910;border:1px solid #0f1726;border-radius:20px;box-shadow:0 12px 48px rgba(0,0,0,.55);touch-action:none}
-.grid{position:absolute;inset:0;display:grid;grid-template-rows: 1fr 220px;gap:var(--grid-gap);padding:var(--grid-gap)}
+.grid{position:absolute;inset:0;display:grid;grid-template-rows: 1fr 220px;gap:var(--grid-gap);padding:var(--grid-gap);margin:0 auto}
 .gamewrap{position:relative;border-radius:14px;overflow:hidden;background:#05070c;outline:1px solid #0e1522}
-canvas#game{display:block;width:100%;height:100%}
+canvas#game{display:block;width:100%;height:100%;background:#05070c}
 .controls{position:relative;border-radius:14px;background:var(--hud-bg);outline:1px solid #0e1522;backdrop-filter: blur(6px);padding:12px;display:grid;grid-template-columns: 1fr 1fr;gap:12px}
 .stickArea{position:relative;border-radius:12px;background:#0a121f;outline:1px solid #152033;display:grid;place-items:center;touch-action:none}
 .stick{width:120px;height:120px;border-radius:50%;background:#0d1828;outline:2px solid #22324d;position:relative}
 .stickThumb{width:64px;height:64px;border-radius:50%;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#1a2a45;outline:2px solid #2e4a73;box-shadow:inset 0 0 0 4px #0c1422}
-
-/* 右側ボタン */
 .buttons{display:grid;grid-template-columns: repeat(3,1fr);grid-template-rows: repeat(2,1fr);gap:12px;align-content:stretch;justify-items:stretch}
 .btn{border:none;border-radius:14px;background:#0d1828;outline:2px solid #22324d;color:var(--fg);font-size:26px;display:grid;place-items:center;touch-action:none;box-shadow:inset 0 -4px 0 rgba(255,255,255,.04);transition:opacity .15s ease;min-height:64px}
 .btn:active{transform:scale(.98)}
 .btn[disabled]{opacity:.35;pointer-events:none}
-.btn.attack1{background:#112033} /* ■ */
-.btn.attack2{background:#1a2436} /* ▲ */
-.btn.skill1 {background:#132a22} /* ● */
-.btn.skill2 {background:#1f2433} /* ◎ */
-.btn.ult    {background:#2b2030} /* U */
+.btn.attack1{background:#112033}
+.btn.attack2{background:#1a2436}
+.btn.skill1 {background:#132a22}
+.btn.skill2 {background:#1f2433}
+.btn.ult    {background:#2b2030}
 .btn.spacer {opacity:0; pointer-events:none}
-
 header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex;gap:10px;align-items:center;z-index:10;pointer-events:none}
 .chip{background:var(--hud-bg);outline:1px solid #0e1522;border-radius:12px;padding:6px 10px;font-weight:600;font-size:12px;display:flex;gap:8px;align-items:center}
 .bar{--w:160px;--h:10px;width:var(--w);height:var(--h);border-radius:999px;outline:1px solid #1a263d;background:#0a1220;position:relative;overflow:hidden}
@@ -45,18 +39,9 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
 .gauge{width:100px;height:6px;border-radius:999px;outline:1px solid #1a263d;background:#0a1220;overflow:hidden}
 .gauge>i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#ffd36e,#ff9b42)}
 .statusNote{position:absolute;right:8px;bottom:8px;background:var(--hud-bg);outline:1px solid #0e1522;border-radius:10px;padding:4px 8px;font-size:11px;opacity:.8}
-
-/* ====== 選択モーダル ====== */
-#selectModal{
-  position:absolute;inset:0;background:rgba(0,0,0,.55);
-  display:flex;align-items:center;justify-content:center;padding:16px;z-index:20;
-  overflow:auto; /* 画面が小さくてもスクロール可能 */
-}
-.selCard{
-  background:#0b0f17;outline:1px solid #152033;border-radius:14px;
-  width:min(92vw,420px);max-height:min(88vh,640px);
-  display:flex;flex-direction:column;padding:16px;gap:10px;
-}
+/* 選択UI */
+#selectModal{position:absolute;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:20;overflow:auto}
+.selCard{background:#0b0f17;outline:1px solid #152033;border-radius:14px;width:min(92vw,420px);max-height:min(88vh,640px);display:flex;flex-direction:column;padding:16px;gap:10px}
 .selCard h2{margin:0 0 4px;font-size:18px}
 .selHint{font-size:12px;opacity:.8}
 .selSection{margin-top:10px;font-weight:700;font-size:13px;opacity:.95}
@@ -64,22 +49,9 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
 .selItem{display:flex;gap:8px;align-items:center;background:#0d1828;border:1px solid #22324d;border-radius:10px;padding:8px}
 .selItem input{accent-color:#65d3ff}
 .countNote{font-size:12px;opacity:.75}
-.selFoot{
-  position: sticky; bottom:0; z-index:1;
-  background:linear-gradient(180deg, rgba(11,15,23,0), rgba(11,15,23,0.95) 40%, rgba(11,15,23,0.95));
-  margin:0 -16px -16px; padding:12px 16px 16px; display:grid; grid-template-columns:1fr 1fr; gap:8px;
-}
+.selFoot{position: sticky; bottom:0; z-index:1;background:linear-gradient(180deg, rgba(11,15,23,0), rgba(11,15,23,0.95) 40%, rgba(11,15,23,0.95));margin:0 -16px -16px; padding:12px 16px 16px; display:grid; grid-template-columns:1fr 1fr; gap:8px}
 .selFoot .btn{min-height:44px;font-size:18px}
-
-/* 本文だけスクロール */
 .scrollArea{overflow:auto;flex:1;min-height:0}
-
-/* 右寄り問題の最終対策：グリッドを中央基準に固定幅で配置し左右余白を均等化 */
-.grid{margin:0 auto}
-
-/* 影の誤描画（黒帯）対策：キャンバス要素に強制的に不透明背景を敷く */
-canvas#game{background:#05070c}
-
 @media (max-height: 720px){ :root{ --stage-h: 650px; } }
 @media (max-height: 640px){ .selList{ max-height:34vh; } }
 </style>
@@ -120,17 +92,14 @@ canvas#game{background:#05070c}
   <div class="selCard">
     <h2>バトル設定</h2>
     <div class="selHint">プレイヤーは <b>MOBYOKI固定</b>。味方は最大3、敵は最大10まで選べます。</div>
-
-    <div class="scrollArea"><!-- ← 本文スクロール領域 -->
+    <div class="scrollArea">
       <div class="selSection">味方を選ぶ（最大3）</div>
       <div class="selList" id="allyList"></div>
       <div class="countNote" id="allyCount">0 / 3</div>
-
       <div class="selSection">敵を選ぶ（最大10）</div>
       <div class="selList" id="enemyList"></div>
       <div class="countNote" id="enemyCount">0 / 10</div>
     </div>
-
     <div class="selFoot">
       <button class="btn" id="btnClear">クリア</button>
       <button class="btn" id="btnStart">スタート</button>
@@ -146,6 +115,7 @@ canvas#game{background:#05070c}
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
 const now=()=>performance.now();
+const rectsOverlap=(a,b)=> Math.abs(a.x-b.x)*2 < (a.w+b.w) && Math.abs(a.y-b.y)*2 < (a.h+b.h);
 
 /* ===== Assets ===== */
 class Assets{
@@ -244,7 +214,6 @@ class Input{
 /* ===== World / Physics ===== */
 const GRAV=2000, MOVE=260, JUMP_V=760, MAX_FALL=1200;
 const GROUND_TOP_Y=360, FOOT_PAD=2;
-const rectsOverlap=(a,b)=> Math.abs(a.x-b.x)*2 < (a.w+b.w) && Math.abs(a.y-b.y)*2 < (a.h+b.h);
 
 /* ===== Effects ===== */
 class Effects{
@@ -264,9 +233,9 @@ class Effects{
   }
 }
 
-/* ===== Base Classes ===== */
+/* ===== Base ===== */
 class CharacterBase{
-  constructor(w,h){ this.w=w; this.h=h; this.x=0; this.y=0; this.vx=0; this.vy=0; this.face=1; this.onGround=false; this.state='idle'; this.animT=0; this.hp=100; this.maxhp=100; this.dead=false; this.deathT=0; this.invulnT=0; this.spinAngle=0; this.spinSpeed=0; this.fade=1; this.hurtT=0; this.maxHurt=0.22; this.superArmor=false; }
+  constructor(w,h,team='enemy'){ this.w=w; this.h=h; this.team=team; this.x=0; this.y=0; this.vx=0; this.vy=0; this.face=1; this.onGround=false; this.state='idle'; this.animT=0; this.hp=100; this.maxhp=100; this.dead=false; this.deathT=0; this.invulnT=0; this.spinAngle=0; this.spinSpeed=0; this.fade=1; this.hurtT=0; this.maxHurt=0.22; this.superArmor=false; }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.8}; }
   hurt(amount, dir, opts={}, effects){
     if(this.invulnT>0||this.dead) return false;
@@ -280,23 +249,21 @@ class CharacterBase{
     this.vy = - clamp(baseKbu * kbuMul, 0, 520);
     this.x += dir * 3; this.face = -dir;
     this.state='hurt'; this.hurtT=0; this.animT=0; this.invulnT=0.25;
-    if(effects) effects.addSpark(this.x, this.y-10, amount>=40);
+    effects?.addSpark(this.x, this.y-10, amount>=40);
     if(this.hp<=0){ this.dead=true; this.vx = dir * 520; this.vy = -520; this.spinSpeed = 18; this.deathT = 0; this.fade = 1; }
     return true;
   }
   updatePhysics(dt, world){
     this.vy = Math.min(this.vy + GRAV*dt, MAX_FALL);
     this.x += this.vx*dt; this.y += this.vy*dt;
-
-    /* ステージ端の壁（MOBA左右） */
+    // 壁
     const leftWall = 20, rightWall = world.levelW - 20;
     if(this.x - this.w/2 < leftWall){ this.x = leftWall + this.w/2; this.vx = Math.max(0,this.vx); }
     if(this.x + this.w/2 > rightWall){ this.x = rightWall - this.w/2; this.vx = Math.min(0,this.vx); }
-
+    // 地面
     const top=Math.floor(GROUND_TOP_Y);
     if(this.y + this.h/2 >= top + FOOT_PAD){ this.y = top - this.h/2 + FOOT_PAD; this.vy=0; this.onGround=true; }
     else this.onGround=false;
-
     if(this.invulnT>0) this.invulnT=Math.max(0,this.invulnT-dt);
     if(this.state==='hurt'){ this.hurtT+=dt; if(this.onGround || this.hurtT>=this.maxHurt){ this.state='idle'; } }
     if(this.dead){ this.deathT += dt; this.spinAngle += this.spinSpeed*dt; this.fade = clamp(1 - this.deathT/1.2, 0, 1); }
@@ -307,56 +274,52 @@ class CharacterBase{
     ctx.save(); ctx.translate(x,y);
     ctx.fillStyle='rgba(10,18,32,.7)'; ctx.fillRect(-w/2,-h/2,w,h);
     ctx.strokeStyle='#1a263d'; ctx.lineWidth=1; ctx.strokeRect(-w/2,-h/2,w,h);
-    ctx.fillStyle='#7dd3fc'; ctx.fillRect(-w/2+1,-h/2+1,(w-2)*ratio,h-2);
+    ctx.fillStyle=this.team==='ally'?'#a7f3d0':(this.team==='player'?'#7dd3fc':'#fda4af');
+    ctx.fillRect(-w/2+1,-h/2+1,(w-2)*ratio,h-2);
     ctx.restore();
   }
 }
 
 /* ===== Projectiles ===== */
 class Projectile{
-  constructor(world,x,y,dir,img,power=10){ this.world=world; this.x=x; this.y=y; this.dir=dir; this.vx=160*dir; this.vy=0; this.img=img; this.power=power; this.life=3.2; this.dead=false; this.w=40; this.h=28; }
+  constructor(world,x,y,dir,img,power=10, owner=null){ this.world=world; this.x=x; this.y=y; this.dir=dir; this.vx=160*dir; this.vy=0; this.img=img; this.power=power; this.life=3.2; this.dead=false; this.w=40; this.h=28; this.owner=owner; this.ignoreSA=false; }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.9, h:this.h*0.9}; }
   update(dt){ if(this.dead) return; this.x+=this.vx*dt; this.y+=this.vy*dt; this.life-=dt; if(this.life<=0) this.dead=true; }
   draw(ctx){ if(this.dead||!this.img) return; const img=this.img; const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.save(); ctx.translate(this.x-this.world.camX,this.y-this.world.camY); if(this.dir<0) ctx.scale(-1,1); ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); ctx.restore(); }
 }
 class EnergyBall extends Projectile{
-  constructor(world,x,y,dir,img,basePower=20,chargeSec=0, incrementPerTenth=3){
-    super(world,x,y,dir,img,basePower);
+  constructor(world,x,y,dir,img,basePower=20,chargeSec=0, incrementPerTenth=3, owner=null){
+    super(world,x,y,dir,img,basePower,owner);
     this.chargeSec = clamp(chargeSec,0,3.0);
     this.power = basePower + Math.floor(this.chargeSec / 0.1) * incrementPerTenth;
     const sizeMul = 0.6 + 0.8*(this.chargeSec/3);
     this.w = Math.round(56*sizeMul); this.h = Math.round(56*sizeMul);
     this.vx = (260 + 100*sizeMul) * dir;
     this.life = 2.0 + 0.6*sizeMul;
-    this.ignoreSA = true; /* ULT等で使用時のSA貫通用フラグ */
   }
 }
 
 /* ===== Player ===== */
 class Player extends CharacterBase{
   constructor(assets, world, effects){
-    super(56,64);
+    super(56,64,'player');
     this.assets=assets; this.world=world; this.effects=effects;
     this.x=100; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD;
     this.hp=1000; this.maxhp=1000; this.lives=3;
-
     this.maxJumps=2; this.jumpsLeft=this.maxJumps;
     this.comboStep=0; this.comboGraceT=0; this.comboGraceMax=0.24;
     this.actionAir=false; this.actionAirVx=0;
-
     this.skillCDT=0; this.skill2CDT=0; this.ultCDT=0;
-    this.saT=0; // temporary super armor
+    this.saT=0;
     this.holdT={skill:0, ult:0};
-
     this.frames={
       idle:['M1-1.png'],
       walk:['M1-2.png','M1-3.png','M1-4.png'],
       k1prep:'K1-3.png', k1a:'K1-1.png', k1b:'K1-2.png', k1c:'K1-4.png',
-      k2prep:'K1-3.png', k2:'K1-5.png',
+      k2:'K1-5.png',
       spin:['h1.png','h2.png','h3.png','h4.png'],
-      chaseJump:'J.png',
       y1:'Y1.png', y2:'Y2.png', y3:'Y3.png', y4:'Y4.png',
-      ul1:'UL1.PNG', ul2:'UL2.PNG', ul3:'UL3.png' /* UL1/UL2 は大文字拡張子 */
+      ul1:'UL1.PNG', ul2:'UL2.PNG', ul3:'UL3.png'
     };
     this.overhead=this._createOverheadGauge();
     document.querySelector('.gamewrap').appendChild(this.overhead.root);
@@ -366,56 +329,45 @@ class Player extends CharacterBase{
   _createOverheadGauge(){ const root=document.createElement('div'); root.className='overhead'; const g=document.createElement('div'); g.className='gauge'; const i=document.createElement('i'); g.appendChild(i); const label=document.createElement('span'); label.style.fontSize='10px'; label.style.color='#b8c7e3'; root.appendChild(g); root.appendChild(label); return {root, gauge:g, fill:i, label}; }
   _posOverhead(){ const w=this.world, headY=this.y-this.h/2-10; this.overhead.root.style.left=((this.x-w.camX)*w.screenScaleX)+'px'; this.overhead.root.style.bottom=(w.gameH-(headY-w.camY))*w.screenScaleY+'px'; }
   _showGauge(show, text='', ratio=0){ this.overhead.root.style.display=show?'flex':'none'; this.overhead.label.textContent=text; this.overhead.fill.style.width=((ratio*100)|0)+'%'; }
-
   currentHitbox(){
     if(!(this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='ult') || !this._actionSeq) return null;
     const cur=this._actionSeq[this._actionIndex]; if(!cur) return null;
+    const base = {power:cur.power||0, dir:this.face, lift:cur.lift||0, kbMul:cur.kbMul||1.8, kbuMul:cur.kbuMul||1.5, ignoreSA:cur.ignoreSA||false};
     if(this.state==='skill' || this.state==='skill2' || this.state==='ult'){
-      const W=100,H=70; const x=this.x + this.face*(this.w*0.3);
-      return {x, y:this.y, w:W, h:H, power:cur.power||0, dir:this.face, lift:cur.lift||0, kbMul:cur.kbMul||1.8, kbuMul:cur.kbuMul||1.5, ignoreSA:cur.ignoreSA||false};
+      const W=100,H=70; const x=this.x + this.face*(this.w*0.3); return {x,y:this.y,w:W,h:H,...base};
     }
     if(cur.kind==='hit' || cur.kind==='sp'){
-      const w=56, h=44, x=this.x + this.face*(this.w*0.35 + w*0.5), y=this.y - 6;
-      return {x,y,w,h, power:cur.power||0, dir:this.face, lift:cur.lift||1, kbMul:cur.kbMul||1, kbuMul:cur.kbuMul||1, ignoreSA:cur.ignoreSA||false};
+      const w=56, h=44, x=this.x + this.face*(this.w*0.35 + w*0.5), y=this.y - 6; return {x,y,w,h, ...base};
     }
     return null;
   }
-
-  update(dt,input,world,enemies){
+  update(dt,input,world,opponents){
     input.beginFrame(); this._posOverhead();
-
     if(this.saT>0) this.saT=Math.max(0,this.saT-dt);
     if(this.skillCDT>0) this.skillCDT=Math.max(0,this.skillCDT-dt);
     if(this.skill2CDT>0) this.skill2CDT=Math.max(0,this.skill2CDT-dt);
     if(this.ultCDT>0) this.ultCDT=Math.max(0,this.ultCDT-dt);
-
     const skBtn=document.getElementById('btnSK'); const sk2Btn=document.getElementById('btnSK2'); const ultBtn=document.getElementById('btnULT');
     this.skillCDT>0? skBtn.setAttribute('disabled','') : skBtn.removeAttribute('disabled');
     this.skill2CDT>0? sk2Btn.setAttribute('disabled','') : sk2Btn.removeAttribute('disabled');
     this.ultCDT>0? ultBtn.setAttribute('disabled','') : ultBtn.removeAttribute('disabled');
-
     if(this.dead){ this.updatePhysics(dt,world); world.updateTimer(dt); return; }
-
-    // 溜め管理：スキル①（最大1秒）、ULT（最大3秒）
+    // 溜め表示
     if(input.hold.skill && this.skillCDT<=0 && this.state!=='skill' && this.state!=='skill2' && this.state!=='ult'){ this.holdT.skill = clamp(this.holdT.skill + dt, 0, 1.0); this._showGauge(true,'● Charge', this.holdT.skill/1.0); }
     else if(input.hold.ult && this.ultCDT<=0 && this.state!=='ult'){ this.holdT.ult = clamp(this.holdT.ult + dt, 0, 3.0); this._showGauge(true,'U Charge', this.holdT.ult/3.0); }
     else this._showGauge(false);
-
-    // 発動・リリース
+    // リリース
     if(input.edge.skill && this.holdT.skill>0 && this.skillCDT<=0){ const charged = this.holdT.skill>=0.35; this.holdT.skill=0; this._startSpin(charged); return; }
     if(input.btn.skill2 && this.skill2CDT<=0 && this.state!=='skill2'){ this._startSkill2(); return; }
     if(input.edge.ult && this.holdT.ult>0 && this.ultCDT<=0){ const t=this.holdT.ult; this.holdT.ult=0; this._releaseULT(t); return; }
-
-    // 実行中（アクション）
+    // 実行中
     if(this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='ult'||this.state==='hurt'){
       const hb=this.currentHitbox();
       if(hb){
-        for(const e of enemies){
+        for(const e of opponents){
           if(!e || e.dead || e.invulnT>0) continue;
           if(rectsOverlap({x:hb.x,y:hb.y,w:hb.w,h:hb.h}, e.aabb())){
-            const hit = e.hurt(hb.power, hb.dir,
-              {lift:hb.lift, kbMul:hb.kbMul, kbuMul:hb.kbuMul, ignoreSA:hb.ignoreSA||false},
-              this.effects);
+            const hit = e.hurt(hb.power, hb.dir, {lift:hb.lift, kbMul:hb.kbMul, kbuMul:hb.kbuMul, ignoreSA:hb.ignoreSA||false}, this.effects);
             if(hit && rectsOverlap(this.aabb(), e.aabb())){ e.x = this.x + hb.dir * (this.w*0.55); }
           }
         }
@@ -424,34 +376,22 @@ class Player extends CharacterBase{
       world.updateTimer(dt);
       return;
     }
-
-    // 通常移動とジャンプ
+    // 通常移動
     let ax=0; if(input.left){ ax-=MOVE; this.face=-1; } if(input.right){ ax+=MOVE; this.face=1; }
     this.vx = ax!==0 ? (ax>0?MOVE:-MOVE) : 0;
     if(input.consumeJump() && this.jumpsLeft>0){ this.vy=-JUMP_V; this.onGround=false; this.jumpsLeft--; }
-
-    // ULT 溜め中は移動可能（保持）
-    if(input.hold.ult && this.ultCDT<=0){ /* 何もしない（移動可） */ }
-
+    // ULT溜め中は移動可
     this.updatePhysics(dt,world);
     if(this.onGround) this.jumpsLeft=this.maxJumps;
-
-    // スプライト：歩行に合わせる（移動中の違和感修正）
-    if(!this.onGround) this.state='jump';
-    else this.state = Math.abs(this.vx)>1? 'run':'idle';
+    if(!this.onGround) this.state='jump'; else this.state = Math.abs(this.vx)>1? 'run':'idle';
     this.animT += dt;
-
-    // 攻撃①/②：前進しながら攻撃
+    // 攻撃
     if(input.edge.a1){ this._startA1(); return; }
     if(input.edge.a2){ this._startA2(); return; }
-
     world.updateTimer(dt);
   }
-
-  /* ■ 3段（微前進） */
   _startA1(){
     this.state='atk'; this.animT=0; this.comboStep=(this.comboStep%3)+1;
-    this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? Math.max(-40,Math.min(40,this.vx)) : 0;
     const seq=[ {kind:'prep',dur:0.06,frame:'k1prep',dx:0,power:0} ];
     let frame='k1a', power=10, dx=18;
     if(this.comboStep===2){ frame='k1b'; power=14; dx=22; }
@@ -459,18 +399,14 @@ class Player extends CharacterBase{
     seq.push({kind:'hit',dur:0.18,frame,dx,power, kbMul:1.05, kbuMul:1.05});
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
-
-  /* ▲ 2段（微前進） */
   _startA2(){
-    this.state='atk'; this.animT=0; this.actionAir=!this.onGround;
-    const seq=[
+    this.state='atk'; this.animT=0;
+    this._actionSeq=[
       {kind:'hit',dur:0.18,frame:'k2',dx:22,power:16, kbMul:1.1, kbuMul:1.1},
       {kind:'hit',dur:0.22,frame:'k1c',dx:24,power:34, kbMul:1.2, kbuMul:1.2}
     ];
-    this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
+    this._actionIndex=0; this._actionTime=0;
   }
-
-  /* ●（スピン）：最大1秒溜め対応 */
   _startSpin(charged){
     this.state='skill'; this.animT=0; const rounds=charged?4:2, power=charged?42:26;
     const kbm = charged?2.0:1.7, kbum = charged?1.6:1.4;
@@ -480,13 +416,11 @@ class Player extends CharacterBase{
     }}
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0; this.skillCDT=5.0;
   }
-
-  /* ◎（スキル2）出し切り+SA、キャンセル時kem除去 */
   _startSkill2(){
     if(this.skill2CDT>0) return;
     this.state='skill2'; this.animT=0; this.skill2CDT=10.0;
-    this._skill2T=0; this._shots=0; this._shotAcc=0; this.superArmor=true; this.saT=0.0; // 常時SA
-    this._kemList=[]; // 生成弾を捕捉
+    this._skill2T=0; this._shots=0; this._shotAcc=0; this.superArmor=true; // 常時SA
+    this._kemList=[];
     this._actionSeq=[
       {kind:'pose',dur:0.20,frame:'y1'},
       {kind:'pose',dur:0.20,frame:'y2'},
@@ -506,93 +440,48 @@ class Player extends CharacterBase{
       const spd = 240 + Math.random()*80;
       const px = this.x + Math.cos(angle)*20;
       const py = this.y - 10 + Math.sin(angle)*8;
-      const p = new Projectile(this.world, px, py, Math.cos(angle)>=0? 1:-1, img, 80);
-      p.vx = Math.cos(angle)*spd;
-      p.vy = Math.sin(angle)*spd*0.25;
-      p.w=28; p.h=20; p.life=0.6;
+      const p = new Projectile(this.world, px, py, Math.cos(angle)>=0? 1:-1, img, 80, this);
+      p.vx = Math.cos(angle)*spd; p.vy = Math.sin(angle)*spd*0.25; p.w=28; p.h=20; p.life=0.6;
       (this.world._skillBullets||(this.world._skillBullets=[])).push(p);
       this._kemList.push(p);
       this._shots++;
       this.effects.shake(0.06,3);
     }
   }
-
-  /* ULT：溜めつつ移動可、発射時SA貫通＆強ノックバック */
   _releaseULT(chargeSec){
     if(this.ultCDT>0) return;
     this.state='ult'; this.animT=0; this.ultCDT=30.0;
-    const seq=[ {kind:'pose',dur:0.10,frame:'ul2'}, {kind:'post',dur:0.20,frame:'ul2'} ];
-    this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
-
+    this._actionSeq=[ {kind:'pose',dur:0.10,frame:'ul2'}, {kind:'post',dur:0.20,frame:'ul2'} ];
+    this._actionIndex=0; this._actionTime=0;
     const img=this.world.assets.img(this.frames.ul3);
     const ox=this.face*30, oy=-12;
-    const big = new EnergyBall(this.world, this.x+ox, this.y+oy, this.face, img, 60, chargeSec, 6);
-    big.w = Math.max(big.w, 88); big.h=Math.max(big.h, 88); // 見た目拡大
-    big.vx *= 1.1; big.life += 0.3;
-    big.power += 40; // さらに威力底上げ
-    big.ignoreSA = true; // ★ SA貫通
+    const big = new EnergyBall(this.world, this.x+ox, this.y+oy, this.face, img, 60, chargeSec, 6, this);
+    big.w = Math.max(big.w, 88); big.h=Math.max(big.h, 88);
+    big.vx *= 1.1; big.life += 0.3; big.power += 40; big.ignoreSA = true;
     (this.world._skillBullets||(this.world._skillBullets=[])).push(big);
     this.effects.addSpark(this.x+ox, this.y-14, true);
   }
-
   _updateAction(dt,world){
-    // 技中の位置調整（前進dx）
-    if(this._actionSeq){
-      const cur=this._actionSeq[this._actionIndex];
-      if(cur && cur.dx){ this.x += this.face * cur.dx * dt * 12; }
-    }
-
-    // Skill2 emits
-    if(this.state==='skill2'){
-      const cur=this._actionSeq[this._actionIndex];
-      if(cur && cur.kind==='emit'){ this._skill2Emit(dt); }
-    }
-
-    // 物理
-    if(this.state==='ult' && this._actionSeq){ /* 溜めは終わってるので通常 */ }
+    if(this._actionSeq){ const cur=this._actionSeq[this._actionIndex]; if(cur && cur.dx){ this.x += this.face * cur.dx * dt * 12; } }
+    if(this.state==='skill2'){ const cur=this._actionSeq[this._actionIndex]; if(cur && cur.kind==='emit'){ this._skill2Emit(dt); } }
     this.updatePhysics(dt,world);
-
-    // 進行
-    if(this._actionSeq){
-      this._actionTime+=dt;
-      const cur=this._actionSeq[this._actionIndex];
-      if(cur && this._actionTime>=cur.dur){
-        this._actionIndex++; this._actionTime=0;
-        if(this._actionIndex>=this._actionSeq.length){
-          // Skill2の終了処理：SA解除
-          if(this.state==='skill2'){ this.superArmor=false; }
-          this.state='idle'; this._actionSeq=null;
-        }
-      }
-    }
+    if(this._actionSeq){ this._actionTime+=dt; const cur=this._actionSeq[this._actionIndex]; if(cur && this._actionTime>=cur.dur){ this._actionIndex++; this._actionTime=0; if(this._actionIndex>=this._actionSeq.length){ if(this.state==='skill2'){ this.superArmor=false; } this.state='idle'; this._actionSeq=null; } } }
     this.animT+=dt;
   }
-
   hurt(amount,dir,opts,effects){
-    // Skill2中でも被弾はするがSAでノックバック軽減、ただしULTのignoreSAは貫通
     if(this.state==='skill2'){ opts = {...(opts||{}), kbMul:0.08, kbuMul:0.08}; }
     const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
     if(hit){
       const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=this.hp; fill.style.width=Math.max(0,Math.min(100,(this.hp/this.maxhp)*100))+'%';
-      // Skill2がキャンセルされた時はkem弾を消す
-      if(this.state==='hurt' && this._kemList && this._kemList.length){
-        for(const p of this._kemList){ p.dead=true; }
-        this._kemList.length=0;
-      }
-      // コンボ等解除
-      this._actionSeq = null; this._actionIndex = 0; this._actionTime = 0;
-      this.comboStep = 0; this.comboGraceT = 0; this.actionAir=false; this.actionAirVx=0;
+      if(this.state==='hurt' && this._kemList && this._kemList.length){ for(const p of this._kemList){ p.dead=true; } this._kemList.length=0; }
+      this._actionSeq = null; this._actionIndex = 0; this._actionTime = 0; this.comboStep = 0; this.comboGraceT = 0;
       this.jumpsLeft=this.maxJumps;
     }
     return hit;
   }
-
   draw(ctx,world){
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
-    if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
     if(this.face<0 && !this.dead) ctx.scale(-1,1);
-
-    // 影（黒帯）対策：余計な半透明は使わない
     let img=null;
     if(this.state==='idle'){ img=this._imgByKey('idle',0); }
     else if(this.state==='run'){ const i=Math.floor(this.animT*10)%this.frames.walk.length; img=this._imgByKey('walk',i); }
@@ -600,31 +489,26 @@ class Player extends CharacterBase{
     else if((this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='ult') && this._actionSeq){
       const cur=this._actionSeq[this._actionIndex]; const key=cur.frame; img=this.world.assets.img(this.frames[key]?this._getFramePath(key,0):key);
     } else img=this._imgByKey('idle',0);
-
-    if(!img){ ctx.restore(); return; }
-    const scale=this.h/img.height, w=img.width*scale, h=this.h;
-    ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
-
-    // 溜め中のプレビュー
+    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); }
+    // ULT溜めプレビュー
     if(this.state!=='ult' && this.ultCDT<=0 && this.holdT.ult>0){
-      const ul1=this.world.assets.img(this.frames.ul1), ul2=this.world.assets.img(this.frames.ul2);
+      const ul2=this.world.assets.img(this.frames.ul2) || this.world.assets.img(this.frames.ul1);
       const t=this.holdT.ult; const mul = 0.6 + 0.4*(t/3);
       const hh=64*mul, ww=64*mul; const oxh = this.face*28, oyh=-18;
       if(ul2){ ctx.save(); ctx.translate(oxh, oyh); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.95; ctx.drawImage(ul2, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh)); ctx.restore(); }
-      else if(ul1){ ctx.save(); ctx.translate(oxh, oyh); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.95; ctx.drawImage(ul1, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh)); ctx.restore(); }
     }
     ctx.restore();
   }
 }
 
-/* ===== Enemies (登録済みキャラ) ===== */
-/* 既存：WaruMOB, IceRobo, IceRoboMini, Kozou, MOBGiant */
+/* ===== Enemies/Allies（team対応） ===== */
+/* 既存の各クラス：コンストラクタにteamを追加。updateは「ターゲット1体」を受け取る */
 class WaruMOB extends CharacterBase{
-  constructor(world,effects,assets,x=520){ super(52,60); this.world=world; this.effects=effects; this.assets=assets; this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1; this.maxhp=100; this.hp=100; this.cool=0; this._seq=null; this._idx=0; this._t=0; this.projectiles=[]; }
+  constructor(world,effects,assets,x=520,team='enemy'){ super(52,60,team); this.world=world; this.effects=effects; this.assets=assets; this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1; this.maxhp=100; this.hp=100; this.cool=0; this._seq=null; this._idx=0; this._t=0; this.projectiles=[]; }
   imgByKey(key){ const a=this.assets; const map={ idle:'teki1.png', walk1:'teki1.png', walk2:'teki2.png', prep1:'teki1.png', prep2:'teki3.png' }; return a.img(map[key]||'teki1.png'); }
-  addBullet(){ const img=this.assets.img('teki7.png'); const ox=this.face*28; const oy=-8; this.projectiles.push(new Projectile(this.world,this.x+ox,this.y+oy,this.face,img,10)); }
+  addBullet(){ const img=this.assets.img('teki7.png'); const ox=this.face*28; const oy=-8; this.projectiles.push(new Projectile(this.world,this.x+ox,this.y+oy,this.face,img,10,this)); }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.85}; }
-  update(dt,player){
+  update(dt,target){
     if(this.dead){ this.updatePhysics(dt,this.world); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
     for(const p of this.projectiles) p.update(dt); this.projectiles=this.projectiles.filter(p=>!p.dead);
@@ -634,7 +518,7 @@ class WaruMOB extends CharacterBase{
           if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; } } }
       this.animT+=dt; return;
     }
-    const dx=player.x - this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
+    const dx=target.x - this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
     if(this.cool<=0 && adx<=220){
       this._seq=[ {kind:'pose',dur:0.18,key:'prep1'}, {kind:'pose',dur:0.22,key:'prep2'} ];
       this.cool=1.6; this.state='atk'; this._idx=0; this._t=0; this.vx=0; this.updatePhysics(dt,this.world); this.animT+=dt; return;
@@ -645,7 +529,7 @@ class WaruMOB extends CharacterBase{
     this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle'); this.animT+=dt;
   }
   draw(ctx,world){
-    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
+    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0 && !this.dead) ctx.scale(-1,1);
     let img=null;
     if(this.state==='atk' && this._seq){ const cur=this._seq[this._idx]; img=this.imgByKey(cur.key||'prep2'); }
     else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.imgByKey(f? 'walk1':'walk2'); }
@@ -657,11 +541,11 @@ class WaruMOB extends CharacterBase{
 }
 
 class IceRobo extends CharacterBase{
-  constructor(world,effects,assets,x=900){ super(64,70); this.world=world; this.effects=effects; this.assets=assets; this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1; this.maxhp=1200; this.hp=1200; this.cool=0; this.recoverT=0; this.modeJump=false; this.modeSwapT=0; this._seq=null; this._idx=0; this._t=0; this.chargeT=0; this.energyOrbs=[]; }
+  constructor(world,effects,assets,x=900,team='enemy'){ super(64,70,team); this.world=world; this.effects=effects; this.assets=assets; this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1; this.maxhp=1200; this.hp=1200; this.cool=0; this.recoverT=0; this.modeJump=false; this.modeSwapT=0; this._seq=null; this._idx=0; this._t=0; this.chargeT=0; this.energyOrbs=[]; }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.9}; }
   img(key){ const map={ idle:'I1.png', walk1:'I1.png', walk2:'I2.png', jump1:'I1.png', jump2:'I2.png', jump3:'I3.png', charge:'I4.png', release:'I5.png', dashPrep:'I6.png', dashAtk:'I7.png', orb:'I8.png' }; return this.assets.img(map[key]||'I1.png'); }
-  addEnergyBall(chargeSec){ const img=this.img('orb'); const ox=this.face*30, oy=-10; this.energyOrbs.push(new EnergyBall(this.world,this.x+ox,this.y+oy,this.face,img,20,chargeSec,1)); }
-  update(dt, player){
+  addEnergyBall(chargeSec){ const img=this.img('orb'); const ox=this.face*30, oy=-10; this.energyOrbs.push(new EnergyBall(this.world,this.x+ox,this.y+oy,this.face,img,20,chargeSec,1,this)); }
+  update(dt, target){
     if(this.dead){ this.updatePhysics(dt,this.world); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
     if(this.recoverT>0){ this.recoverT=Math.max(0,this.recoverT-dt); }
@@ -670,7 +554,7 @@ class IceRobo extends CharacterBase{
     if(this.state==='charge'){
       this.superArmor = true; this.vx = 0; this.updatePhysics(dt,this.world);
       this._t += dt; this.chargeT = Math.min(2.0, this.chargeT + dt); this.animT += dt;
-      const adx = Math.abs(player.x - this.x);
+      const adx = Math.abs(target.x - this.x);
       if(adx < 180 && this.chargeT > 0.25){ this.releaseEnergy(); }
       else if(this.chargeT >= 2.0){ this.releaseEnergy(); }
       return;
@@ -683,7 +567,7 @@ class IceRobo extends CharacterBase{
     if(this.state==='atk' || this.state==='recover'){ this.updatePhysics(dt,this.world); this.animT += dt; if(this.state==='recover' && this.recoverT<=0){ this.state='idle'; } return; }
     if(this.state==='hurt'){ this.updatePhysics(dt,this.world); if(this.onGround) this.state='idle'; this.animT += dt; return; }
 
-    const dx = player.x - this.x; const adx = Math.abs(dx); this.face = dx>=0? 1 : -1;
+    const dx = target.x - this.x; const adx = Math.abs(dx); this.face = dx>=0? 1 : -1;
     this.modeSwapT -= dt; if(this.modeSwapT<=0 && this.onGround){ this.modeSwapT = 2.5 + Math.random()*2.0; this.modeJump = !this.modeJump; }
     const desireCharge = (adx>=160 && adx<=520);
     if(this.cool<=0 && this.recoverT<=0 && desireCharge){ if(this.onGround || Math.random()<0.25){ this.state='charge'; this._t=0; this.chargeT=0; this.vx=0; this.superArmor=true; this.cool=3.2; return; } }
@@ -710,12 +594,11 @@ class IceRobo extends CharacterBase{
   }
 }
 
-/* ミニの消失対策：画面外でもlifeで消さない、常にAI更新 */
 class IceRoboMini extends CharacterBase{
-  constructor(world,effects,assets,x=1200){ super(40,44); this.world=world; this.effects=effects; this.assets=assets; this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1; this.maxhp=50; this.hp=50; this.cool=0; this.state='idle'; this.animT=0; this.hopT=0; this.superArmor=false; }
+  constructor(world,effects,assets,x=1200,team='enemy'){ super(40,44,team); this.world=world; this.effects=effects; this.assets=assets; this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1; this.maxhp=50; this.hp=50; this.cool=0; this.state='idle'; this.animT=0; this.hopT=0; this.superArmor=false; }
   img(key){ const map={ idle:'IC.png', move:'IC2.png', atk1:'IC3.png', sp:'IC4.png' }; return this.assets.img(map[key]||'IC.png'); }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.9}; }
-  update(dt, player){
+  update(dt, target){
     if(this.dead){ this.updatePhysics(dt,this.world); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
     if(this.state==='sp'){
@@ -731,7 +614,7 @@ class IceRoboMini extends CharacterBase{
       if(this.hopT>=dur){ this.state='idle'; this.hopT=0; this.vx=0; this.cool=0.9; }
       this.animT+=dt; return;
     }
-    const dx=player.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
+    const dx=target.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
     this.vx = (dx>0? 70 : -70); this.hopT+=dt;
     if(this.onGround && this.hopT>0.35){ this.vy=-JUMP_V*0.35; this.hopT=0; }
     if(this.cool<=0){
@@ -750,28 +633,17 @@ class IceRoboMini extends CharacterBase{
 }
 
 class Kozou extends CharacterBase{
-  constructor(world,effects,assets,x=1400){ super(50,58); this.world=world; this.effects=effects; this.assets=assets; this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1; this.maxhp=100; this.hp=100; this.cool=0; this.state='idle'; this.animT=0; this.projectiles=[]; this.guard=false; this.guardHits=0; this._thrown=false; }
+  constructor(world,effects,assets,x=1400,team='enemy'){ super(50,58,team); this.world=world; this.effects=effects; this.assets=assets; this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1; this.maxhp=100; this.hp=100; this.cool=0; this.state='idle'; this.animT=0; this.projectiles=[]; this.guard=false; this.guardHits=0; this._thrown=false; }
   img(key){ const map={ idle:'SL.png', w1:'SL2.png', w2:'SL3.png', prep:'SL4.png', throw:'SL5.png', guard:'SL6.png', counter:'SL7.png', stone:'SL8.png'}; return this.assets.img(map[key]||'SL.png'); }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.9}; }
-  update(dt,player){
+  update(dt,target){
     if(this.dead){ this.updatePhysics(dt,this.world); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
     for(const p of this.projectiles) p.update(dt); this.projectiles=this.projectiles.filter(p=>!p.dead);
-
-    if(this.state==='counter'){
-      this.updatePhysics(dt,this.world); this.animT+=dt; const dur=0.28;
-      if(this.animT>=dur){ this.state='idle'; this.vx=0; this.cool=1.2; this.guard=false; this.guardHits=0; }
-      return;
-    }
-    if(this.state==='throw'){
-      this.updatePhysics(dt,this.world); this.animT+=dt;
-      if(this.animT>0.22 && !this._thrown){ this._thrown=true; const img=this.img('stone'); const ox=this.face*14, oy=-18; this.projectiles.push(new Projectile(this.world, this.x+ox, this.y+oy, this.face, img, 5)); }
-      if(this.animT>0.4){ this.state='idle'; this.vx=0; this.cool=1.4; this._thrown=false; }
-      return;
-    }
-    if(this.guard){ this.vx=0; this.updatePhysics(dt,this.world); this.animT+=dt; const dx=player.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1; if(adx<120){ this.vx = (dx>0? -80 : 80); } return; }
-
-    const dx=player.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
+    if(this.state==='counter'){ this.updatePhysics(dt,this.world); this.animT+=dt; if(this.animT>=0.28){ this.state='idle'; this.vx=0; this.cool=1.2; this.guard=false; this.guardHits=0; } return; }
+    if(this.state==='throw'){ this.updatePhysics(dt,this.world); this.animT+=dt; if(this.animT>0.22 && !this._thrown){ this._thrown=true; const img=this.img('stone'); const ox=this.face*14, oy=-18; this.projectiles.push(new Projectile(this.world, this.x+ox, this.y+oy, this.face, img, 5, this)); } if(this.animT>0.4){ this.state='idle'; this.vx=0; this.cool=1.4; this._thrown=false; } return; }
+    if(this.guard){ this.vx=0; this.updatePhysics(dt,this.world); this.animT+=dt; const dx=target.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1; if(adx<120){ this.vx = (dx>0? -80 : 80); } return; }
+    const dx=target.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
     if(adx>140){ this.vx = (dx>0? 70 : -70); } else this.vx=0;
     if(this.cool<=0){
       if(adx>120 && Math.random()<0.5){ this.state='throw'; this.animT=0; this.vx=0; }
@@ -793,10 +665,9 @@ class Kozou extends CharacterBase{
   }
 }
 
-/* 巨神：サイズ拡大＆ジャンプ/エネルギー確実使用 */
 class MOBGiant extends CharacterBase{
-  constructor(world,effects,assets,x=1650){
-    super(100,120); /* ← サイズアップ */
+  constructor(world,effects,assets,x=1650,team='enemy'){
+    super(100,120,team);
     this.world=world; this.effects=effects; this.assets=assets;
     this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
     this.maxhp=2200; this.hp=2200; this.superArmor=false; this.cool=0; this.recoverT=0; this.modeJump=false; this.modeSwapT=0; this.chargeT=0; this.energyOrbs=[]; this.postLagT=0; this.lowFreqBias=0.0;
@@ -804,18 +675,17 @@ class MOBGiant extends CharacterBase{
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.68, h:this.h*0.95}; }
   img(key){ const map={ idle:'P1.png', w1:'P1.png', w2:'P2.png', j1:'P1.png', j2:'P2.png', j3:'P3.png', dashPrep:'P4.png', dashAtk:'P5.png', charge:'P6.png', release:'P7.png', orb:'P10.png' }; return this.assets.img(map[key]||'P1.png'); }
   hurt(amount, dir, opts={}, effects){ const activeSA = this.superArmor || Math.random()<0.5; const o={...opts}; if(!o.ignoreSA && activeSA){ o.kbMul=0.12; o.kbuMul=0.1; } return super.hurt(amount, dir, o, effects); }
-  addEnergyPair(chargeSec){ const img=this.img('orb'); const ox=this.face*34, oy=-16; this.energyOrbs.push(new EnergyBall(this.world,this.x+ox,this.y+oy, this.face,  img, 30, chargeSec, 2)); this.energyOrbs.push(new EnergyBall(this.world,this.x-ox,this.y+oy,-this.face, img, 30, chargeSec, 2)); }
-  update(dt, player){
+  addEnergyPair(chargeSec){ const img=this.img('orb'); const ox=this.face*34, oy=-16; this.energyOrbs.push(new EnergyBall(this.world,this.x+ox,this.y+oy, this.face,  img, 30, chargeSec, 2, this)); this.energyOrbs.push(new EnergyBall(this.world,this.x-ox,this.y+oy,-this.face, img, 30, chargeSec, 2, this)); }
+  update(dt, target){
     if(this.dead){ this.updatePhysics(dt,this.world); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
     if(this.recoverT>0){ this.recoverT=Math.max(0,this.recoverT-dt); }
     if(this.postLagT>0){ this.postLagT=Math.max(0,this.postLagT-dt); }
     for(const p of this.energyOrbs) p.update(dt); this.energyOrbs=this.energyOrbs.filter(p=>!p.dead);
-
     if(this.state==='charge'){
       this.superArmor = true; this.vx=0; this.updatePhysics(dt,this.world);
       this.chargeT=Math.min(2.0, this.chargeT + dt);
-      const adx=Math.abs(player.x - this.x);
+      const adx=Math.abs(target.x - this.x);
       if(adx<200 && this.chargeT>0.25){ this.releaseEnergy(); }
       else if(this.chargeT>=2.0){ this.releaseEnergy(); }
       this.animT+=dt; return;
@@ -827,19 +697,15 @@ class MOBGiant extends CharacterBase{
     }
     if(this.state==='post'){ this.updatePhysics(dt,this.world); this.animT+=dt; if(this.postLagT<=0){ this.state='idle'; } return; }
     if(this.state==='hurt'){ this.updatePhysics(dt,this.world); if(this.onGround) this.state='idle'; this.animT+=dt; return; }
-
-    const dx = player.x - this.x; const adx = Math.abs(dx); this.face = dx>=0?1:-1;
+    const dx = target.x - this.x; const adx = Math.abs(dx); this.face = dx>=0?1:-1;
     this.modeSwapT -= dt; if(this.modeSwapT<=0 && this.onGround){ this.modeSwapT = 2.2 + Math.random()*1.6; this.modeJump = !this.modeJump; }
     this.lowFreqBias = clamp(this.lowFreqBias + (Math.random()*0.2-0.1), 0.0, 1.4);
-
     const desireCharge = (adx>=220 && adx<=560);
     if(this.cool<=0 && this.recoverT<=0 && this.postLagT<=0 && desireCharge){ this.state='charge'; this.chargeT=0; this.superArmor=true; this.vx=0; this.cool = 3.2 + this.lowFreqBias; this.animT=0; return; }
     if(this.cool<=0 && this.recoverT<=0 && adx<240){ this.state='dash'; this.animT=0; this.superArmor=true; this.vx = (this.face>0? 540 : -540); this.cool = 2.8 + this.lowFreqBias; return; }
-
     const walk=70, run=MOVE;
     if(adx>140){ const sp = this.modeJump? run : walk; this.vx = (dx>0? sp : -sp); if(this.modeJump && this.onGround){ this.vy = -JUMP_V*0.95; } }
     else { this.vx=0; }
-
     this.updatePhysics(dt,this.world);
     this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1? 'run':'idle'); this.animT+=dt;
   }
@@ -859,61 +725,47 @@ class MOBGiant extends CharacterBase{
   }
 }
 
-/* 新規: MOBスクリュー（B1..B14） */
+/* MOBスクリュー */
 class MOBSCREW extends CharacterBase{
-  constructor(world,effects,assets,x=520){
-    super(60,68); this.world=world; this.effects=effects; this.assets=assets; this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
-    this.maxhp=1800; this.hp=1800;
-    this.superArmor=false; this.cool=0; this._seq=null; this._idx=0; this._t=0;
+  constructor(world,effects,assets,x=520,team='enemy'){
+    super(60,68,team); this.world=world; this.effects=effects; this.assets=assets; this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1; this.maxhp=1800; this.hp=1800; this.superArmor=false; this.cool=0; this._seq=null; this._idx=0; this._t=0;
   }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.66, h:this.h*0.9}; }
   img(key){ const map={ idle:'B1.png', w1:'B2.png', w2:'B3.png', j1:'B3.png', j2:'B4.png', a1:'B5.png', a1b:'B6.png', a2:'B7.png', sk1prep:'B8.png', sk1a:'B9.png', sk1b:'B10.png', sk1c:'B11.png', ult1:'B12.png', ult2:'B13.png', ult3:'B14.png' }; return this.assets.img(map[key]||'B1.png'); }
-  update(dt, player){
+  update(dt, target){
     if(this.dead){ this.updatePhysics(dt,this.world); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
-
     if(this.state==='atk' && this._seq){
       this._t+=dt; const cur=this._seq[this._idx]; if(this._t>=cur.dur){ this._idx++; this._t=0; if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; this.superArmor=false; } }
-      // 前進
       this.x += this.face * (cur.fx||0) * dt;
       this.updatePhysics(dt,this.world); this.animT+=dt; return;
     }
-
-    const dx=player.x - this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
-    // 30%確率でSA
+    const dx=target.x - this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
     this.superArmor = Math.random()<0.3;
-
-    if(this.cool<=0 && adx<160){ // 通常連撃
+    if(this.cool<=0 && adx<160){
       this._seq=[
         {img:'a1', dur:0.16, dmg:30, kb:1.0, fx:120},
         {img:'a1b', dur:0.16, dmg:30, kb:1.0, fx:120},
         {img:'a2', dur:0.20, dmg:35, kb:1.2, fx:140}
-      ];
-      this._idx=0; this._t=0; this.state='atk'; this.animT=0; this.cool=1.4; return;
+      ]; this._idx=0; this._t=0; this.state='atk'; this.animT=0; this.cool=1.4; return;
     }
-    if(this.cool<=0 && adx>=160 && adx<=360){ // スキル①
+    if(this.cool<=0 && adx>=160 && adx<=360){
       this._seq=[
         {img:'sk1prep', dur:0.5, fx:0},
         {img:'sk1a', dur:0.18, dmg:50, kb:0.9, fx:460},
         {img:'sk1b', dur:0.18, dmg:20, kb:1.0, fx:360},
         {img:'sk1c', dur:0.22, dmg:50, kb:1.4, fx:260}
-      ];
-      this.superArmor=true;
-      this._idx=0; this._t=0; this.state='atk'; this.animT=0; this.cool=5.0; return;
+      ]; this.superArmor=true; this._idx=0; this._t=0; this.state='atk'; this.animT=0; this.cool=5.0; return;
     }
-    if(this.cool<=0 && adx<=280 && Math.random()<0.25){ // ULT
+    if(this.cool<=0 && adx<=280 && Math.random()<0.25){
       this._seq=[
         {img:'ult1', dur:0.5, fx:0},
         {img:'ult2', dur:0.24, fx:560, dmg:0},
         {img:'ult3', dur:0.26, fx:0, dmg:120, kb:2.0}
-      ];
-      this.superArmor=true;
-      this._idx=0; this._t=0; this.state='atk'; this.animT=0; this.cool=20.0; return;
+      ]; this.superArmor=true; this._idx=0; this._t=0; this.state='atk'; this.animT=0; this.cool=20.0; return;
     }
-
-    // ゆっくり目の移動
     const sp = 70; if(adx>140){ this.vx = (dx>0? sp : -sp); } else this.vx = 0;
-    if(adx>180 && this.onGround && Math.random()<0.1){ this.vy = -JUMP_V*0.8; } // ジャンプ移動
+    if(adx>180 && this.onGround && Math.random()<0.1){ this.vy = -JUMP_V*0.8; }
     this.updatePhysics(dt,this.world);
     this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle'); this.animT+=dt;
   }
@@ -929,58 +781,37 @@ class MOBSCREW extends CharacterBase{
   }
 }
 
-/* 新規: MOBガブキング（t1..t11、サイズ調整） */
+/* ガブキング */
 class GABKING extends CharacterBase{
-  constructor(world,effects,assets,x=520){
-    super(84,96); this.world=world; this.effects=effects; this.assets=assets; this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
-    this.maxhp=2500; this.hp=2500; this.superArmor=false; this.cool=0; this._seq=null; this._idx=0; this._t=0;
-  }
+  constructor(world,effects,assets,x=520,team='enemy'){ super(84,96,team); this.world=world; this.effects=effects; this.assets=assets; this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1; this.maxhp=2500; this.hp=2500; this.superArmor=false; this.cool=0; this._seq=null; this._idx=0; this._t=0; }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.7, h:this.h*0.95}; }
   img(key){ const map={ idle:'t1.png', w1:'t2.png', w2:'t3.png', a1:'t4.png', a2:'t5.png', prep:'t6.png', t7:'t7.png', t8:'t8.png', t9:'t9.png', t10:'t10.png', t11:'t11.png' }; return this.assets.img(map[key]||'t1.png'); }
-  update(dt, player){
+  update(dt, target){
     if(this.dead){ this.updatePhysics(dt,this.world); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
-
     if(this.state==='atk' && this._seq){
       this._t+=dt; const cur=this._seq[this._idx]; if(this._t>=cur.dur){ this._idx++; this._t=0; if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; this.superArmor=false; } }
       this.x += this.face * (cur.fx||0) * dt;
       this.updatePhysics(dt,this.world); this.animT+=dt; return;
     }
-
-    const dx=player.x - this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
-    this.superArmor = Math.random()<0.5; // 50%
-
-    if(this.cool<=0 && adx<180){ // 攻撃① 2連
-      this._seq=[
-        {img:'a1', dur:0.12, dmg:30, kb:1.2, fx:240},
-        {img:'a2', dur:0.16, dmg:30, kb:1.2, fx:260}
-      ];
+    const dx=target.x - this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
+    this.superArmor = Math.random()<0.5;
+    if(this.cool<=0 && adx<180){
+      this._seq=[ {img:'a1', dur:0.12, dmg:30, kb:1.2, fx:240}, {img:'a2', dur:0.16, dmg:30, kb:1.2, fx:260} ];
       this._idx=0; this._t=0; this.state='atk'; this.animT=0; this.cool=1.6; return;
     }
-    if(this.cool<=0 && adx<=360 && Math.random()<0.45){ // スキル①
-      this._seq=[
-        {img:'prep', dur:0.5, fx:0},
-        {img:'prep', dur:0.26, dmg:70, kb:1.6, fx:620}
-      ];
+    if(this.cool<=0 && adx<=360 && Math.random()<0.45){
+      this._seq=[ {img:'prep', dur:0.5, fx:0}, {img:'prep', dur:0.26, dmg:70, kb:1.6, fx:620} ];
       this.superArmor=true; this._idx=0; this._t=0; this.state='atk'; this.animT=0; this.cool=6.0; return;
     }
-    if(this.cool<=0 && adx<=420 && Math.random()<0.4){ // スキル②
-      this._seq=[
-        {img:'prep', dur:0.5, fx:0},
-        {img:'prep', dur:0.26, dmg:0, fx:620},
-        {img:'t8', dur:0.18, dmg:100, kb:1.4, fx:160, lift:1}
-      ];
+    if(this.cool<=0 && adx<=420 && Math.random()<0.4){
+      this._seq=[ {img:'prep', dur:0.5, fx:0}, {img:'prep', dur:0.26, dmg:0, fx:620}, {img:'t8', dur:0.18, dmg:100, kb:1.4, fx:160, lift:1} ];
       this.superArmor=true; this._idx=0; this._t=0; this.state='atk'; this.animT=0; this.cool=8.0; return;
     }
-    if(this.cool<=0 && adx<=380 && Math.random()<0.35){ // ULT
-      this._seq=[
-        {img:'t10', dur:0.5, fx:0},
-        {img:'t7', dur:0.18, dmg:50, kb:1.0, fx:0}, // ポーズにも判定
-        {img:'t11', dur:0.22, dmg:130, kb:2.2, fx:0}
-      ];
+    if(this.cool<=0 && adx<=380 && Math.random()<0.35){
+      this._seq=[ {img:'t10', dur:0.5, fx:0}, {img:'t7', dur:0.18, dmg:50, kb:1.0, fx:0}, {img:'t11', dur:0.22, dmg:130, kb:2.2, fx:0} ];
       this.superArmor=true; this._idx=0; this._t=0; this.state='atk'; this.animT=0; this.cool=18.0; return;
     }
-
     const sp=70; if(adx>160){ this.vx=(dx>0? sp:-sp); } else this.vx=0;
     this.updatePhysics(dt,this.world);
     this.state = !this.onGround? 'jump' : (Math.abs(this.vx)>1? 'run':'idle'); this.animT+=dt;
@@ -1000,14 +831,14 @@ class GABKING extends CharacterBase{
 class World{
   constructor(assets, canvas, effects){
     this.assets=assets; this.effects=effects; this.canvas=canvas;
-    this.ctx=canvas.getContext('2d',{alpha:false}); // 黒帯対策：不透明
+    this.ctx=canvas.getContext('2d',{alpha:false});
     this.ctx.imageSmoothingEnabled=false;
     this.gameW=canvas.width; this.gameH=canvas.height; this.camX=0; this.camY=0; this.time=0; this._timerAcc=0;
     const r=this.canvas.getBoundingClientRect(); this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
     this.bgImg = this.assets.has('MOBA.png') ? this.assets.img('MOBA.png') : (this.assets.has('back1.png')? this.assets.img('back1.png'):null);
     if(this.bgImg){ this.bgScale = this.gameH / this.bgImg.height; this.bgDW = this.bgImg.width*this.bgScale; this.bgDH = this.bgImg.height*this.bgScale; }
     this.bgSpeed=1.0;
-    this.levelW = 2200; /* ステージ幅（壁判定用） */
+    this.levelW = 2200;
   }
   resize(){ const r=this.canvas.getBoundingClientRect(); this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH; }
   updateCam(p){ const offs=this.effects.getCamOffset(); const target=p.x - this.gameW*0.35 + offs.x; this.camX=clamp(target, 0, Math.max(0,this.levelW-this.gameW)); this.camY=offs.y; }
@@ -1024,7 +855,6 @@ class World{
       for(let x=startX; x<=endX; x+=step){ ctx.drawImage(this.bgImg, 0,0,this.bgImg.width,this.bgImg.height, Math.round(x - this.camX*this.bgSpeed), 0, w, h); }
     } else { ctx.fillStyle='#0a0f18'; ctx.fillRect(0,0,this.gameW,this.gameH); }
     ctx.fillStyle='#0b0f17'; const yTop=Math.floor(GROUND_TOP_Y); ctx.fillRect(0,yTop-1,this.gameW,1);
-
     if(this._skillBullets){ for(const p of this._skillBullets) p.draw(ctx); }
     for(const a of allies) a.draw(ctx,this);
     for(const e of enemies) e.draw(ctx,this);
@@ -1033,7 +863,7 @@ class World{
   }
 }
 
-/* ===== Game ===== */
+/* ===== Game Loop ===== */
 class Game{
   constructor(){
     this.assets=new Assets(); this.canvas=document.getElementById('game'); this.input=new Input(); this.effects=new Effects();
@@ -1054,9 +884,7 @@ class Game{
       'P1.png','P2.png','P3.png','P4.png','P5.png','P6.png','P7.png','P10.png',
       'Y1.png','Y2.png','Y3.png','Y4.png',
       'UL1.PNG','UL2.PNG','UL3.png',
-      /* MOBスクリュー */
       'B1.png','B2.png','B3.png','B4.png','B5.png','B6.png','B7.png','B8.png','B9.png','B10.png','B11.png','B12.png','B13.png','B14.png',
-      /* ガブキング */
       't1.png','t2.png','t3.png','t4.png','t5.png','t6.png','t7.png','t8.png','t9.png','t10.png','t11.png'
     ];
     await this.assets.load(imgs);
@@ -1064,128 +892,74 @@ class Game{
     this.player=new Player(this.assets,this.world,this.effects);
     this.player.x=140; this.player.y=Math.floor(GROUND_TOP_Y)-this.player.h/2+FOOT_PAD;
 
-    // Ally / Enemy spawn
-    const spawnStart = 520;
-    let off = 0;
-    this.allies = roster.allies.map((name,i)=> this._instantiate(name, 300 + i*80));
-    this.enemies = roster.enemies.map((name,i)=> this._instantiate(name, spawnStart + (i*140)));
+    // Ally / Enemy spawn（team分け）
+    this.allies = roster.allies.map((name,i)=> this._instantiate(name, 300 + i*80, 'ally'));
+    this.enemies = roster.enemies.map((name,i)=> this._instantiate(name, 520 + (i*140), 'enemy'));
 
-    this._wireHUD();
     this.lastT=now();
     requestAnimationFrame(()=>this.loop());
   }
-  _instantiate(name, x){
+  _instantiate(name, x, team){
     const w=this.world, e=this.effects, a=this.assets;
     switch(name){
-      case 'WaruMOB': { const o=new WaruMOB(w,e,a,x); return o; }
-      case 'IceRobo': { const o=new IceRobo(w,e,a,x); return o; }
-      case 'IceRoboMini': { const o=new IceRoboMini(w,e,a,x); return o; }
-      case 'Kozou': { const o=new Kozou(w,e,a,x); return o; }
-      case 'MOBGiant': { const o=new MOBGiant(w,e,a,x); return o; }
-      case 'MOBSCREW': { const o=new MOBSCREW(w,e,a,x); return o; }
-      case 'GABKING': { const o=new GABKING(w,e,a,x); return o; }
-      default: { const o=new IceRoboMini(w,e,a,x); return o; }
+      case 'WaruMOB': return new WaruMOB(w,e,a,x,team);
+      case 'IceRobo': return new IceRobo(w,e,a,x,team);
+      case 'IceRoboMini': return new IceRoboMini(w,e,a,x,team);
+      case 'Kozou': return new Kozou(w,e,a,x,team);
+      case 'MOBGiant': return new MOBGiant(w,e,a,x,team);
+      case 'MOBSCREW': return new MOBSCREW(w,e,a,x,team);
+      case 'GABKING': return new GABKING(w,e,a,x,team);
+      default: return new IceRoboMini(w,e,a,x,team);
     }
   }
-  _wireHUD(){
-    // nothing special for now
+  _nearest(from, candidates){
+    let best=null, bd=1e9;
+    for(const c of candidates){ if(!c || c.dead) continue; const d=Math.abs(c.x - from.x); if(d<bd){ bd=d; best=c; } }
+    return best;
   }
+  _updateHPUI(){ const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=this.player.hp; fill.style.width=Math.max(0,Math.min(100,(this.player.hp/this.player.maxhp)*100))+'%'; }
   loop(){
     const t=now(); let dt=(t-this.lastT)/1000; if(dt>0.05) dt=0.05; this.lastT=t;
     if(this.effects.hitstop>0){ this.effects.update(dt); this.world.updateCam(this.player); this.world.draw(this.player,this.allies,this.enemies); requestAnimationFrame(()=>this.loop()); return; }
 
-    const input=this.input;
-    this.player.update(dt,input,this.world,this.enemies);
+    // ターゲット決定
+    const enemyTargetPool = [this.player, ...this.allies];
+    const allyTargetPool = this.enemies;
+
+    // Player更新（相手は敵のみ）
+    this.player.update(dt,this.input,this.world,this.enemies);
+
+    // Allies更新（最も近い敵を狙う。敵がいなければプレイヤーに追従）
     for(const a of this.allies){
-      // シンプルAI：プレイヤーに追従
-      const dx = this.player.x - a.x; a.face = dx>=0?1:-1;
-      a.vx = clamp(dx, -140, 140);
-      if(Math.abs(dx)>240 && a.onGround) a.vy = -JUMP_V*0.6;
-      a.update(dt, this.player);
+      const tgt = this._nearest(a, allyTargetPool) || this.player;
+      a.update(dt, tgt);
     }
 
-    // Enemies update & interactions
+    // Enemies更新（プレイヤー＋味方の中から最寄り）
     for(const e of this.enemies){
-      e.update(dt,this.player);
-
-      // それぞれの弾とプレイヤーの当たり
-      // WaruMOB
-      if(e instanceof WaruMOB){
-        for(const p of e.projectiles){
-          if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
-            p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0, kbMul:0.55, kbuMul:0.5}, this.effects);
-            if(hit) this._updateHPUI();
-          }
-        }
-      }
-      // IceRobo
-      if(e instanceof IceRobo){
-        if(e.state==='dash'){
-          const hb = {x:e.x + e.face*20, y:e.y, w:e.w*0.9, h:e.h*0.9};
-          if(this.player.invulnT<=0 && rectsOverlap(hb, this.player.aabb())){
-            const hit=this.player.hurt(30, e.face, {lift:1, kbMul:1.1, kbuMul:1.1}, this.effects);
-            if(hit) this._updateHPUI();
-          }
-        }
-        for(const p of e.energyOrbs){
-          if(!p.dead && rectsOverlap(p.aabb(), this.player.aabb())){
-            p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0.2, kbMul:0.8, kbuMul:0.8}, this.effects);
-            if(hit) this._updateHPUI();
-          }
-        }
-      }
-      // Kozou
-      if(e instanceof Kozou){
-        for(const p of e.projectiles){
-          if(!p.dead && rectsOverlap(p.aabb(), this.player.aabb())){
-            p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0.15, kbMul:0.7, kbuMul:0.7}, this.effects);
-            if(hit) this._updateHPUI();
-          }
-        }
-      }
-      // MOBGiant orbs
-      if(e instanceof MOBGiant){
-        if(e.state==='dash'){
-          const hb = {x:e.x + e.face*26, y:e.y, w: e.w*0.95, h: e.h*0.95};
-          if(this.player.invulnT<=0 && rectsOverlap(hb, this.player.aabb())){
-            const hit=this.player.hurt(40, e.face, {lift:1, kbMul:1.15, kbuMul:1.15}, this.effects);
-            if(hit) this._updateHPUI();
-          }
-        }
-        for(const p of e.energyOrbs){
-          if(!p.dead && rectsOverlap(p.aabb(), this.player.aabb())){
-            p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0.25, kbMul:0.85, kbuMul:0.85}, this.effects);
-            if(hit) this._updateHPUI();
-          }
-        }
-      }
-
-      // 当たり合い押し出し
-      if(e.dead || this.player.dead) continue;
-      const a=this.player.aabb(), b=e.aabb();
-      if(!rectsOverlap(a,b)) continue;
-      const dx = (this.player.x - e.x), dy=(this.player.y - e.y);
-      const overlapX = (a.w + b.w)/2 - Math.abs(dx);
-      const overlapY = (a.h + b.h)/2 - Math.abs(dy);
-      if(overlapY < overlapX){
-        const dirY = dy>=0? 1 : -1;
-        this.player.y += dirY * overlapY * 0.9;
-        e.y         -= dirY * overlapY * 0.1;
-        if(dirY<0){ this.player.vy = Math.max(this.player.vy, 0); } else { this.player.vy = Math.min(this.player.vy, 0); }
-      } else {
-        const dirX = dx>=0? 1 : -1;
-        this.player.x += dirX * overlapX * 0.6;
-        e.x           -= dirX * overlapX * 0.4;
-        this.player.vx += dirX * 20;
-        e.vx          -= dirX * 20;
-      }
+      const tgt = this._nearest(e, enemyTargetPool) || this.player;
+      e.update(dt, tgt);
     }
 
-    // Skill bullets (player)
+    // 弾の衝突：すべての弾を集約
+    const allChars=[this.player, ...this.allies, ...this.enemies];
+
+    // 1) 敵側の弾 → プレイヤー/味方
+    for(const ch of this.enemies){
+      if(ch.projectiles){ for(const p of ch.projectiles){ if(p.dead) continue; for(const tgt of allChars){ if(!tgt || tgt.dead || tgt.team===ch.team) continue; if(rectsOverlap(p.aabb(), tgt.aabb())){ p.dead=true; const hit=tgt.hurt(p.power, p.dir, {lift:0.2,kbMul:0.8,kbuMul:0.8}, this.effects); if(hit && tgt===this.player) this._updateHPUI(); } } } }
+      if(ch.energyOrbs){ for(const p of ch.energyOrbs){ if(p.dead) continue; for(const tgt of allChars){ if(!tgt || tgt.dead || tgt.team===ch.team) continue; if(rectsOverlap(p.aabb(), tgt.aabb())){ p.dead=true; const hit=tgt.hurt(p.power, p.dir, {lift:0.25,kbMul:0.85,kbuMul:0.85}, this.effects); if(hit && tgt===this.player) this._updateHPUI(); } } } }
+    }
+
+    // 2) 味方側の弾 → 敵
+    for(const ch of this.allies){
+      if(ch.projectiles){ for(const p of ch.projectiles){ if(p.dead) continue; for(const tgt of this.enemies){ if(!tgt || tgt.dead) continue; if(rectsOverlap(p.aabb(), tgt.aabb())){ p.dead=true; tgt.hurt(p.power, p.dir, {lift:0.2,kbMul:0.9,kbuMul:0.9}, this.effects); } } } }
+      if(ch.energyOrbs){ for(const p of ch.energyOrbs){ if(p.dead) continue; for(const tgt of this.enemies){ if(!tgt || tgt.dead) continue; if(rectsOverlap(p.aabb(), tgt.aabb())){ p.dead=true; tgt.hurt(p.power, p.dir, {lift:0.25,kbMul:0.9,kbuMul:0.9}, this.effects); } } } }
+    }
+
+    // 3) プレイヤー（スキル弾） → 敵のみ
     if(this.world._skillBullets){
       for(const p of this.world._skillBullets){
         p.update(dt);
-        // 弾→敵
         for(const e of this.enemies){
           if(!p.dead && !e.dead && rectsOverlap(p.aabb(), e.aabb())){
             p.dead=true;
@@ -1198,14 +972,25 @@ class Game{
       this.world._skillBullets = this.world._skillBullets.filter(p=>!p.dead && p.life>0);
     }
 
-    // Allies/enemies alive
+    // 体当たり押し出し（敵↔プレイヤーのみ軽く）
+    for(const e of this.enemies){
+      if(e.dead || this.player.dead) continue;
+      const a=this.player.aabb(), b=e.aabb();
+      if(!rectsOverlap(a,b)) continue;
+      const dx = (this.player.x - e.x), dy=(this.player.y - e.y);
+      const overlapX = (a.w + b.w)/2 - Math.abs(dx);
+      const overlapY = (a.h + b.h)/2 - Math.abs(dy);
+      if(overlapY < overlapX){ const dirY = dy>=0? 1 : -1; this.player.y += dirY * overlapY * 0.9; e.y -= dirY * overlapY * 0.1; if(dirY<0){ this.player.vy = Math.max(this.player.vy, 0); } else { this.player.vy = Math.min(this.player.vy, 0); } }
+      else { const dirX = dx>=0? 1 : -1; this.player.x += dirX * overlapX * 0.6; e.x -= dirX * overlapX * 0.4; this.player.vx += dirX * 20; e.vx -= dirX * 20; }
+    }
+
+    // remove dead fades
     this.enemies=this.enemies.filter(e=>!(e.dead && e.fade<=0));
     this.allies=this.allies.filter(a=>!(a.dead && a.fade<=0));
 
     this.effects.update(dt); this.world.updateCam(this.player); this.world.updateTimer(dt); this.world.draw(this.player,this.allies,this.enemies);
     requestAnimationFrame(()=>this.loop());
   }
-  _updateHPUI(){ const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=this.player.hp; fill.style.width=Math.max(0,Math.min(100,(this.player.hp/this.player.maxhp)*100))+'%'; }
 }
 
 /* ===== Selection UI ===== */
@@ -1237,46 +1022,36 @@ function buildSelectList(el, catalog, max, countEl){
     div.appendChild(input); div.appendChild(span); el.appendChild(div);
   }
   const update=()=>{
-    const chosen=[...el.querySelectorAll('input:checked')].map(i=>i.value);
-    // しきい値
-    if(chosen.length>max){
-      const last=[...el.querySelectorAll('input:checked')].pop(); last.checked=false;
-    }
+    const chosen=[...el.querySelectorAll('input:checked')];
+    if(chosen.length>max){ chosen[chosen.length-1].checked=false; }
     const n=[...el.querySelectorAll('input:checked')].length;
     countEl.textContent=`${n} / ${max}`;
   };
   el.addEventListener('change',update);
   update();
 }
-
 function getSelections(allyEl, enemyEl){
   const allies=[...allyEl.querySelectorAll('input:checked')].map(i=>i.value).slice(0,3);
   const enemies=[...enemyEl.querySelectorAll('input:checked')].map(i=>i.value).slice(0,10);
   return {allies,enemies};
 }
-
-/* ===== Bootstrap ===== */
 const allyList=document.getElementById('allyList');
 const enemyList=document.getElementById('enemyList');
 const allyCount=document.getElementById('allyCount');
 const enemyCount=document.getElementById('enemyCount');
 buildSelectList(allyList, ALLY_CATALOG, 3, allyCount);
 buildSelectList(enemyList, ENEMY_CATALOG, 10, enemyCount);
-
 document.getElementById('btnClear').addEventListener('click',()=>{
   allyList.querySelectorAll('input').forEach(i=>i.checked=false);
   enemyList.querySelectorAll('input').forEach(i=>i.checked=false);
   allyCount.textContent='0 / 3'; enemyCount.textContent='0 / 10';
 });
-
 document.getElementById('btnStart').addEventListener('click',async ()=>{
   const roster=getSelections(allyList, enemyList);
   document.getElementById('selectModal').style.display='none';
   const game=new Game();
   await game.start(roster);
 });
-
-/* 画面右寄り問題対策の最終確認：center基準、キャンバス不透明、グリッド中央化済み */
 
 })();
 </script>
