@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Rev28 (GabKing first spawn)</title>
+<title>MOB Side Action – Rev29 (Stage MOBA + Walls + KB up)</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
 :root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
@@ -80,6 +80,7 @@ const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
 const now=()=>performance.now();
 
+/* ===== Effects ===== */
 class Effects{
   constructor(){ this.sparks=[]; this.shakeT=0; this.shakeAmp=0; this.hitstop=0; }
   addSpark(x,y,strong=false){
@@ -107,6 +108,7 @@ class Effects{
   }
 }
 
+/* ===== Assets ===== */
 class Assets{
   constructor(){ this.images=new Map(); this.missing=new Set(); }
   load(srcs){
@@ -121,6 +123,7 @@ class Assets{
   has(n){ return this.images.has(n) && !this.missing.has(n); }
 }
 
+/* ===== Input ===== */
 class Input{
   constructor(){
     this.left=0; this.right=0; this.jump=false;
@@ -212,10 +215,12 @@ class Input{
   }
 }
 
+/* ===== Constants ===== */
 const GRAV=2000, MOVE=260, JUMP_V=760, MAX_FALL=1200;
 const GROUND_TOP_Y=360, FOOT_PAD=2;
 const rectsOverlap=(a,b)=> Math.abs(a.x-b.x)*2 < (a.w+b.w) && Math.abs(a.y-b.y)*2 < (a.h+b.h);
 
+/* ===== Character Base ===== */
 class CharacterBase{
   constructor(w,h){
     this.w=w; this.h=h; this.x=0; this.y=0; this.vx=0; this.vy=0; this.face=1;
@@ -263,13 +268,21 @@ class CharacterBase{
   }
 }
 
+/* ===== Projectiles ===== */
 class Projectile{
   constructor(world,x,y,dir,img,power=10){
     this.world=world; this.x=x; this.y=y; this.dir=dir; this.vx=160*dir; this.vy=0; this.img=img; this.power=power; this.life=3.2; this.dead=false; this.w=40; this.h=28;
     this.kbMul=0.9; this.kbuMul=0.9; this.lift=0.3;
   }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.9, h:this.h*0.9}; }
-  update(dt){ if(this.dead) return; this.x+=this.vx*dt; this.y+=this.vy*dt; this.life-=dt; if(this.life<=0) this.dead=true; }
+  update(dt){
+    if(this.dead) return;
+    this.x+=this.vx*dt; this.y+=this.vy*dt; this.life-=dt;
+    // 壁に当たったら消滅
+    const half=this.w/2;
+    if(this.x-half<=0 || this.x+half>=this.world.stageW){ this.dead=true; }
+    if(this.life<=0) this.dead=true;
+  }
   draw(ctx){
     if(this.dead||!this.img) return; const img=this.img;
     const scale=this.h/img.height, w=img.width*scale, h=this.h;
@@ -294,14 +307,14 @@ class UltBlast extends Projectile{
     const t = clamp(chargeSec,0,3.0);
     const base = 80 + Math.floor(t/0.1)*4;
     super(world,x,y,dir,img,base);
-    const sizeMul = lerp(0.7, 1.9, t/3);
-    this.w = Math.round(64*sizeMul);
-    this.h = Math.round(64*sizeMul);
-    this.vx = (260 + 80*sizeMul) * dir;
-    this.life = 1.9 + 0.4*sizeMul;
-    this.kbMul  = 1.6 + 0.2*sizeMul;
-    this.kbuMul = 1.6 + 0.2*sizeMul;
-    this.lift   = 1.0 + 0.4*sizeMul;
+    const sizeMul = lerp(0.9, 2.2, t/3);     /* さらに大きく */
+    this.w = Math.round(68*sizeMul);
+    this.h = Math.round(68*sizeMul);
+    this.vx = (260 + 90*sizeMul) * dir;
+    this.life = 2.0 + 0.45*sizeMul;
+    this.kbMul  = 1.75 + 0.25*sizeMul;       /* 吹っ飛び強化 */
+    this.kbuMul = 1.75 + 0.25*sizeMul;
+    this.lift   = 1.15 + 0.45*sizeMul;
   }
 }
 class GroundSpike extends Projectile{
@@ -405,7 +418,7 @@ class Player extends CharacterBase{
     if(this._actionSeq){ this._actionTime+=dt; if(this._actionTime>=cur.dur){ this._actionIndex++; this._actionTime=0; if(this._actionIndex>=this._actionSeq.length){ if(this.state==='atk' && this.comboStep>0){ this.comboGraceT=this.comboGraceMax; if(this.comboStep>=3){ this.comboStep=0; this.bufferA1=false; } } if(this.state==='skill2'){ this._activeSpikes=null; } this.state='idle'; this._actionSeq=null; } } }
     this.animT+=dt;
   }
-  _respawn(world){ this.dead=false; this.fade=1; this.spinAngle=0; this.spinSpeed=0; this.state='idle'; this.comboStep=0; this.comboGraceT=0; this.bufferA1=false; this.invulnT=0.6; this.hp=this.maxhp; document.getElementById('hpfill').style.width='100%'; document.getElementById('hpnum').textContent=this.hp; this.x=world.camX+80; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.vx=0; this.vy=0; this.jumpsLeft=this.maxJumps; this.saT=0; this._activeSpikes=null; this.isUltCharging=false; }
+  _respawn(world){ this.dead=false; this.fade=1; this.spinAngle=0; this.spinSpeed=0; this.state='idle'; this.comboStep=0; this.comboGraceT=0; this.bufferA1=false; this.invulnT=0.6; this.hp=this.maxhp; document.getElementById('hpfill').style.width='100%'; document.getElementById('hpnum').textContent=this.hp; this.x=clamp(world.camX+80, this.w/2, world.stageW-this.w/2); this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.vx=0; this.vy=0; this.jumpsLeft=this.maxJumps; this.saT=0; this._activeSpikes=null; this.isUltCharging=false; }
   draw(ctx,world){
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
     if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
@@ -420,27 +433,27 @@ class Player extends CharacterBase{
       const holder=this.world.assets.img(this.frames.ul1);
       if(holder){ const scale=this.h/holder.height, w=holder.width*scale, h=this.h; ctx.save(); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.95; ctx.drawImage(holder, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); ctx.restore(); }
       const ul3=this.world.assets.img(this.frames.ul3);
-      if(ul3){ const t=Math.min(3, (window._inputUltT||0)); const mul = lerp(0.35, 1.6, clamp(t/3.0,0,1)); const hh=60*mul, ww=60*mul; const oxh = this.face*26, oyh=-14; ctx.save(); ctx.translate(oxh, oyh); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.95; ctx.drawImage(ul3, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh)); ctx.restore(); }
+      if(ul3){ const t=Math.min(3, (window._inputUltT||0)); const mul = lerp(0.35, 1.7, clamp(t/3.0,0,1)); const hh=62*mul, ww=62*mul; const oxh = this.face*26, oyh=-14; ctx.save(); ctx.translate(oxh, oyh); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.95; ctx.drawImage(ul3, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh)); ctx.restore(); }
     }
     ctx.restore();
   }
 }
 
-/* ===== 新敵：MOBガブキング ===== */
+/* ===== ガブキング（先出し） ===== */
 class GabBlast extends Projectile{
   constructor(world,x,y,dir,img){
     super(world,x,y,dir,img,130);
-    this.w = 78; this.h = 78;           // 巨大弾（素材サイズ差吸収の標準化）
-    this.vx = 300*dir;                  // 射程「普通」相当
+    this.w = 78; this.h = 78;
+    this.vx = 300*dir;
     this.life = 2.0;
-    this.kbMul = 1.5;                   // 超吹っ飛び
+    this.kbMul = 1.5;
     this.kbuMul= 1.55;
     this.lift  = 1.2;
   }
 }
 class GabKing extends CharacterBase{
   constructor(world,effects,assets,x=600){
-    super(88,96);                       // 素材大小の差を吸収（見た目やや大柄）
+    super(88,96);
     this.world=world; this.effects=effects; this.assets=assets;
     this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
     this.maxhp=2500; this.hp=2500;
@@ -461,10 +474,9 @@ class GabKing extends CharacterBase{
     return this.assets.img(map[key]||'t1.png');
   }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.72, h:this.h*0.92}; }
-
   hurt(amount, dir, opts={}, effects){
     if(this.invulnT>0||this.dead) return false;
-    const luckySA = Math.random() < 0.50;       // ミドルSA 50%
+    const luckySA = Math.random() < 0.50;
     const activeSA = luckySA;
     this.hp=Math.max(0,this.hp-amount);
     const kbMul = activeSA ? 0.18 : (opts.kbMul||1);
@@ -479,7 +491,6 @@ class GabKing extends CharacterBase{
     if(this.hp<=0){ this.dead=true; this.vx = dir*520; this.vy = -520; this.spinSpeed=16; this.deathT=0; this.fade=1; }
     return true;
   }
-
   _hitPlayerRect(player, power, kbMul=1, kbuMul=1, lift=0){
     const hb={ x:this.x + this.face*(this.w*0.36), y:this.y, w:70, h:56 };
     if(player.invulnT<=0 && rectsOverlap(hb, player.aabb())){
@@ -487,7 +498,6 @@ class GabKing extends CharacterBase{
       if(hit){ updateHPUI(player.hp,player.maxhp); this.effects.addSpark(player.x, player.y-10, power>=70); }
     }
   }
-
   update(dt, player){
     if(this.dead){ this.updatePhysics(dt); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
@@ -495,18 +505,13 @@ class GabKing extends CharacterBase{
     if(this.s2CD>0) this.s2CD=Math.max(0,this.s2CD-dt);
     if(this.ultCD>0) this.ultCD=Math.max(0,this.ultCD-dt);
 
-    // 実行中
     if(this.state==='atk' || this.state==='skill' || this.state==='ult'){
       this._t+=dt;
       const cur=this._seq?.[this._idx];
       if(cur){
         if(cur.fx) this.x += this.face * cur.fx * dt;
         this.updatePhysics(dt);
-
-        if(cur.hit && !cur._doneHit){
-          this._hitPlayerRect(player, cur.power, cur.kbMul, cur.kbuMul, cur.lift||0);
-          cur._doneHit=true;
-        }
+        if(cur.hit && !cur._doneHit){ this._hitPlayerRect(player, cur.power, cur.kbMul, cur.kbuMul, cur.lift||0); cur._doneHit=true; }
         if(cur.emit && !cur._emitted){
           const img=this.img('uProj');
           const ox=this.face*36, oy=-18;
@@ -515,26 +520,17 @@ class GabKing extends CharacterBase{
           this.effects.addSpark(this.x+ox, this.y-20, true);
           cur._emitted=true;
         }
-
-        if(this._t>=cur.dur){
-          this._idx++; this._t=0;
-          if(this._idx>=this._seq.length){
-            this._seq=null; this.state='idle'; this.vx=0;
-          }
-        }
+        if(this._t>=cur.dur){ this._idx++; this._t=0; if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; this.vx=0; } }
       }
       this.animT+=dt; return;
     }
 
-    // 思考
     const dx=player.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
-
     if(this.ultCD<=0 && adx>=200 && Math.random()<0.015){ this._startULT(); return; }
     if(this.s2CD<=0 && adx<=320 && Math.random()<0.03){ this._startSkill2(); return; }
     if(this.s1CD<=0 && adx<=280 && Math.random()<0.05){ this._startSkill1(); return; }
     if(adx<140 && this.cool<=0){ this._startAttack1(); return; }
 
-    // ゆっくり移動
     const walk=70;
     if(adx>120){ this.vx = (dx>0? walk : -walk); } else { this.vx=0; }
     this.updatePhysics(dt);
@@ -542,9 +538,7 @@ class GabKing extends CharacterBase{
     else this.state = Math.abs(this.vx)>1? 'run':'idle';
     this.animT+=dt;
   }
-
   _startAttack1(){
-    // t4→t5 素早く2連 前進 30×2 中KB
     this.state='atk'; this._t=0; this._idx=0; this.cool=1.1;
     this._seq=[
       {dur:0.10,key:'a1',fx:120,hit:false},
@@ -554,7 +548,6 @@ class GabKing extends CharacterBase{
     ];
   }
   _startSkill1(){
-    // t6 0.5震え → t6のまま高速突進（70, 強）
     this.state='skill'; this._t=0; this._idx=0; this.s1CD=5.0;
     this._seq=[
       {dur:0.50,key:'dash',fx:0,hit:false,shake:true},
@@ -562,7 +555,6 @@ class GabKing extends CharacterBase{
     ];
   }
   _startSkill2(){
-    // t6 0.5震え → t6ダッシュ → t8→t9（100, 上に強）
     this.state='skill'; this._t=0; this._idx=0; this.s2CD=7.0;
     this._seq=[
       {dur:0.50,key:'dash',fx:0,hit:false,shake:true},
@@ -572,7 +564,6 @@ class GabKing extends CharacterBase{
     ];
   }
   _startULT(){
-    // t10 0.5待機 → t7ポーズ（当たり判定50）→ t11巨大弾発射(130, 超吹っ飛び)
     this.state='ult'; this._t=0; this._idx=0; this.ultCD=20.0;
     this._seq=[
       {dur:0.50,key:'pre10',fx:0,hit:false,shake:true},
@@ -580,7 +571,6 @@ class GabKing extends CharacterBase{
       {dur:0.06,key:'pose7',fx:0,hit:false,emit:true}
     ];
   }
-
   draw(ctx,world){
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
     if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
@@ -602,7 +592,6 @@ class GabKing extends CharacterBase{
     }
     const img=this.img(key);
     if(img){
-      // 素材サイズの差を吸収（高さthis.h基準にスケール）
       const scale=this.h/img.height, w=img.width*scale, h=this.h;
       ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
     }
@@ -611,34 +600,58 @@ class GabKing extends CharacterBase{
   }
 }
 
-/* ===== World / Game ===== */
+/* ===== World（MOBAステージ & 壁） ===== */
 class World{
   constructor(assets, canvas, effects){
     this.assets=assets; this.effects=effects; this.canvas=canvas;
     this.ctx=canvas.getContext('2d',{alpha:true}); this.ctx.imageSmoothingEnabled=false;
     this.gameW=canvas.width; this.gameH=canvas.height; this.camX=0; this.camY=0; this.time=0; this._timerAcc=0;
     const r=this.canvas.getBoundingClientRect(); this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
-    this.bgImg = this.assets.has('back1.png') ? this.assets.img('back1.png') : null;
-    if(this.bgImg){ this.bgScale = this.gameH / this.bgImg.height; this.bgDW = this.bgImg.width*this.bgScale; this.bgDH = this.bgImg.height*this.bgScale; }
+
+    // 背景：MOBA.png を使用。高さフィット、横は画像比率で決定 → その幅がステージ幅
+    this.bgImg = this.assets.has('MOBA.png') ? this.assets.img('MOBA.png') : (this.assets.has('back1.png') ? this.assets.img('back1.png') : null);
+    if(this.bgImg){
+      this.bgScale = this.gameH / this.bgImg.height;
+      this.stageW  = Math.max(this.gameW, Math.round(this.bgImg.width * this.bgScale));
+      this.bgDW = this.stageW; this.bgDH = Math.round(this.bgImg.height * this.bgScale);
+    } else {
+      this.stageW = 2400; // フォールバック
+    }
     this.bgSpeed=1.0;
   }
   resize(){ const r=this.canvas.getBoundingClientRect(); this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH; }
-  updateCam(p){ const offs=this.effects.getCamOffset(); const target=p.x - this.gameW*0.35 + offs.x; this.camX=Math.max(0, lerp(this.camX,target,0.12)); this.camY=offs.y; }
+  updateCam(p){
+    const offs=this.effects.getCamOffset();
+    const target=p.x - this.gameW*0.35 + offs.x;
+    const unclamped = lerp(this.camX,target,0.12);
+    // カメラをステージ内にクランプ
+    this.camX = clamp(unclamped, 0, Math.max(0, (this.stageW - this.gameW)));
+    this.camY=offs.y;
+  }
   updateTimer(dt){
     this._timerAcc+=dt; if(this._timerAcc>=0.2){ this.time+=this._timerAcc; this._timerAcc=0;
       const t=Math.floor(this.time); const mm=String(Math.floor(t/60)).padStart(2,'0'); const ss=String(t%60).padStart(2,'0'); document.getElementById('time').textContent=`${mm}:${ss}`; }
   }
   draw(player, enemies){
     const ctx=this.ctx; ctx.clearRect(0,0,this.gameW,this.gameH);
+
+    // 背景：1枚物をステージ幅で描画（左右端＝壁の視覚的基準）
     if(this.bgImg){
-      const w=Math.round(this.bgDW), h=Math.round(this.bgDH); const step=Math.max(1, w - 1);
-      const startX = Math.floor((this.camX*this.bgSpeed - this.gameW*0.2)/step)*step;
-      const endX = this.camX*this.bgSpeed + this.gameW*1.2 + w;
-      for(let x=startX; x<=endX; x+=step){ ctx.drawImage(this.bgImg, 0,0,this.bgImg.width,this.bgImg.height, Math.round(x - this.camX*this.bgSpeed), 0, w, h); }
+      ctx.drawImage(this.bgImg, 0,0,this.bgImg.width,this.bgImg.height,
+        Math.round(-this.camX*this.bgSpeed), 0, this.bgDW, this.bgDH);
     } else {
       const g=ctx.createLinearGradient(0,0,0,this.gameH); g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18'); ctx.fillStyle=g; ctx.fillRect(0,0,this.gameW,this.gameH);
     }
+
+    // 地面ライン
     ctx.fillStyle='#0b0f17'; const yTop=Math.floor(GROUND_TOP_Y); ctx.fillRect(0,yTop-1,this.gameW,1);
+
+    // 壁の視覚（半透明のサイドシャドウ）
+    ctx.fillStyle='rgba(10,15,25,0.55)';
+    const leftWallX = -this.camX;
+    const rightWallX = (this.stageW - this.camX);
+    if(leftWallX<20){ ctx.fillRect(0,0, 20-leftWallX, this.gameH); }
+    if(rightWallX<this.gameW+20){ const w = 20 - (this.gameW - rightWallX); ctx.fillRect(this.gameW-w,0,w,this.gameH); }
 
     if(this._skillBullets){ for(const p of this._skillBullets) p.draw(ctx); }
 
@@ -646,8 +659,10 @@ class World{
   }
 }
 
+/* ===== UI HP ===== */
 const updateHPUI=(hp,maxhp)=>{ const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=hp; fill.style.width=Math.max(0,Math.min(100,(hp/maxhp)*100))+'%'; };
 
+/* ===== Game ===== */
 class Game{
   constructor(){
     this.assets=new Assets(); this.canvas=document.getElementById('game'); this.input=new Input(); this.effects=new Effects();
@@ -656,6 +671,7 @@ class Game{
   }
   async start(){
     const imgs=[
+      'MOBA.png', // 新ステージ
       'back1.png',
       'M1-1.png','M1-2.png','M1-3.png','M1-4.png',
       'K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png',
@@ -670,25 +686,36 @@ class Game{
     this.world=new World(this.assets,this.canvas,this.effects);
     this.player=new Player(this.assets,this.world,this.effects);
 
-    const spawnX = 640;
-    this.enemies = [ new GabKing(this.world,this.effects,this.assets,spawnX) ]; // 最初に出現
+    // 初期出現：ガブキング
+    const spawnX = Math.min(640, this.world.stageW - 200);
+    this.enemies = [ new GabKing(this.world,this.effects,this.assets,spawnX) ];
 
     updateHPUI(this.player.hp,this.player.maxhp);
     this.lastT=now();
 
+    const clampActorToWalls = (a)=>{
+      const half=a.w/2;
+      if(a.x < half){ a.x = half; if(a.vx<0) a.vx=0; }
+      if(a.x > this.world.stageW - half){ a.x = this.world.stageW - half; if(a.vx>0) a.vx=0; }
+    };
+
     const loop=()=>{
       const t=now(); let dt=(t-this.lastT)/1000; if(dt>0.05) dt=0.05; this.lastT=t;
       if(this.effects.hitstop>0){ this.effects.update(dt); this.world.updateCam(this.player); this.world.draw(this.player,this.enemies); requestAnimationFrame(loop); return; }
+
       const input=this.input;
       window._inputUltT = input.ultChargeT || 0;
 
       this.player.update(dt,this.input,this.world,this.enemies);
-      for(const e of this.enemies){ e.update(dt,this.player); }
+      clampActorToWalls(this.player);
 
-      // 弾・設置物と敵の当たり
+      for(const e of this.enemies){ e.update(dt,this.player); clampActorToWalls(e); }
+
+      // 弾・設置物の更新と壁反射/消滅はProjectile内で処理
       if(this.world._skillBullets){
         for(const p of this.world._skillBullets){
           p.update(dt);
+          // 壁越えで死んだものは Projectile.update が処理
           for(const e of this.enemies){
             if(!p.dead && !e.dead && rectsOverlap(p.aabb(), e.aabb())){
               p.dead=true;
@@ -723,6 +750,7 @@ class Game{
           this.player.vx += dirX * 20;
           e.vx          -= dirX * 20;
         }
+        clampActorToWalls(this.player); clampActorToWalls(e);
       }
 
       this.effects.update(dt); this.world.updateCam(this.player); this.world.updateTimer(dt); this.world.draw(this.player, this.enemies);
@@ -732,10 +760,16 @@ class Game{
   }
 }
 
-/* ===== 被弾時（プレイヤー） ===== */
+/* ===== プレイヤー被弾：吹っ飛び増し ===== */
 Player.prototype.hurt = function(amount,dir,opts,effects){
+  // Skill2出し切り or SA中は軽減、それ以外は「さらに飛ぶ」補正
   if(this.state==='skill2'){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
   else if(this.saT>0){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
+  else{ // 通常時は強めにふっとぶ（ご要望）
+    const km = (opts?.kbMul ?? 1)*1.3;
+    const kum= (opts?.kbuMul?? 1)*1.25;
+    opts = {...(opts||{}), kbMul:km, kbuMul:kum};
+  }
   const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
   if(hit){
     const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=this.hp; fill.style.width=Math.max(0,Math.min(100,(this.hp/this.maxhp)*100))+'%';
