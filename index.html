@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Rev22b (Fix Overhead Collision)</title>
+<title>MOB Side Action – Rev22c (Hotfix)</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
 :root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
@@ -51,7 +51,9 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
         <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
       </div>
       <div class="controls">
-        <div class="stickArea" id="stickArea" aria-label="Move Stick"><div class="stick"><div class="stickThumb" id="stickThumb"></div></div></div>
+        <div class="stickArea" id="stickArea" aria-label="Move Stick">
+          <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
+        </div>
         <div class="buttons">
           <button class="btn attack1" id="btnA1" aria-label="攻撃① ■">■</button>
           <button class="btn attack2" id="btnA2" aria-label="攻撃② ▲">▲</button>
@@ -64,12 +66,12 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
 </div>
 
 <script>
-/* ===================== Rev22b ======================
- - 目に見えない頭上壁の原因修正：
-   rectsOverlapのY判定バグを修正（高さ差→Y座標差）
- - 押し分けを最小侵入軸でX/Y分離（上からなら上方向に逃がす）
- - それ以外はRev22a仕様（2段ジャンプ、A1高速化、出現キュー等）を維持
-====================================================*/
+/* ===================== Rev22c (Hotfix) ======================
+  - rectsOverlapのY判定バグ修正（見えない頭上壁の原因）
+  - すり抜け防止を最小侵入軸のX/Y分離に
+  - 2段ジャンプ・A1高速化・弱い順スポーン継続
+  - 入力系のテンプレート文字列/初期化の細ミス修正
+=============================================================*/
 (function(){
 'use strict';
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
@@ -161,7 +163,7 @@ class Input{
       const nx=(len>rMax? dx/len*rMax:dx);
       const ny=(len>rMax? dy/len*rMax:dy);
       thumb.style.left=`calc(50% + ${nx}px)`;
-      thumb.style.top=`calc(50% + ${ny}px)`;
+      thumb.style.top =`calc(50% + ${ny}px)`;
       this.left =(nx<-8)?1:0;
       this.right=(nx> 8)?1:0;
     };
@@ -176,7 +178,9 @@ class Input{
     const onMove=e=>{ for(const t of e.changedTouches){ if(t.identifier===stickId) updateStick(t); } };
     const onEnd =e=>{
       for(const t of e.changedTouches){
-        if(t.identifier===stickId){ stickId=-1; origin=null; thumb.style.left='50%'; thumb.style.top='50%'; this.left=0; this.right=0; }
+        if(t.identifier===stickId){
+          stickId=-1; origin=null; thumb.style.left='50%'; thumb.style.top='50%'; this.left=0; this.right=0;
+        }
       }
     };
     stickArea.addEventListener('touchstart',e=>{e.preventDefault();onStart(e);},{passive:false});
@@ -212,7 +216,7 @@ class Input{
 const GRAV=2000, MOVE=260, JUMP_V=760, MAX_FALL=1200;
 const GROUND_TOP_Y=360, FOOT_PAD=2;
 
-/* ★★★ 修正：正しいAABB重なり判定（Y座標差を使用）★★★ */
+/* ★ 正しいAABB重なり判定（見えない壁の主因修正）*/
 const rectsOverlap=(a,b)=>
   Math.abs(a.x-b.x)*2 < (a.w+b.w) &&
   Math.abs(a.y-b.y)*2 < (a.h+b.h);
@@ -259,19 +263,20 @@ class CharacterBase{
     const ratio=Math.max(0,this.hp/this.maxhp);
     ctx.save(); ctx.translate(x,y);
     ctx.fillStyle='rgba(10,18,32,.7)'; ctx.fillRect(-w/2,-h/2,w,h);
-       ctx.strokeStyle='#1a263d'; ctx.lineWidth=1; ctx.strokeRect(-w/2,-h/2,w,h);
+    ctx.strokeStyle='#1a263d'; ctx.lineWidth=1; ctx.strokeRect(-w/2,-h/2,w,h);
     ctx.fillStyle='#7dd3fc'; ctx.fillRect(-w/2+1,-h/2+1,(w-2)*ratio,h-2);
     ctx.restore();
   }
 }
 
-/* ===== Player（2段ジャンプ＋A1高速化はRev22a同様） ===== */
+/* ===== Player（2段ジャンプ＋A1高速化） ===== */
 class Player extends CharacterBase{
   constructor(assets, world, effects){
     super(56,64);
     this.assets=assets; this.world=world; this.effects=effects;
     this.x=100; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD;
     this.hp=1000; this.maxhp=1000; this.lives=3;
+
     this.maxJumps=2; this.jumpsLeft=this.maxJumps;
 
     this.comboStep=0; this.comboGraceT=0; this.comboGraceMax=0.24;
@@ -440,7 +445,7 @@ class Player extends CharacterBase{
   }
 }
 
-/* ===== Projectile / EnergyBall / KozouStone（省略せず保持） ===== */
+/* ===== Projectile / EnergyBall / KozouStone ===== */
 class Projectile{
   constructor(world,x,y,dir,img,power=10){
     this.world=world; this.x=x; this.y=y; this.dir=dir; this.vx=160*dir; this.vy=0; this.img=img; this.power=power; this.life=3.2; this.dead=false; this.w=40; this.h=28;
@@ -474,8 +479,7 @@ class KozouStone extends Projectile{
   }
 }
 
-/* ===== Enemies（WaruMOB / IceRobo / IceRoboMini / Kozou / MOBGiant） ===== */
-/* …（ここからはRev22aと同内容。長文のためそのまま維持） … */
+/* ===== Enemies: WaruMOB / IceRobo / IceRoboMini / Kozou / MOBGiant ===== */
 class WaruMOB extends CharacterBase{
   constructor(world,effects,assets,x=520){
     super(52,60); this.world=world; this.effects=effects; this.assets=assets;
@@ -484,7 +488,7 @@ class WaruMOB extends CharacterBase{
   }
   imgByKey(key){ const a=this.assets; const map={ idle:'teki1.png', walk1:'teki1.png', walk2:'teki2.png', prep1:'teki1.png', prep2:'teki3.png' }; return a.img(map[key]||'teki1.png'); }
   addBullet(){ const img=this.assets.img('teki7.png'); const ox=this.face*28; const oy=-8; this.projectiles.push(new Projectile(this.world,this.x+ox,this.y+oy,this.face,img,10)); }
-  aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.85}; }
+  aabb(){ return {x=this.x, y=this.y, w=this.w*0.6, h=this.h*0.85}; }
   update(dt,player){
     if(this.dead){ this.updatePhysics(dt); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
@@ -538,7 +542,7 @@ class IceRobo extends CharacterBase{
     this.maxhp=1200; this.hp=1200; this.superArmor=false; this.cool=0; this.recoverT=0;
     this.modeJump=false; this.modeSwapT=0; this._seq=null; this._idx=0; this._t=0; this.chargeT=0; this.energyOrbs=[];
   }
-  aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.9}; }
+  aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h=this.h*0.9}; }
   hurt(amount, dir, opts={}, effects){
     if(this.invulnT>0||this.dead) return false;
     this.hp=Math.max(0,this.hp-amount);
@@ -607,7 +611,7 @@ class IceRobo extends CharacterBase{
     if(this.face<0 && !this.dead) ctx.scale(-1,1);
     let img=null, ox=0;
     if(this.state==='charge'){ img=this.img('charge'); ox=Math.sin(performance.now()/25)*1.5; }
-    else if(this.state==='dash' || (this.state==='atk' && this._seq && this._seq[this._idx]?.key==='dashAtk')){ img=this.img('dashAtk'); }
+    else if(this.state==='dash' || (this.state==='atk' && this._seq && this._seq[this._idx] && this._seq[this._idx].key==='dashAtk')){ img=this.img('dashAtk'); }
     else if(this.state==='atk' && this._seq){ const cur=this._seq[this._idx]; img=this.img(cur.key||'dashPrep'); ox=Math.sin(performance.now()/25)*2; }
     else if(this.state==='recover'){ img=this.img('release'); }
     else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.img(f? 'walk1':'walk2'); }
@@ -634,7 +638,7 @@ class IceRoboMini extends CharacterBase{
     this.maxhp=50; this.hp=50; this.cool=0; this.state='idle'; this.animT=0; this.hopT=0; this.superArmor=false;
   }
   img(key){ const map={ idle:'IC.png', move:'IC2.png', atk1:'IC3.png', sp:'IC4.png' }; return this.assets.img(map[key]||'IC.png'); }
-  aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.9}; }
+  aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h=this.h*0.9}; }
   update(dt, player){
     if(this.dead){ this.updatePhysics(dt); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
@@ -692,7 +696,7 @@ class Kozou extends CharacterBase{
     this.guard=false; this.guardHits=0; this._thrown=false;
   }
   img(key){ const map={ idle:'SL.png', w1:'SL2.png', w2:'SL3.png', prep:'SL4.png', throw:'SL5.png', guard:'SL6.png', counter:'SL7.png', stone:'SL8.png'}; return this.assets.img(map[key]||'SL.png'); }
-  aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.9}; }
+  aabb(){ return {x=this.x, y=this.y, w=this.w*0.65, h=this.h*0.9}; }
   update(dt,player){
     if(this.dead){ this.updatePhysics(dt); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
@@ -702,7 +706,7 @@ class Kozou extends CharacterBase{
       this.updatePhysics(dt); this.animT+=dt; const dur=0.28; const mid=0.14;
       if(this.animT<dur){ this.vx=this.face*120; }
       if(this.animT>mid){
-        const hb={x:this.x + this.face*18, y:this.y, w:36, h:30};
+        const hb={x=this.x + this.face*18, y=this.y, w:36, h:30};
         if(player.invulnT<=0 && rectsOverlap(hb, player.aabb())){ const hit=player.hurt(8, this.face, {lift:0.3,kbMul:0.9,kbuMul:0.9}, this.effects); if(hit) updateHPUI(player.hp,player.maxhp); }
       }
       if(this.animT>=dur){ this.state='idle'; this.vx=0; this.cool=1.2; this.guard=false; this.guardHits=0; }
@@ -760,7 +764,7 @@ class MOBGiant extends CharacterBase{
     this.chargeT=0; this.energyOrbs=[]; this.postLagT=0;
     this.lowFreqBias=0.0;
   }
-  aabb(){ return {x:this.x, y:this.y, w:this.w*0.68, h:this.h*0.95}; }
+  aabb(){ return {x=this.x, y=this.y, w=this.w*0.68, h=this.h*0.95}; }
   img(key){
     const map={ idle:'P1.png', w1:'P1.png', w2:'P2.png', j1:'P1.png', j2:'P2.png', j3:'P3.png',
       dashPrep:'P4.png', dashAtk:'P5.png', charge:'P6.png', release:'P7.png', orb:'P10.png' };
@@ -1004,7 +1008,7 @@ class Game{
         // MOB巨神
         if(e instanceof MOBGiant){
           if(e.state==='dash'){
-            const hb = {x:e.x + e.face*26, y:e.y, w=e.w*0.95, h=e.h*0.95};
+            const hb = {x:e.x + e.face*26, y:e.y, w:e.w*0.95, h:e.h*0.95};
             if(this.player.invulnT<=0 && rectsOverlap(hb, this.player.aabb())){
               const hit=this.player.hurt(40, e.face, {lift:1, kbMul:1.15, kbuMul:1.15}, this.effects);
               if(hit) updateHPUI(this.player.hp,this.player.maxhp);
@@ -1028,7 +1032,7 @@ class Game{
         this.enemies.push(this.enemyOrder[this.enemyIndex]());
       }
 
-      /* ★★★ すり抜け防止：最小侵入軸でX/Y分離（上からは上に押し戻す） ★★★ */
+      /* すり抜け防止：最小侵入軸でX/Y分離（上からは上に押し戻す） */
       for(const e of this.enemies){
         if(e.dead || this.player.dead) continue;
         const a=this.player.aabb(), b=e.aabb();
@@ -1040,18 +1044,11 @@ class Game{
         const overlapY = (a.h + b.h)/2 - Math.abs(dy);
 
         if(overlapY < overlapX){
-          // 縦優先：プレイヤーが上にいたら上へ押し戻す（頭上を飛び越えやすい）
-          const dirY = dy>=0? 1 : -1; // player is below(+) or above(-) enemy
+          const dirY = dy>=0? 1 : -1;
           this.player.y += dirY * overlapY * 0.9;
           e.y         -= dirY * overlapY * 0.1;
-          if(dirY<0){ // プレイヤーが上から着地した場合は地面扱いに近づける
-            this.player.vy = Math.max(this.player.vy, 0);
-          } else {
-            // 下からぶつかったら少しだけ跳ね返す
-            this.player.vy = Math.min(this.player.vy, 0);
-          }
+          if(dirY<0){ this.player.vy = Math.max(this.player.vy, 0); } else { this.player.vy = Math.min(this.player.vy, 0); }
         } else {
-          // 横優先
           const dirX = dx>=0? 1 : -1;
           this.player.x += dirX * overlapX * 0.6;
           e.x           -= dirX * overlapX * 0.4;
@@ -1075,7 +1072,7 @@ Player.prototype.hurt = function(amount,dir,opts,effects){
     this._actionSeq = null; this._actionIndex = 0; this._actionTime = 0;
     this.bufferA1 = false; this.queueA2 = null; this.queueSK = null; this.comboStep = 0; this.comboGraceT = 0; this.a2LockoutT = 0;
     this.overhead?.root && (this.overhead.root.style.display='none'); this.actionAir = false; this.actionAirVx = 0;
-    this.jumpsLeft=this.maxJumps; // 被弾時もジャンプ回数を安定化
+    this.jumpsLeft=this.maxJumps;
   }
   return hit;
 };
