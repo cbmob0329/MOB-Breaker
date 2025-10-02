@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Rev23 (Skill2 + ULT)</title>
+<title>MOB Side Action – Rev23a (Skill2 + ULT, hotfix)</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
 :root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
@@ -20,7 +20,7 @@ canvas#game{display:block;width:100%;height:100%}
 .stick{width:120px;height:120px;border-radius:50%;background:#0d1828;outline:2px solid #22324d;position:relative}
 .stickThumb{width:64px;height:64px;border-radius:50%;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#1a2a45;outline:2px solid #2e4a73;box-shadow:inset 0 0 0 4px #0c1422}
 
-/* 右側ボタン：3x2 グリッドで5ボタンを均等配置（最後の1セルはスペーサ） */
+/* 右側ボタン：3x2 グリッド（5ボタン+スペーサ） */
 .buttons{display:grid;grid-template-columns: repeat(3,1fr);grid-template-rows: repeat(2,1fr);gap:12px;align-content:stretch;justify-items:stretch}
 .btn{border:none;border-radius:14px;background:#0d1828;outline:2px solid #22324d;color:var(--fg);font-size:26px;display:grid;place-items:center;touch-action:none;box-shadow:inset 0 -4px 0 rgba(255,255,255,.04);transition:opacity .15s ease;min-height:64px}
 .btn:active{transform:scale(.98)}
@@ -75,14 +75,10 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
 </div>
 
 <script>
-/* ===================== Rev23 (Skill2 + ULT) ======================
-  - プレイヤー名 MOBYOKI 表示
-  - スキル②（◎）実装：Y1→Y2→Y3→Y4(0.8s)→Y4で1s震え＆UL3を10発（短射程・各15ダメ）
-  - ULT（U）実装：最大3秒チャージ（SA）、UL1で溜め→UL2で放つ、UL3サイズ可変、60 + 3/0.1s
-  - 攻撃②（▲）追撃チェイン：K1-5後に再▲で J.png→K1-4.png（40ダメ）
-  - ▲/●のチャージ短縮：成立0.35s、準備揺れも短縮
-  - UI 5ボタンを3×2で整列
-  - 既存のバグ修正・頭上壁・2段ジャンプ等は踏襲
+/* ===================== Rev23a hotfix ======================
+  - dx=0 → dx:0 のシンタックス修正
+  - MOBGiant ダッシュ判定 w=e.w*0.95 → w: e.w*0.95
+  - 機能は Rev23 と同一
 =============================================================*/
 (function(){
 'use strict';
@@ -208,8 +204,8 @@ class Input{
       el.addEventListener('pointerdown',e=>{e.preventDefault(); onDown(); el.setPointerCapture?.(e.pointerId);});
       el.addEventListener('pointerup',  e=>{e.preventDefault(); onUp();   el.releasePointerCapture?.(e.pointerId);});
       el.addEventListener('pointercancel',()=>{ onUp(); });
-      el.addEventListener('touchstart',e=>{e.preventDefault(); onDown();},{passive:false});
-      el.addEventListener('touchend',  e=>{e.preventDefault(); onUp();},{passive:false});
+      el.addEventListener('touchstart',e=>{e.preventDefault();onDown();},{passive:false});
+      el.addEventListener('touchend',  e=>{e.preventDefault();onUp();},{passive:false});
     };
     bind('btnA1', ()=>{ this.btn.a1=true; }, ()=>{ this.btn.a1=false; });
     bind('btnA2', ()=>{ if(!this.btn.a2){ this.btn.a2=true; this.attack2Charging=true; this.attack2ChargeT=0; } },
@@ -226,7 +222,6 @@ class Input{
     this.edge.a2Release = (!this.btn.a2 && this.prev.a2) || this.pulseRelease.a2;
     this.edge.skillRelease = (!this.btn.skill && this.prev.skill) || this.pulseRelease.skill;
     this.edge.ultRelease = (!this.btn.ult && this.prev.ult) || this.pulseRelease.ult;
-    // skill2 は押下立ち上がりをそのまま edge.skill2 に設定済み（タッチ/キーのonDownで立てる）
     this.pulseRelease.a2=false; this.pulseRelease.skill=false; this.pulseRelease.ult=false;
     this.prev.a1=this.btn.a1; this.prev.a2=this.btn.a2; this.prev.skill=this.btn.skill; this.prev.skill2=this.btn.skill2; this.prev.ult=this.btn.ult;
   }
@@ -325,7 +320,7 @@ class UltBlast extends Projectile{
   constructor(world,x,y,dir,img,chargeSec){
     const basePower = 60 + Math.floor(clamp(chargeSec,0,3.0)/0.1)*3;
     super(world,x,y,dir,img,basePower);
-    const sizeMul = lerp(0.3, 1.0, clamp(chargeSec/3.0,0,1)); // 0.3x〜1.0x（プレイヤー基準）
+    const sizeMul = lerp(0.3, 1.0, clamp(chargeSec/3.0,0,1)); // 0.3x〜1.0x
     this.w = Math.round(56*sizeMul);
     this.h = Math.round(56*sizeMul);
     this.vx = (240 + 80*sizeMul) * dir;
@@ -348,7 +343,7 @@ class Player extends CharacterBase{
     this.actionAir=false; this.actionAirVx=0; this.a2LockoutT=0; this.skillCDT=0;
     this.skill2CDT=0; this.ultCDT=0;
 
-    this.saT=0; // super armor timer (for ULT charge など)
+    this.saT=0; // super armor timer
 
     this.frames={
       idle:['M1-1.png'],
@@ -365,7 +360,6 @@ class Player extends CharacterBase{
     this.overhead=this._createOverheadGauge();
     document.querySelector('.gamewrap').appendChild(this.overhead.root);
 
-    // チャージ閾値短縮
     this.chargeOkSec = 0.35;
   }
   _getFramePath(key, i=0){ const v=this.frames[key]; return Array.isArray(v)? v[Math.max(0,Math.min(v.length-1,i))] : v; }
@@ -438,7 +432,7 @@ class Player extends CharacterBase{
       input.ultChargeT=0;
     }
 
-    // 実行中（攻撃/スキル）フレーム
+    // 実行中
     if(this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='ult'||this.state==='hurt'){
       const hb=this.currentHitbox();
       if(hb){
@@ -448,7 +442,6 @@ class Player extends CharacterBase{
             const hit = e.hurt(hb.power, hb.dir, {lift:hb.lift, kbMul:hb.kbMul, kbuMul:hb.kbuMul}, this.effects);
             if(hit && rectsOverlap(this.aabb(), e.aabb())){ e.x = this.x + hb.dir * (this.w*0.55); }
             if(hit && this.state==='atk' && this._actionSeq && this._actionSeq[this._actionIndex]?.tag==='chaseFinisher'){
-              // 追撃ヒット時に少しヒットストップ強め
               this.effects.addSpark(e.x, e.y-10, true);
             }
           }
@@ -463,30 +456,27 @@ class Player extends CharacterBase{
     if(input.edge.a1) this.bufferA1=true;
     if(this.comboGraceT>0) this.comboGraceT=Math.max(0,this.comboGraceT-dt);
 
-    // 起動優先順位：ULT(ホールド後離すで即) > スキル② > スキル① > 攻撃② > 攻撃①
+    // 起動優先順位
     if(this.queueSK){ const q=this.queueSK; this.queueSK=null; this.bufferA1=false; this._startSpin(q.charged); return; }
     if(input.edge.skill2 && this.skill2CDT<=0){ input.edge.skill2=false; this.bufferA1=false; this._startSkill2(); return; }
     if(this.queueA2 && this.a2LockoutT<=0){ const q=this.queueA2; this.queueA2=null; this.bufferA1=false; this._startA2(q.charged, q.minShake); return; }
     if(this.bufferA1 && this.comboStep<3){ this.bufferA1=false; this._startA1(); return; }
 
-    // ---- 移動/ジャンプ（2段）----
+    // 移動/ジャンプ（2段）
     let ax=0; if(input.left){ ax-=MOVE; this.face=-1; } if(input.right){ ax+=MOVE; this.face=1; }
     this.vx = ax!==0 ? (ax>0?MOVE:-MOVE) : 0;
-    if(input.consumeJump() && this.jumpsLeft>0){
-      this.vy=-JUMP_V; this.onGround=false; this.jumpsLeft--;
-    }
+    if(input.consumeJump() && this.jumpsLeft>0){ this.vy=-JUMP_V; this.onGround=false; this.jumpsLeft--; }
     this.updatePhysics(dt);
     if(this.onGround) this.jumpsLeft=this.maxJumps;
     this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
     this.animT += dt;
 
     if(input.attack2Charging && this.state!=='atk' && this.state!=='skill' && this.state!=='skill2' && this.state!=='ult'){ this.state='chargeA2'; }
-    if(input.skillCharging  && this.state==='chargeA2') this.state='chargeA2'; // 優先しないが表示維持
     if(input.ultCharging    && this.state!=='ult') this.state='ultCharge';
     world.updateTimer(dt);
   }
 
-  /* ==== 通常攻撃（■）: そのまま ==== */
+  /* ■ */
   _startA1(){
     this.state='atk'; this.animT=0; this.comboStep=Math.min(this.comboStep+1,3);
     this.actionAir=!this.onGround; this.actionAirVx=this.actionAir? Math.max(-40,Math.min(40,this.vx)) : 0;
@@ -498,21 +488,20 @@ class Player extends CharacterBase{
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
 
-  /* ==== 攻撃②（▲）+ 追撃チェイン ==== */
+  /* ▲ + 追撃 */
   _startA2(charged, minShake){
     this.state='atk'; this.animT=0; this.actionAir=!this.onGround;
     this.actionAirVx=this.actionAir? Math.max(-40,Math.min(40,this.vx)) : 0;
     const power=charged?18:15, lift=1, kbm=charged?1.2:1.1, kbum=charged?1.25:1.15;
 
     this._actionSeq=[
-      {kind:'prepShake',dur:minShake,frame:'k2prep',dx=0,power:0},
+      {kind:'prepShake',dur:minShake,frame:'k2prep',dx:0,power:0},  /* ← 修正 */
       {kind:'hit',dur:0.26,frame:'k2',dx:14,power:power, lift, kbMul:kbm, kbuMul:kbum, after:'enableChase'}
     ];
     this._actionIndex=0; this._actionTime=0; this.a2LockoutT = 0.4;
     this._chaseWindowT = 0; this._chaseEnabled=false; this._chaseConsumed=false;
   }
   _startA2Chase(){
-    // J.png で小ジャンプしながら前進→ K1-4 で追撃（40ダメ）
     this.state='atk'; this.animT=0;
     const vxBoost = 220; this.vx = this.face*vxBoost; this.vy = -JUMP_V*0.55; this.onGround=false;
     this._actionSeq=[
@@ -524,7 +513,7 @@ class Player extends CharacterBase{
     this.a2LockoutT=0.6;
   }
 
-  /* ==== スキル①（●）スピン：据え置き、チャージ判定だけ短縮 ==== */
+  /* ●（スピン） */
   _startSpin(charged){
     this.state='skill'; this.animT=0;
     const rounds=charged?4:2, power=charged?40:25;
@@ -539,7 +528,7 @@ class Player extends CharacterBase{
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
 
-  /* ==== スキル②（◎）==== */
+  /* ◎（Skill2） */
   _startSkill2(){
     if(this.skill2CDT>0) return;
     this.state='skill2'; this.animT=0; this.skill2CDT=10.0;
@@ -548,21 +537,19 @@ class Player extends CharacterBase{
       {kind:'pose',dur:0.20,frame:'y1'},
       {kind:'pose',dur:0.20,frame:'y2'},
       {kind:'pose',dur:0.20,frame:'y3'},
-      {kind:'pose',dur:0.20,frame:'y4'}, // ここまで0.8s
-      {kind:'emit',dur:1.00,frame:'y4'}  // 1秒震え＆小弾連射
+      {kind:'pose',dur:0.20,frame:'y4'},
+      {kind:'emit',dur:1.00,frame:'y4'}
     ];
     this._actionIndex=0; this._actionTime=0;
   }
   _skill2Emit(dt){
-    // 0.1秒ごとに短射程弾（UL3）を10発
     const ul3=this.world.assets.img(this.frames.ul3);
     this._shotAcc += dt;
     const interval=0.10;
     while(this._shots<10 && this._shotAcc>=interval){
       this._shotAcc-=interval;
       const dir = this.face;
-      // ランダムに少しばらす＋短射程
-      const angle = (Math.random()*0.6-0.3) + (dir>0? 0 : Math.PI); // 前方中心
+      const angle = (Math.random()*0.6-0.3) + (dir>0? 0 : Math.PI);
       const spd = 240 + Math.random()*80;
       const px = this.x + Math.cos(angle)*20;
       const py = this.y - 10 + Math.sin(angle)*8;
@@ -575,11 +562,10 @@ class Player extends CharacterBase{
     }
   }
 
-  /* ==== ULT（U）==== */
+  /* ULT（U） */
   _releaseULT(chargeSec){
     if(this.ultCDT>0) return;
     this.state='ult'; this.animT=0;
-    // 放つ瞬間にUL2のポーズを入れ、弾を生成
     const seq=[
       {kind:'pose',dur:0.10,frame:'ul2'},
       {kind:'post',dur:0.20,frame:'ul2'}
@@ -587,14 +573,11 @@ class Player extends CharacterBase{
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
     this.ultCDT=30.0;
 
-    // 発射
     const img=this.world.assets.img(this.frames.ul3);
     const ox=this.face*30, oy=-12;
     const blast=new UltBlast(this.world, this.x+ox, this.y+oy, this.face, img, chargeSec);
     (this.world._skillBullets||(this.world._skillBullets=[])).push(blast);
-    // チャージ中にSA付与されるので、ここで解除へ
     this.saT=0;
-    // ちょい強めエフェクト
     this.effects.addSpark(this.x+ox, this.y-14, true);
   }
 
@@ -602,47 +585,33 @@ class Player extends CharacterBase{
     if(this.actionAir){ this.actionAirVx *= 0.90; this.x += this.actionAirVx*dt; }
     this.updatePhysics(dt);
 
-    // ULTチャージ中はSA
     if(this.state==='ultCharge'){ this.saT=0.05; }
 
     if(this._actionSeq){
       this._actionTime+=dt;
       const cur=this._actionSeq[this._actionIndex];
       if(cur){
-        // 見た目の震え
         if(cur.kind==='prepShake' || (this.state==='skill2' && this._actionIndex>=3) || this.state==='ult'){
-          const ox=Math.sin(performance.now()/25)*2;
-          this._shakeOX = ox;
+          const ox=Math.sin(performance.now()/25)*2; this._shakeOX = ox;
         } else this._shakeOX=0;
 
-        // Skill2 emit
-        if(this.state==='skill2' && cur.kind==='emit'){
-          this._skill2Emit(dt);
-        }
+        if(this.state==='skill2' && cur.kind==='emit'){ this._skill2Emit(dt); }
 
-        // ▲追撃受付
         if(this.state==='atk' && cur.after==='enableChase'){
           this._chaseWindowT = (this._chaseWindowT||0) + dt;
           if(this._chaseWindowT>0.35 && !this._chaseEnabled){ this._chaseEnabled=true; }
         }
 
         if(this._actionTime>=cur.dur){
-          // ▲の追撃入力を見る
           if(this._chaseEnabled && !this._chaseConsumed){
-            // 直近入力を見る（簡易：this.queueA2 再利用）
             if(this.queueA2){ this.queueA2=null; this._startA2Chase(); return; }
           }
 
           this._actionIndex++; this._actionTime=0;
           if(this._actionIndex>=this._actionSeq.length){
             if(this.state==='skill'){ this.skillCDT=5.0; }
-            if(this.state==='skill2'){ /* skill2CDT は開始時に与済み */ }
-            if(this.state==='ult'){ /* ultCDT は開始時に与済み */ }
-
             if(this.state==='atk' && this.comboStep>0) this.comboGraceT=this.comboGraceMax;
             if(this.state==='atk' && this.comboStep>=3){ this.comboStep=0; this.bufferA1=false; }
-
-            // 連携キュー：ここでは無し
             this.state='idle'; this._actionSeq=null;
           }
         }
@@ -672,19 +641,17 @@ class Player extends CharacterBase{
     else if(this.state==='run'){ const i=Math.floor(this.animT*10)%this.frames.walk.length; img=this._imgByKey('walk',i); }
     else if(this.state==='jump'){ img=this._imgByKey('walk',0); }
     else if((this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='ult') && this._actionSeq){
-      const cur=this._actionSeq[this._actionIndex];
-      const key=cur.frame; img=this.world.assets.img(this.frames[key]?this._getFramePath(key,0):key);
+      const cur=this._actionSeq[this._actionIndex]; const key=cur.frame; img=this.world.assets.img(this.frames[key]?this._getFramePath(key,0):key);
     } else img=this._imgByKey('idle',0);
 
     if(!img){ ctx.restore(); return; }
     const scale=this.h/img.height, w=img.width*scale, h=this.h;
     ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2+ox), Math.round(-h/2), Math.round(w), Math.round(h));
 
-    // ULTチャージ中は手元のUL3を描画（大きさ進行）
     if(this.state==='ultCharge'){
       const ul3=this.world.assets.img(this.frames.ul3);
       if(ul3){
-        const t=Math.min(3, (window._inputUltT||0)); // 参照しないため控えめに
+        const t=Math.min(3, (window._inputUltT||0));
         const mul = lerp(0.3, 1.0, clamp(t/3.0,0,1));
         const hh=56*mul, ww=56*mul; const oxh = this.face*26, oyh=-14;
         ctx.save(); ctx.translate(oxh, oyh); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.95; ctx.drawImage(ul3, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh)); ctx.restore();
@@ -694,10 +661,7 @@ class Player extends CharacterBase{
   }
 }
 
-/* ===== 残りは既存の敵・ワールド等（前バージョンと同等） ===== */
-/* ===== Projectile 継承（KozouStone等）・敵AI・World・Game ===== */
-/* ここから下は Rev22d と同等の敵・世界・出現順の実装です（構文のみ追従） */
-
+/* ===== 以降：敵・World・Game（Rev23と同等、w: 修正済） ===== */
 class KozouStone extends Projectile{
   constructor(world,x,y,dir,img){ super(world,x,y,dir,img,5); this.vx = 120*dir; this.vy = -360; this.w = 24; this.h = 24; this.gravity = 900; }
   update(dt){
@@ -1142,7 +1106,6 @@ class World{
     }
     ctx.fillStyle='#0b0f17'; const yTop=Math.floor(GROUND_TOP_Y); ctx.fillRect(0,yTop-1,this.gameW,1);
 
-    // スキル弾も描く
     if(this._skillBullets){ for(const p of this._skillBullets) p.draw(ctx); }
 
     for(const e of enemies) e.draw(ctx,this); player.draw(ctx,this); this.effects.draw(ctx,this);
@@ -1178,7 +1141,6 @@ class Game{
     this.world=new World(this.assets,this.canvas,this.effects);
     this.player=new Player(this.assets,this.world,this.effects);
 
-    // 弱い順 1体ずつ
     const spawnX = 680;
     this.enemyOrder = [
       ()=> new IceRoboMini(this.world,this.effects,this.assets,spawnX),
@@ -1198,12 +1160,10 @@ class Game{
       if(this.effects.hitstop>0){ this.effects.update(dt); this.world.updateCam(this.player); this.world.draw(this.player,this.enemies); requestAnimationFrame(loop); return; }
 
       const input=this.input;
-      // ULTチャージ時間をUI描画側に渡す（簡易）
       window._inputUltT = input.ultChargeT || 0;
 
       this.player.update(dt,this.input,this.world,this.enemies);
 
-      // 敵＆弾→プレイヤー当たり
       for(const e of this.enemies){
         e.update(dt,this.player);
 
@@ -1240,7 +1200,7 @@ class Game{
         }
         if(e instanceof MOBGiant){
           if(e.state==='dash'){
-            const hb = {x:e.x + e.face*26, y:e.y, w=e.w*0.95, h=e.h*0.95};
+            const hb = {x:e.x + e.face*26, y:e.y, w: e.w*0.95, h: e.h*0.95}; /* ← 修正 */
             if(this.player.invulnT<=0 && rectsOverlap(hb, this.player.aabb())){
               const hit=this.player.hurt(40, e.face, {lift:1, kbMul:1.15, kbuMul:1.15}, this.effects);
               if(hit) updateHPUI(this.player.hp,this.player.maxhp);
@@ -1255,7 +1215,6 @@ class Game{
         }
       }
 
-      // プレイヤーのスキル弾を更新＆敵判定
       if(this.world._skillBullets){
         for(const p of this.world._skillBullets){
           p.update(dt);
@@ -1271,16 +1230,13 @@ class Game{
         this.world._skillBullets = this.world._skillBullets.filter(p=>!p.dead && p.life>0);
       }
 
-      // 死亡掃除
       this.enemies=this.enemies.filter(e=>!(e.dead && e.fade<=0));
 
-      // 1体倒したら次をスポーン
       if(this.enemies.length===0 && this.enemyIndex < this.enemyOrder.length-1){
         this.enemyIndex++;
         this.enemies.push(this.enemyOrder[this.enemyIndex]());
       }
 
-      // すり抜け防止（最小侵入軸）
       for(const e of this.enemies){
         if(e.dead || this.player.dead) continue;
         const a=this.player.aabb(), b=e.aabb();
@@ -1310,12 +1266,9 @@ class Game{
   }
 }
 
-/* ===== 被弾時のバッファ解除（プレイヤー） & SA考慮 ===== */
+/* ===== 被弾時のバッファ解除 & SA考慮 ===== */
 Player.prototype.hurt = function(amount,dir,opts,effects){
-  if(this.saT>0){ // ULTチャージ中などのSA
-    // のけぞり軽減＆HPダメージは通す（演出上）
-    opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1};
-  }
+  if(this.saT>0){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
   const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
   if(hit){
     const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=this.hp; fill.style.width=Math.max(0,Math.min(100,(this.hp/this.maxhp)*100))+'%';
