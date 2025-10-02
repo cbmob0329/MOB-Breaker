@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Rev29 (Stage MOBA + Walls + KB up)</title>
+<title>MOB Side Action – Rev30 (Select + SA-break ULT + Shadow fix)</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
 :root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
@@ -41,6 +41,15 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
 .gauge{width:96px;height:6px;border-radius:999px;outline:1px solid #1a263d;background:#0a1220;overflow:hidden}
 .gauge>i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#69d0ff,#a0ffe6)}
 @media (max-height: 720px){ :root{ --stage-h: 650px; } }
+
+/* ===== 選択UI ===== */
+#selectModal{position:absolute;inset:0;background:rgba(5,7,12,.85);backdrop-filter: blur(6px);display:flex;align-items:center;justify-content:center;z-index:50}
+.selCard{width:86%;max-width:360px;background:#0b0f17;border:1px solid #162033;border-radius:14px;padding:16px;box-shadow:0 8px 32px rgba(0,0,0,.45)}
+.selCard h2{margin:0 0 12px;font-size:18px}
+.selRow{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.selRow label{font-size:13px;opacity:.8}
+.selRow select{appearance:none;background:#0f1624;color:#e9eef7;border:1px solid #1b2942;border-radius:10px;padding:10px 12px}
+.selStart{width:100%;margin-top:8px;border:none;border-radius:12px;padding:12px;background:#224a9a;color:#fff;font-weight:700;box-shadow:inset 0 -3px 0 rgba(0,0,0,.2)}
 </style>
 </head>
 <body>
@@ -55,7 +64,29 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
           <div class="chip timer">Time <strong id="time">00:00</strong></div>
         </header>
         <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
+
+        <!-- 選択モーダル -->
+        <div id="selectModal">
+          <div class="selCard">
+            <h2>バトル設定</h2>
+            <div class="selRow">
+              <label for="allySel">味方（プレイヤー）</label>
+              <select id="allySel">
+                <option value="player" selected>MOBYOKI（標準）</option>
+              </select>
+            </div>
+            <div class="selRow">
+              <label for="enemySel">敵キャラ</label>
+              <select id="enemySel">
+                <option value="gabking" selected>ガブキング</option>
+                <option value="screw">MOBスクリュー</option>
+              </select>
+            </div>
+            <button class="selStart" id="startBtn">ゲームスタート</button>
+          </div>
+        </div>
       </div>
+
       <div class="controls">
         <div class="stickArea" id="stickArea" aria-label="Move Stick">
           <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
@@ -272,13 +303,12 @@ class CharacterBase{
 class Projectile{
   constructor(world,x,y,dir,img,power=10){
     this.world=world; this.x=x; this.y=y; this.dir=dir; this.vx=160*dir; this.vy=0; this.img=img; this.power=power; this.life=3.2; this.dead=false; this.w=40; this.h=28;
-    this.kbMul=0.9; this.kbuMul=0.9; this.lift=0.3;
+    this.kbMul=0.9; this.kbuMul=0.9; this.lift=0.3; this.isUlt=false;
   }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.9, h:this.h*0.9}; }
   update(dt){
     if(this.dead) return;
     this.x+=this.vx*dt; this.y+=this.vy*dt; this.life-=dt;
-    // 壁に当たったら消滅
     const half=this.w/2;
     if(this.x-half<=0 || this.x+half>=this.world.stageW){ this.dead=true; }
     if(this.life<=0) this.dead=true;
@@ -307,14 +337,15 @@ class UltBlast extends Projectile{
     const t = clamp(chargeSec,0,3.0);
     const base = 80 + Math.floor(t/0.1)*4;
     super(world,x,y,dir,img,base);
-    const sizeMul = lerp(0.9, 2.2, t/3);     /* さらに大きく */
+    const sizeMul = lerp(0.9, 2.2, t/3);
     this.w = Math.round(68*sizeMul);
     this.h = Math.round(68*sizeMul);
     this.vx = (260 + 90*sizeMul) * dir;
     this.life = 2.0 + 0.45*sizeMul;
-    this.kbMul  = 1.75 + 0.25*sizeMul;       /* 吹っ飛び強化 */
-    this.kbuMul = 1.75 + 0.25*sizeMul;
-    this.lift   = 1.15 + 0.45*sizeMul;
+    this.kbMul  = 2.2 + 0.35*sizeMul;     /* 強制ぶっ飛び強化 */
+    this.kbuMul = 2.2 + 0.35*sizeMul;
+    this.lift   = 1.25 + 0.45*sizeMul;
+    this.isUlt = true;                     /* ← ULTフラグ */
   }
 }
 class GroundSpike extends Projectile{
@@ -323,10 +354,7 @@ class GroundSpike extends Projectile{
     this.vx = 0; this.h = 10; this.w = 42; this.life = 1.0; this.riseT=0; this.maxH=90;
   }
   aabb(){ return {x:this.x, y:this.y - this.h/2, w:this.w*0.9, h:this.h}; }
-  update(dt){
-    this.riseT += dt; this.h = Math.min(this.maxH, 10 + this.riseT*160);
-    this.life -= dt; if(this.life<=0) this.dead=true;
-  }
+  update(dt){ this.riseT += dt; this.h = Math.min(this.maxH, 10 + this.riseT*160); this.life -= dt; if(this.life<=0) this.dead=true; }
   draw(ctx){
     const img=this.img; if(!img) return;
     const scaleW=this.w/img.width, scaleH=this.h/img.height;
@@ -439,16 +467,14 @@ class Player extends CharacterBase{
   }
 }
 
-/* ===== ガブキング（先出し） ===== */
+/* ===== ガブキング（敵） ===== */
 class GabBlast extends Projectile{
   constructor(world,x,y,dir,img){
     super(world,x,y,dir,img,130);
     this.w = 78; this.h = 78;
     this.vx = 300*dir;
     this.life = 2.0;
-    this.kbMul = 1.5;
-    this.kbuMul= 1.55;
-    this.lift  = 1.2;
+    this.kbMul = 1.5; this.kbuMul=1.55; this.lift  = 1.2;
   }
 }
 class GabKing extends CharacterBase{
@@ -461,31 +487,31 @@ class GabKing extends CharacterBase{
     this._seq=null; this._idx=0; this._t=0;
   }
   img(key){
-    const map={
-      idle:'t1.png',
-      walk1:'t2.png', walk2:'t3.png',
-      dash:'t6.png',
-      a1:'t4.png', a2:'t5.png',
-      pose7:'t7.png',
-      pre10:'t10.png',
-      uProj:'t11.png',
-      up8:'t8.png', up9:'t9.png'
-    };
+    const map={ idle:'t1.png', walk1:'t2.png', walk2:'t3.png', dash:'t6.png', a1:'t4.png', a2:'t5.png', pose7:'t7.png', pre10:'t10.png', uProj:'t11.png', up8:'t8.png', up9:'t9.png' };
     return this.assets.img(map[key]||'t1.png');
   }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.72, h:this.h*0.92}; }
   hurt(amount, dir, opts={}, effects){
     if(this.invulnT>0||this.dead) return false;
-    const luckySA = Math.random() < 0.50;
-    const activeSA = luckySA;
+    const saChance = 0.50;
+    const luckySA = Math.random() < saChance;
+    const forceBreak = !!opts.forceBreakSA;            /* ← ULT強制 */
+    const activeSA = forceBreak ? false : luckySA;
+
     this.hp=Math.max(0,this.hp-amount);
     const kbMul = activeSA ? 0.18 : (opts.kbMul||1);
     const kbuMul= activeSA ? 0.16 : (opts.kbuMul||1);
     const baseKb = 140 + amount*12;
     const baseKbu = (opts.lift?360:(amount>=15?300:210));
-    this.vx = clamp(dir * baseKb * kbMul, -210, 210);
-    this.vy = - clamp(baseKbu * kbuMul, 0, 360);
-    this.x += dir * 2; this.face = -dir;
+
+    // ULTなら更に強制で跳ばす
+    const finalKbMul  = forceBreak ? Math.max(kbMul, 2.2) : kbMul;
+    const finalKbuMul = forceBreak ? Math.max(kbuMul,2.2) : kbuMul;
+
+    this.vx = clamp(dir * baseKb * finalKbMul, -320, 320);
+    this.vy = - clamp(baseKbu * finalKbuMul, 0, 520);
+    this.x += dir * 2.5; this.face = -dir;
+
     if(!activeSA){ this.state='hurt'; this.hurtT=0; this.invulnT=0.22; }
     if(effects) effects.addSpark(this.x, this.y-12, amount>=28);
     if(this.hp<=0){ this.dead=true; this.vx = dir*520; this.vy = -520; this.spinSpeed=16; this.deathT=0; this.fade=1; }
@@ -600,7 +626,141 @@ class GabKing extends CharacterBase{
   }
 }
 
-/* ===== World（MOBAステージ & 壁） ===== */
+/* ===== MOBスクリュー（敵 / プレイアブル想定のAI） ===== */
+class Screw extends CharacterBase{
+  constructor(world,effects,assets,x=600){
+    super(70,78);  // 画像サイズ感を少し大きめに調整
+    this.world=world; this.effects=effects; this.assets=assets;
+    this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
+    this.maxhp=1800; this.hp=1800;
+    this.cool=0; this.s1CD=0; this.ultCD=0;
+    this._seq=null; this._idx=0; this._t=0;
+  }
+  img(key){
+    const map={ idle:'B1.png', walk1:'B2.png', walk2:'B3.png', jump:'B4.png',
+      a1_1:'B5.png', a1_2:'B6.png', chain:'B7.png',
+      s1prep:'B8.png', s1a:'B9.png', s1b:'B10.png', s1c:'B11.png',
+      uprep:'B12.png', udash:'B13.png', uhit:'B14.png'
+    };
+    return this.assets.img(map[key]||'B1.png');
+  }
+  aabb(){ return {x:this.x, y:this.y, w:this.w*0.70, h:this.h*0.92}; }
+  hurt(amount, dir, opts={}, effects){
+    if(this.invulnT>0||this.dead) return false;
+    const saChance=0.30;
+    const forceBreak = !!opts.forceBreakSA;
+    const luckySA = Math.random()<saChance;
+    const activeSA = forceBreak? false : luckySA;
+
+    this.hp=Math.max(0,this.hp-amount);
+    const kbMul = activeSA ? 0.16 : (opts.kbMul||1);
+    const kbuMul= activeSA ? 0.14 : (opts.kbuMul||1);
+    const baseKb = 140 + amount*12;
+    const baseKbu = (opts.lift?360:(amount>=15?300:210));
+
+    const finalKbMul  = forceBreak ? Math.max(kbMul, 2.2) : kbMul;
+    const finalKbuMul = forceBreak ? Math.max(kbuMul,2.2) : kbuMul;
+
+    this.vx = clamp(dir * baseKb * finalKbMul, -320, 320);
+    this.vy = - clamp(baseKbu * finalKbuMul, 0, 520);
+    this.x += dir * 2; this.face = -dir;
+
+    if(!activeSA){ this.state='hurt'; this.hurtT=0; this.invulnT=0.22; }
+    if(effects) effects.addSpark(this.x, this.y-12, amount>=28);
+    if(this.hp<=0){ this.dead=true; this.vx = dir*520; this.vy = -520; this.spinSpeed=16; this.deathT=0; this.fade=1; }
+    return true;
+  }
+  _hitPlayer(player, power, kbMul=1, kbuMul=1, lift=0){
+    const hb={ x:this.x + this.face*(this.w*0.36), y:this.y, w:68, h:54 };
+    if(player.invulnT<=0 && rectsOverlap(hb, player.aabb())){
+      const hit=player.hurt(power, this.face, {lift, kbMul, kbuMul}, this.effects);
+      if(hit){ updateHPUI(player.hp,player.maxhp); this.effects.addSpark(player.x, player.y-10, power>=60); }
+    }
+  }
+  update(dt,player){
+    if(this.dead){ this.updatePhysics(dt); return; }
+    if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
+    if(this.s1CD>0) this.s1CD=Math.max(0,this.s1CD-dt);
+    if(this.ultCD>0) this.ultCD=Math.max(0,this.ultCD-dt);
+
+    if(this.state==='atk' || this.state==='skill' || this.state==='ult'){
+      this._t+=dt;
+      const cur=this._seq?.[this._idx];
+      if(cur){
+        if(cur.fx) this.x += this.face * cur.fx * dt;
+        this.updatePhysics(dt);
+        if(cur.hit && !cur._hitDone){ this._hitPlayer(player, cur.power, cur.kbMul, cur.kbuMul, cur.lift||0); cur._hitDone=true; }
+        if(this._t>=cur.dur){ this._idx++; this._t=0; if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; this.vx=0; } }
+      }
+      this.animT+=dt; return;
+    }
+
+    // AI
+    const dx=player.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
+
+    if(this.ultCD<=0 && adx<=340 && Math.random()<0.012){ this._startULT(); return; }
+    if(this.s1CD<=0 && adx<=300 && Math.random()<0.035){ this._startSkill1(); return; }
+    if(adx<140 && this.cool<=0){ this._startAttack(); return; }
+
+    const walk=60;
+    if(!this.onGround && Math.random()<0.05){ /* 空中微調整 */ }
+    if(adx>120){ this.vx = (dx>0? walk : -walk); }
+    else this.vx=0;
+
+    if(this.onGround && Math.random()<0.02){ this.vy = -JUMP_V*0.85; } // たまにジャンプ
+    this.updatePhysics(dt);
+    if(!this.onGround) this.state='jump';
+    else this.state = Math.abs(this.vx)>1? 'run':'idle';
+    this.animT+=dt;
+  }
+  _startAttack(){
+    this.state='atk'; this._t=0; this._idx=0; this.cool=1.0;
+    this._seq=[
+      {dur:0.10,key:'a1_1',fx:120,hit:false},
+      {dur:0.18,key:'a1_2',fx:180,hit:true, power:30, kbMul:1.0, kbuMul:1.0, lift:0.4},
+      {dur:0.12,key:'a1_1',fx:110,hit:false},
+      {dur:0.18,key:'chain',fx:200,hit:true, power:35, kbMul:1.1, kbuMul:1.1, lift:0.6},
+    ];
+  }
+  _startSkill1(){
+    this.state='skill'; this._t=0; this._idx=0; this.s1CD=5.0;
+    this._seq=[
+      {dur:0.50,key:'s1prep',fx:0,hit:false}, // 震え
+      {dur:0.20,key:'s1a',fx:540,hit:true,power:50,kbMul:1.0,kbuMul:1.0,lift:0.4},
+      {dur:0.16,key:'s1b',fx:360,hit:true,power:20,kbMul:0.9,kbuMul:0.9,lift:0.2},
+      {dur:0.22,key:'s1c',fx:380,hit:true,power:50,kbMul:1.3,kbuMul:1.3,lift:0.9},
+    ];
+  }
+  _startULT(){
+    this.state='ult'; this._t=0; this._idx=0; this.ultCD=20.0;
+    this._seq=[
+      {dur:0.50,key:'uprep',fx:0,hit:false},
+      {dur:0.24,key:'udash',fx:600,hit:false},
+      {dur:0.20,key:'uhit',fx:0,hit:true,power:120,kbMul:1.6,kbuMul:1.8,lift:1.4},
+    ];
+  }
+  draw(ctx,world){
+    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
+    if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
+    if(this.face<0 && !this.dead) ctx.scale(-1,1);
+    let key='idle';
+    if(this.state==='run'){ key=(Math.floor(this.animT*6)%2? 'walk1':'walk2'); }
+    else if(this.state==='jump'){ key='jump'; }
+    else if(this.state==='atk' || this.state==='skill' || this.state==='ult'){
+      const cur=this._seq?.[this._idx];
+      if(cur){ key = cur.key; }
+    }
+    const img=this.img(key);
+    if(img){
+      const scale=this.h/img.height, w=img.width*scale, h=this.h;
+      ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
+    }
+    ctx.restore();
+    this.drawHPBar(ctx,world);
+  }
+}
+
+/* ===== World（MOBAステージ & 壁・影描画削除） ===== */
 class World{
   constructor(assets, canvas, effects){
     this.assets=assets; this.effects=effects; this.canvas=canvas;
@@ -608,14 +768,13 @@ class World{
     this.gameW=canvas.width; this.gameH=canvas.height; this.camX=0; this.camY=0; this.time=0; this._timerAcc=0;
     const r=this.canvas.getBoundingClientRect(); this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
 
-    // 背景：MOBA.png を使用。高さフィット、横は画像比率で決定 → その幅がステージ幅
     this.bgImg = this.assets.has('MOBA.png') ? this.assets.img('MOBA.png') : (this.assets.has('back1.png') ? this.assets.img('back1.png') : null);
     if(this.bgImg){
       this.bgScale = this.gameH / this.bgImg.height;
       this.stageW  = Math.max(this.gameW, Math.round(this.bgImg.width * this.bgScale));
       this.bgDW = this.stageW; this.bgDH = Math.round(this.bgImg.height * this.bgScale);
     } else {
-      this.stageW = 2400; // フォールバック
+      this.stageW = 2400;
     }
     this.bgSpeed=1.0;
   }
@@ -623,9 +782,7 @@ class World{
   updateCam(p){
     const offs=this.effects.getCamOffset();
     const target=p.x - this.gameW*0.35 + offs.x;
-    const unclamped = lerp(this.camX,target,0.12);
-    // カメラをステージ内にクランプ
-    this.camX = clamp(unclamped, 0, Math.max(0, (this.stageW - this.gameW)));
+    this.camX = clamp(lerp(this.camX,target,0.12), 0, Math.max(0, (this.stageW - this.gameW)));
     this.camY=offs.y;
   }
   updateTimer(dt){
@@ -635,26 +792,16 @@ class World{
   draw(player, enemies){
     const ctx=this.ctx; ctx.clearRect(0,0,this.gameW,this.gameH);
 
-    // 背景：1枚物をステージ幅で描画（左右端＝壁の視覚的基準）
     if(this.bgImg){
       ctx.drawImage(this.bgImg, 0,0,this.bgImg.width,this.bgImg.height,
         Math.round(-this.camX*this.bgSpeed), 0, this.bgDW, this.bgDH);
     } else {
-      const g=ctx.createLinearGradient(0,0,0,this.gameH); g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18'); ctx.fillStyle=g; ctx.fillRect(0,0,this.gameW,this.gameH);
+      const g=ctx.createLinearGradient(0,0,0,this.gameH); g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18'); ctx.fillStyle=g; ctx.fillRect(0,0,this.gameH,this.gameH);
     }
-
     // 地面ライン
     ctx.fillStyle='#0b0f17'; const yTop=Math.floor(GROUND_TOP_Y); ctx.fillRect(0,yTop-1,this.gameW,1);
 
-    // 壁の視覚（半透明のサイドシャドウ）
-    ctx.fillStyle='rgba(10,15,25,0.55)';
-    const leftWallX = -this.camX;
-    const rightWallX = (this.stageW - this.camX);
-    if(leftWallX<20){ ctx.fillRect(0,0, 20-leftWallX, this.gameH); }
-    if(rightWallX<this.gameW+20){ const w = 20 - (this.gameW - rightWallX); ctx.fillRect(this.gameW-w,0,w,this.gameH); }
-
     if(this._skillBullets){ for(const p of this._skillBullets) p.draw(ctx); }
-
     for(const e of enemies) e.draw(ctx,this); player.draw(ctx,this); this.effects.draw(ctx,this);
   }
 }
@@ -667,12 +814,12 @@ class Game{
   constructor(){
     this.assets=new Assets(); this.canvas=document.getElementById('game'); this.input=new Input(); this.effects=new Effects();
     this.player=null; this.enemies=[]; this.world=null; this.lastT=0;
+    this._selectedEnemy='gabking'; this._selectedAlly='player';
     addEventListener('resize',()=>this.world?.resize());
   }
   async start(){
     const imgs=[
-      'MOBA.png', // 新ステージ
-      'back1.png',
+      'MOBA.png','back1.png',
       'M1-1.png','M1-2.png','M1-3.png','M1-4.png',
       'K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png',
       'h1.png','h2.png','h3.png','h4.png','J.png',
@@ -680,19 +827,38 @@ class Game{
       'Y1.png','Y2.png','Y3.png','Y4.png',
       'kem.png',
       /* GabKing */
-      't1.png','t2.png','t3.png','t4.png','t5.png','t6.png','t7.png','t8.png','t9.png','t10.png','t11.png'
+      't1.png','t2.png','t3.png','t4.png','t5.png','t6.png','t7.png','t8.png','t9.png','t10.png','t11.png',
+      /* Screw */
+      'B1.png','B2.png','B3.png','B4.png','B5.png','B6.png','B7.png','B8.png','B9.png','B10.png','B11.png','B12.png','B13.png','B14.png'
     ];
     await this.assets.load(imgs);
     this.world=new World(this.assets,this.canvas,this.effects);
     this.player=new Player(this.assets,this.world,this.effects);
 
-    // 初期出現：ガブキング
-    const spawnX = Math.min(640, this.world.stageW - 200);
-    this.enemies = [ new GabKing(this.world,this.effects,this.assets,spawnX) ];
+    // 選択UI
+    const modal=document.getElementById('selectModal');
+    const allySel=document.getElementById('allySel');
+    const enemySel=document.getElementById('enemySel');
+    const startBtn=document.getElementById('startBtn');
 
-    updateHPUI(this.player.hp,this.player.maxhp);
+    startBtn.addEventListener('click',()=>{
+      this._selectedAlly = allySel.value; // いまは "player" のみ
+      this._selectedEnemy= enemySel.value;
+
+      // 敵生成
+      const spawnX = Math.min(640, this.world.stageW - 200);
+      this.enemies = [ this._selectedEnemy==='gabking'
+        ? new GabKing(this.world,this.effects,this.assets,spawnX)
+        : new Screw(this.world,this.effects,this.assets,spawnX) ];
+
+      modal.style.display='none';
+      updateHPUI(this.player.hp,this.player.maxhp);
+      this._run(); // ループ開始
+    },{once:true});
+  }
+
+  _run(){
     this.lastT=now();
-
     const clampActorToWalls = (a)=>{
       const half=a.w/2;
       if(a.x < half){ a.x = half; if(a.vx<0) a.vx=0; }
@@ -711,16 +877,18 @@ class Game{
 
       for(const e of this.enemies){ e.update(dt,this.player); clampActorToWalls(e); }
 
-      // 弾・設置物の更新と壁反射/消滅はProjectile内で処理
+      // 弾など
       if(this.world._skillBullets){
         for(const p of this.world._skillBullets){
           p.update(dt);
-          // 壁越えで死んだものは Projectile.update が処理
           for(const e of this.enemies){
             if(!p.dead && !e.dead && rectsOverlap(p.aabb(), e.aabb())){
               p.dead=true;
               const dir = (e.x>=p.x)? 1 : -1;
-              const opts = { lift: (p.lift??0.3), kbMul: (p.kbMul??0.9), kbuMul: (p.kbuMul??0.9) };
+              // ULT の場合は SA貫通・超ノックバック
+              const opts = p.isUlt
+                ? { lift:(p.lift??1.0), kbMul: (p.kbMul??2.2), kbuMul:(p.kbuMul??2.2), forceBreakSA:true }
+                : { lift:(p.lift??0.3), kbMul:(p.kbMul??0.9), kbuMul:(p.kbuMul??0.9) };
               const hit = e.hurt(p.power, dir, opts, this.effects);
               if(hit) this.effects.addSpark(e.x, e.y-10, p.power>=40);
             }
@@ -729,7 +897,7 @@ class Game{
         this.world._skillBullets = this.world._skillBullets.filter(p=>!p.dead && p.life>0);
       }
 
-      // のめり込み解消（プレイヤー vs 敵）
+      // のめり込み解消
       for(const e of this.enemies){
         if(e.dead || this.player.dead) continue;
         const a=this.player.aabb(), b=e.aabb();
@@ -760,12 +928,11 @@ class Game{
   }
 }
 
-/* ===== プレイヤー被弾：吹っ飛び増し ===== */
+/* ===== プレイヤー被弾調整（以前のKB強化は維持） ===== */
 Player.prototype.hurt = function(amount,dir,opts,effects){
-  // Skill2出し切り or SA中は軽減、それ以外は「さらに飛ぶ」補正
   if(this.state==='skill2'){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
   else if(this.saT>0){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
-  else{ // 通常時は強めにふっとぶ（ご要望）
+  else{
     const km = (opts?.kbMul ?? 1)*1.3;
     const kum= (opts?.kbuMul?? 1)*1.25;
     opts = {...(opts||{}), kbMul:km, kbuMul:kum};
@@ -784,7 +951,8 @@ Player.prototype.hurt = function(amount,dir,opts,effects){
   return hit;
 };
 
-new Game().start();
+const game = new Game();
+game.start();
 })();
 </script>
 </body>
