@@ -1,10 +1,9 @@
-# Write the full single-file build to /mnt/data and provide a download link
-html = r"""<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Rev32 (Multi-Enemy Registry + Per-Character Counts)</title>
+<title>MOB Side Action – Rev30 (All Enemies Selector)</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
 :root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
@@ -43,25 +42,25 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
 .gauge>i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#69d0ff,#a0ffe6)}
 @media (max-height: 720px){ :root{ --stage-h: 650px; } }
 
-/* ===== 選択UI ===== */
-#selectModal{position:absolute;inset:0;background:rgba(5,7,12,.85);backdrop-filter: blur(6px);display:flex;align-items:center;justify-content:center;z-index:50}
-.selCard{width:92%;max-width:420px;background:#0b0f17;border:1px solid #162033;border-radius:14px;padding:16px;box-shadow:0 8px 32px rgba(0,0,0,.45);max-height:84vh;display:flex;flex-direction:column}
-.selCard h2{margin:0 0 12px;font-size:18px}
-.selBody{overflow:auto;padding-right:4px;display:flex;flex-direction:column;gap:12px}
-.selRow{display:flex;flex-direction:column;gap:6px}
-.selRow label{font-size:13px;opacity:.85}
-.selRow select,.selRow input[type="number"],.selRow input[type="checkbox"],.countInput{appearance:none;background:#0f1624;color:#e9eef7;border:1px solid #1b2942;border-radius:10px;padding:10px 12px}
-.selStart{width:100%;margin-top:12px;border:none;border-radius:12px;padding:12px;background:#224a9a;color:#fff;font-weight:700;box-shadow:inset 0 -3px 0 rgba(0,0,0,.2)}
-.small{font-size:12px;opacity:.7}
-.enemyList{display:flex;flex-direction:column;gap:8px}
-.enemyRow{display:grid;grid-template-columns: 1fr auto;gap:8px;align-items:center;background:#0f1624;border:1px solid #1b2942;border-radius:10px;padding:8px 10px}
-.enemyName{font-weight:700}
-.countInput{width:86px;text-align:center}
-.rowRight{display:flex;gap:8px;align-items:center}
-.badge{background:#13213a;border:1px solid #1c2d4f;border-radius:999px;padding:4px 8px;font-size:11px;opacity:.85}
-.totals{display:flex;justify-content:space-between;align-items:center;background:#0f1624;border:1px solid #1b2942;border-radius:10px;padding:8px 10px}
-.presetBtns{display:flex;gap:8px;flex-wrap:wrap}
-.preset{border:none;border-radius:10px;padding:8px 10px;background:#22365e;color:#fff;font-weight:700}
+/* === 選択パネル === */
+#selector{position:absolute;inset:0;background:rgba(5,8,12,.88);backdrop-filter: blur(4px);display:flex;flex-direction:column;z-index:20}
+#selector header{padding:10px 12px;display:flex;gap:8px;align-items:center}
+#selector h1{font-size:14px;margin:0;font-weight:700}
+#selector .hint{margin-left:auto;opacity:.8;font-size:12px}
+#list{flex:1;min-height:0;overflow:auto;display:grid;grid-template-columns:1fr;gap:8px;padding:10px 12px}
+.card{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;background:#0c121d;outline:1px solid #152033;border-radius:12px;padding:8px}
+.thumb{width:44px;height:44px;display:grid;place-items:center;background:#0a111c;outline:1px solid #1a263d;border-radius:8px;font-size:10px;opacity:.9}
+.meta .name{font-size:13px;font-weight:700}
+.meta .desc{font-size:11px;opacity:.8}
+.counter{display:flex;gap:6px;align-items:center}
+.counter button{width:28px;height:28px;border-radius:8px;border:none;background:#172238;color:#e9eef7;outline:1px solid #2a3e61;font-size:16px}
+.counter .num{min-width:22px;text-align:center}
+.badge{font-size:10px;opacity:.8;background:#0d1524;border:1px solid #1a2742;border-radius:999px;padding:2px 6px}
+#selector footer{padding:10px 12px;display:flex;gap:10px}
+footer .btnx{flex:1;border:none;border-radius:12px;padding:12px;font-weight:800;color:#fff;background:#1d6ef0}
+footer .btnx:disabled{opacity:.4}
+footer .ghost{background:#233049}
+.small{font-size:11px;opacity:.8}
 </style>
 </head>
 <body>
@@ -77,36 +76,21 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
         </header>
         <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
 
-        <!-- 選択モーダル -->
-        <div id="selectModal">
-          <div class="selCard">
-            <h2>バトル設定</h2>
-            <div class="selBody">
-              <div class="selRow">
-                <label>味方（プレイヤー）</label>
-                <div class="badge">MOBYOKI 固定（※敵のみマルチ選択対応）</div>
-              </div>
-
-              <div class="selRow">
-                <label>敵キャラ（登録済み一覧）— 各行の数を指定</label>
-                <div id="enemyList" class="enemyList"></div>
-                <div class="totals">
-                  <div><strong>合計</strong>：<span id="totalCount">0</span> 体</div>
-                  <div class="presetBtns">
-                    <button class="preset" id="btnClear">クリア</button>
-                    <button class="preset" id="btnOneEach">各1体</button>
-                    <button class="preset" id="btnLoadPrev">前回の設定</button>
-                  </div>
-                </div>
-                <div class="small">※ 合計は最大 <strong id="maxTotalLabel">20</strong> 体まで。超えると自動で上限に丸めます。</div>
-              </div>
-            </div>
-
-            <button class="selStart" id="startBtn">ゲームスタート</button>
-          </div>
+        <!-- 敵選択パネル -->
+        <div id="selector" aria-label="Enemy Selector">
+          <header>
+            <h1>敵セレクト（最大10体）</h1>
+            <span class="hint" id="selCount">0 / 10</span>
+          </header>
+          <div id="list"></div>
+          <footer>
+            <button class="btnx ghost" id="btnClear">すべて0に</button>
+            <button class="btnx" id="btnStart" disabled>スタート</button>
+          </footer>
+          <div class="small" style="padding:0 12px 10px">※画像が未登録のキャラはプレースホルダー表示で動作します。</div>
         </div>
-      </div>
 
+      </div>
       <div class="controls">
         <div class="stickArea" id="stickArea" aria-label="Move Stick">
           <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
@@ -130,6 +114,7 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
 const now=()=>performance.now();
+const MAX_ENEMIES = 10;
 
 /* ===== Effects ===== */
 class Effects{
@@ -323,7 +308,7 @@ class CharacterBase{
 class Projectile{
   constructor(world,x,y,dir,img,power=10){
     this.world=world; this.x=x; this.y=y; this.dir=dir; this.vx=160*dir; this.vy=0; this.img=img; this.power=power; this.life=3.2; this.dead=false; this.w=40; this.h=28;
-    this.kbMul=0.9; this.kbuMul=0.9; this.lift=0.3; this.isUlt=false;
+    this.kbMul=0.9; this.kbuMul=0.9; this.lift=0.3;
   }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.9, h:this.h*0.9}; }
   update(dt){
@@ -334,11 +319,29 @@ class Projectile{
     if(this.life<=0) this.dead=true;
   }
   draw(ctx){
-    if(this.dead||!this.img) return; const img=this.img;
-    const scale=this.h/img.height, w=img.width*scale, h=this.h;
-    ctx.save(); ctx.translate(this.x-this.world.camX,this.y-this.world.camY); if(this.dir<0) ctx.scale(-1,1);
-    ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
-    ctx.restore();
+    if(this.dead) return;
+    const img=this.img;
+    if(img){
+      const scale=this.h/img.height, w=img.width*scale, h=this.h;
+      ctx.save(); ctx.translate(this.x-this.world.camX,this.y-this.world.camY); if(this.dir<0) ctx.scale(-1,1);
+      ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
+      ctx.restore();
+    }else{
+      ctx.save(); ctx.translate(this.x-this.world.camX,this.y-this.world.camY);
+      ctx.fillStyle='#8cf'; ctx.fillRect(-this.w/2,-this.h/2,this.w,this.h);
+      ctx.restore();
+    }
+  }
+}
+class EnergyBall extends Projectile{
+  constructor(world,x,y,dir,img,basePower=20,chargeSec=0, incrementPerTenth=1){
+    super(world,x,y,dir,img,basePower);
+    this.chargeSec = clamp(chargeSec,0,2.0);
+    this.power = basePower + Math.floor(this.chargeSec / 0.1) * incrementPerTenth;
+    const sizeMul = 1 + 0.55*(this.chargeSec/2);
+    this.w = Math.round(48*sizeMul); this.h = Math.round(36*sizeMul);
+    this.vx = (210 + 70*(this.chargeSec/2)) * dir;
+    this.life = 3.6;
   }
 }
 class UltBlast extends Projectile{
@@ -351,10 +354,9 @@ class UltBlast extends Projectile{
     this.h = Math.round(68*sizeMul);
     this.vx = (260 + 90*sizeMul) * dir;
     this.life = 2.0 + 0.45*sizeMul;
-    this.kbMul  = 2.2 + 0.35*sizeMul;     /* 強制ぶっ飛び強化 */
-    this.kbuMul = 2.2 + 0.35*sizeMul;
-    this.lift   = 1.25 + 0.45*sizeMul;
-    this.isUlt = true;                     /* ← ULTフラグ */
+    this.kbMul  = 1.75 + 0.25*sizeMul;
+    this.kbuMul = 1.75 + 0.25*sizeMul;
+    this.lift   = 1.15 + 0.45*sizeMul;
   }
 }
 class GroundSpike extends Projectile{
@@ -363,9 +365,16 @@ class GroundSpike extends Projectile{
     this.vx = 0; this.h = 10; this.w = 42; this.life = 1.0; this.riseT=0; this.maxH=90;
   }
   aabb(){ return {x:this.x, y:this.y - this.h/2, w:this.w*0.9, h:this.h}; }
-  update(dt){ this.riseT += dt; this.h = Math.min(this.maxH, 10 + this.riseT*160); this.life -= dt; if(this.life<=0) this.dead=true; }
+  update(dt){
+    this.riseT += dt; this.h = Math.min(this.maxH, 10 + this.riseT*160);
+    this.life -= dt; if(this.life<=0) this.dead=true;
+  }
   draw(ctx){
-    const img=this.img; if(!img) return;
+    const img=this.img; if(!img){
+      ctx.save(); ctx.translate(this.x-this.world.camX, Math.floor(GROUND_TOP_Y)-this.world.camY);
+      ctx.fillStyle='#9cf'; ctx.fillRect(-this.w/2, -this.h, this.w, this.h);
+      ctx.restore(); return;
+    }
     const scaleW=this.w/img.width, scaleH=this.h/img.height;
     ctx.save(); ctx.translate(this.x-this.world.camX, Math.floor(GROUND_TOP_Y)-this.world.camY); ctx.scale(1,-1);
     ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-img.width*scaleW/2), 0, Math.round(img.width*scaleW), Math.round(img.height*scaleH));
@@ -457,7 +466,6 @@ class Player extends CharacterBase{
   }
   _respawn(world){ this.dead=false; this.fade=1; this.spinAngle=0; this.spinSpeed=0; this.state='idle'; this.comboStep=0; this.comboGraceT=0; this.bufferA1=false; this.invulnT=0.6; this.hp=this.maxhp; document.getElementById('hpfill').style.width='100%'; document.getElementById('hpnum').textContent=this.hp; this.x=clamp(world.camX+80, this.w/2, world.stageW-this.w/2); this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.vx=0; this.vy=0; this.jumpsLeft=this.maxJumps; this.saT=0; this._activeSpikes=null; this.isUltCharging=false; }
   draw(ctx,world){
-    const drawFrame=(img,ox=0)=>{ if(!img) return; const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2+ox), Math.round(-h/2), Math.round(w), Math.round(h)); };
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
     if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
     if(this.face<0 && !this.dead) ctx.scale(-1,1);
@@ -465,24 +473,26 @@ class Player extends CharacterBase{
     if(this.state==='idle'){ img=this._imgByKey('idle',0); }
     else if(this.state==='run'){ const speed=Math.abs(this.vx); const rate = lerp(6, 11, clamp(speed/MOVE, 0, 1)); const i=Math.floor(this.animT*rate)%this.frames.run.length; img=this._imgByKey('run',i); }
     else if(this.state==='jump'){ img=this._imgByKey('run',0); }
-    else if((this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='ult') && this._actionSeq){ const cur=this._actionSeq[this._actionIndex]; const key=cur.frame; img=this.world.assets.img(this.frames[key]?this._getFramePath(key,0):key); }
-    drawFrame(img,ox);
+    else if((this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='ult') && this._actionSeq){ const cur=this._actionSeq[this._actionIndex]; const key=cur.frame; img=this.world.assets.img(this.frames[key]?this._getFramePath(key,0):key); } else img=this._imgByKey('idle',0);
+    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2+ox), Math.round(-h/2), Math.round(w), Math.round(h)); }
     if(this.isUltCharging){
-      const holder=this.world.assets.img(this.frames.ul1); if(holder){ const scale=this.h/holder.height, w=holder.width*scale, h=this.h; ctx.save(); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.95; ctx.drawImage(holder, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); ctx.restore(); }
-      const ul3=this.world.assets.img(this.frames.ul3); if(ul3){ const t=Math.min(3, (window._inputUltT||0)); const mul = lerp(0.35, 1.7, clamp(t/3.0,0,1)); const hh=62*mul, ww=62*mul; const oxh = this.face*26, oyh=-14; ctx.save(); ctx.translate(oxh, oyh); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.95; ctx.drawImage(ul3, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh)); ctx.restore(); }
+      const holder=this.world.assets.img(this.frames.ul1);
+      if(holder){ const scale=this.h/holder.height, w=holder.width*scale, h=this.h; ctx.save(); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.95; ctx.drawImage(holder, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); ctx.restore(); }
+      const ul3=this.world.assets.img(this.frames.ul3);
+      if(ul3){ const t=Math.min(3, (window._inputUltT||0)); const mul = lerp(0.35, 1.7, clamp(t/3.0,0,1)); const hh=62*mul, ww=62*mul; const oxh = this.face*26, oyh=-14; ctx.save(); ctx.translate(oxh, oyh); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.95; ctx.drawImage(ul3, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh)); ctx.restore(); }
     }
     ctx.restore();
   }
 }
 
-/* ===== ガブキング ===== */
+/* ===== 既存：ガブキング ===== */
 class GabBlast extends Projectile{
   constructor(world,x,y,dir,img){
     super(world,x,y,dir,img,130);
     this.w = 78; this.h = 78;
     this.vx = 300*dir;
     this.life = 2.0;
-    this.kbMul = 1.5; this.kbuMul=1.55; this.lift  = 1.2;
+    this.kbMul = 1.5; this.kbuMul= 1.55; this.lift  = 1.2;
   }
 }
 class GabKing extends CharacterBase{
@@ -501,25 +511,16 @@ class GabKing extends CharacterBase{
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.72, h:this.h*0.92}; }
   hurt(amount, dir, opts={}, effects){
     if(this.invulnT>0||this.dead) return false;
-    const saChance = 0.50;
-    const luckySA = Math.random() < saChance;
-    const forceBreak = !!opts.forceBreakSA;            /* ← ULT強制 */
-    const activeSA = forceBreak ? false : luckySA;
-
+    const luckySA = Math.random() < 0.50;
+    const activeSA = luckySA;
     this.hp=Math.max(0,this.hp-amount);
     const kbMul = activeSA ? 0.18 : (opts.kbMul||1);
     const kbuMul= activeSA ? 0.16 : (opts.kbuMul||1);
     const baseKb = 140 + amount*12;
     const baseKbu = (opts.lift?360:(amount>=15?300:210));
-
-    // ULTなら更に強制で跳ばす
-    const finalKbMul  = forceBreak ? Math.max(kbMul, 2.2) : kbMul;
-    const finalKbuMul = forceBreak ? Math.max(kbuMul,2.2) : kbuMul;
-
-    this.vx = clamp(dir * baseKb * finalKbMul, -320, 320);
-    this.vy = - clamp(baseKbu * finalKbuMul, 0, 520);
-    this.x += dir * 2.5; this.face = -dir;
-
+    this.vx = clamp(dir * baseKb * kbMul, -210, 210);
+    this.vy = - clamp(baseKbu * kbuMul, 0, 360);
+    this.x += dir * 2; this.face = -dir;
     if(!activeSA){ this.state='hurt'; this.hurtT=0; this.invulnT=0.22; }
     if(effects) effects.addSpark(this.x, this.y-12, amount>=28);
     if(this.hp<=0){ this.dead=true; this.vx = dir*520; this.vy = -520; this.spinSpeed=16; this.deathT=0; this.fade=1; }
@@ -628,147 +629,90 @@ class GabKing extends CharacterBase{
     if(img){
       const scale=this.h/img.height, w=img.width*scale, h=this.h;
       ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
-    }
+    }else{ placeholderDraw(ctx,this,world,'GAB KING'); }
     ctx.restore();
     this.drawHPBar(ctx,world);
   }
 }
 
-/* ===== MOBスクリュー ===== */
-class Screw extends CharacterBase{
-  constructor(world,effects,assets,x=600){
-    super(70,78);  // 画像サイズ感を少し大きめに調整
+/* ===== 汎用：シンプルAIのベース敵 ===== */
+class EnemyBasic extends CharacterBase{
+  constructor(world,effects,assets,opts){
+    super(opts.w||60, opts.h||68);
     this.world=world; this.effects=effects; this.assets=assets;
-    this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
-    this.maxhp=1800; this.hp=1800;
-    this.cool=0; this.s1CD=0; this.ultCD=0;
-    this._seq=null; this._idx=0; this._t=0;
+    this.name=opts.name||'ENEMY';
+    this.frames=opts.frames||{}; // {idle:'x.png', run:['a.png','b.png'], atk:'c.png'}
+    this.tint=opts.tint||'#4ad';
+    this.face=-1;
+    this.maxhp=opts.hp||600; this.hp=this.maxhp;
+    this.power=opts.power||18;
+    this.speed=opts.speed||90;
+    this.cool=0;
+    this.spawnX=opts.x||600;
+    this.x=this.spawnX; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD;
   }
-  img(key){
-    const map={ idle:'B1.png', walk1:'B2.png', walk2:'B3.png', jump:'B4.png',
-      a1_1:'B5.png', a1_2:'B6.png', chain:'B7.png',
-      s1prep:'B8.png', s1a:'B9.png', s1b:'B10.png', s1c:'B11.png',
-      uprep:'B12.png', udash:'B13.png', uhit:'B14.png'
-    };
-    return this.assets.img(map[key]||'B1.png');
+  _img(key, i=0){
+    const v=this.frames[key];
+    if(!v) return null;
+    if(Array.isArray(v)){ const idx=Math.max(0,Math.min(v.length-1,i)); return this.assets.img(v[idx]); }
+    return this.assets.img(v);
   }
-  aabb(){ return {x:this.x, y:this.y, w:this.w*0.70, h:this.h*0.92}; }
-  hurt(amount, dir, opts={}, effects){
-    if(this.invulnT>0||this.dead) return false;
-    const saChance=0.30;
-    const forceBreak = !!opts.forceBreakSA;
-    const luckySA = Math.random()<saChance;
-    const activeSA = forceBreak? false : luckySA;
-
-    this.hp=Math.max(0,this.hp-amount);
-    const kbMul = activeSA ? 0.16 : (opts.kbMul||1);
-    const kbuMul= activeSA ? 0.14 : (opts.kbuMul||1);
-    const baseKb = 140 + amount*12;
-    const baseKbu = (opts.lift?360:(amount>=15?300:210));
-
-    const finalKbMul  = forceBreak ? Math.max(kbMul, 2.2) : kbMul;
-    const finalKbuMul = forceBreak ? Math.max(kbuMul,2.2) : kbuMul;
-
-    this.vx = clamp(dir * baseKb * finalKbMul, -320, 320);
-    this.vy = - clamp(baseKbu * finalKbuMul, 0, 520);
-    this.x += dir * 2; this.face = -dir;
-
-    if(!activeSA){ this.state='hurt'; this.hurtT=0; this.invulnT=0.22; }
-    if(effects) effects.addSpark(this.x, this.y-12, amount>=28);
-    if(this.hp<=0){ this.dead=true; this.vx = dir*520; this.vy = -520; this.spinSpeed=16; this.deathT=0; this.fade=1; }
-    return true;
-  }
-  _hitPlayer(player, power, kbMul=1, kbuMul=1, lift=0){
-    const hb={ x:this.x + this.face*(this.w*0.36), y:this.y, w:68, h:54 };
-    if(player.invulnT<=0 && rectsOverlap(hb, player.aabb())){
-      const hit=player.hurt(power, this.face, {lift, kbMul, kbuMul}, this.effects);
-      if(hit){ updateHPUI(player.hp,player.maxhp); this.effects.addSpark(player.x, player.y-10, power>=60); }
-    }
-  }
-  update(dt,player){
+  update(dt, player){
     if(this.dead){ this.updatePhysics(dt); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
-    if(this.s1CD>0) this.s1CD=Math.max(0,this.s1CD-dt);
-    if(this.ultCD>0) this.ultCD=Math.max(0,this.ultCD-dt);
-
-    if(this.state==='atk' || this.state==='skill' || this.state==='ult'){
-      this._t+=dt;
-      const cur=this._seq?.[this._idx];
-      if(cur){
-        if(cur.fx) this.x += this.face * cur.fx * dt;
-        this.updatePhysics(dt);
-        if(cur.hit && !cur._hitDone){ this._hitPlayer(player, cur.power, cur.kbMul, cur.kbuMul, cur.lift||0); cur._hitDone=true; }
-        if(this._t>=cur.dur){ this._idx++; this._t=0; if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; this.vx=0; } }
-      }
-      this.animT+=dt; return;
-    }
-
-    // AI
-    const dx=player.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
-
-    if(this.ultCD<=0 && adx<=340 && Math.random()<0.012){ this._startULT(); return; }
-    if(this.s1CD<=0 && adx<=300 && Math.random()<0.035){ this._startSkill1(); return; }
-    if(adx<140 && this.cool<=0){ this._startAttack(); return; }
-
-    const walk=60;
-    if(!this.onGround && Math.random()<0.05){ /* 空中微調整 */ }
-    if(adx>120){ this.vx = (dx>0? walk : -walk); }
-    else this.vx=0;
-
-    if(this.onGround && Math.random()<0.02){ this.vy = -JUMP_V*0.85; } // たまにジャンプ
+    const dx=player.x-this.x, adx=Math.abs(dx); this.face=dx>=0?1:-1;
+    // 簡単AI：距離を詰めて、近ければ攻撃
+    if(adx>110){ this.vx = (dx>0? this.speed : -this.speed); }
+    else { this.vx=0; if(this.cool<=0){ this.state='atk'; this.cool=0.9; this.animT=0; this._attack(player); } }
     this.updatePhysics(dt);
-    if(!this.onGround) this.state='jump';
-    else this.state = Math.abs(this.vx)>1? 'run':'idle';
+    this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
     this.animT+=dt;
   }
-  _startAttack(){
-    this.state='atk'; this._t=0; this._idx=0; this.cool=1.0;
-    this._seq=[
-      {dur:0.10,key:'a1_1',fx:120,hit:false},
-      {dur:0.18,key:'a1_2',fx:180,hit:true, power:30, kbMul:1.0, kbuMul:1.0, lift:0.4},
-      {dur:0.12,key:'a1_1',fx:110,hit:false},
-      {dur:0.18,key:'chain',fx:200,hit:true, power:35, kbMul:1.1, kbuMul:1.1, lift:0.6},
-    ];
-  }
-  _startSkill1(){
-    this.state='skill'; this._t=0; this._idx=0; this.s1CD=5.0;
-    this._seq=[
-      {dur:0.50,key:'s1prep',fx:0,hit:false}, // 震え
-      {dur:0.20,key:'s1a',fx:540,hit:true,power:50,kbMul:1.0,kbuMul:1.0,lift:0.4},
-      {dur:0.16,key:'s1b',fx:360,hit:true,power:20,kbMul:0.9,kbuMul:0.9,lift:0.2},
-      {dur:0.22,key:'s1c',fx:380,hit:true,power:50,kbMul:1.3,kbuMul:1.3,lift:0.9},
-    ];
-  }
-  _startULT(){
-    this.state='ult'; this._t=0; this._idx=0; this.ultCD=20.0;
-    this._seq=[
-      {dur:0.50,key:'uprep',fx:0,hit:false},
-      {dur:0.24,key:'udash',fx:600,hit:false},
-      {dur:0.20,key:'uhit',fx:0,hit:true,power:120,kbMul:1.6,kbuMul:1.8,lift:1.4},
-    ];
+  _attack(player){
+    // 単発の殴り + たまに飛び道具
+    const useProj = Math.random()<0.25 && this.frames.proj;
+    if(useProj){
+      const img=this.assets.img(this.frames.proj);
+      const ox=this.face*24, oy=-12;
+      const p=new Projectile(this.world, this.x+ox, this.y+oy, this.face, img, this.power+10);
+      p.vx*=1.3; p.w=42; p.h=28;
+      (this.world._skillBullets||(this.world._skillBullets=[])).push(p);
+      this.effects.addSpark(this.x+ox, this.y-20, false);
+    }else{
+      const hb={ x:this.x + this.face*(this.w*0.35), y:this.y, w:52, h:42 };
+      if(player.invulnT<=0 && rectsOverlap(hb, player.aabb())){
+        const hit=player.hurt(this.power, this.face, {lift:0.6, kbMul:1.0, kbuMul:1.0}, this.effects);
+        if(hit){ updateHPUI(player.hp,player.maxhp); this.effects.addSpark(player.x, player.y-10, this.power>=40); }
+      }
+    }
   }
   draw(ctx,world){
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
     if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
     if(this.face<0 && !this.dead) ctx.scale(-1,1);
-    let key='idle';
-    if(this.state==='run'){ key=(Math.floor(this.animT*6)%2? 'walk1':'walk2'); }
-    else if(this.state==='jump'){ key='jump'; }
-    else if(this.state==='atk' || this.state==='skill' || this.state==='ult'){
-      const cur=this._seq?.[this._idx];
-      if(cur){ key = cur.key; }
-    }
-    const img=this.img(key);
+    let img=null;
+    if(this.state==='run'){ const rate = 8; const i=Math.floor(this.animT*rate)%2; img=this._img('run',i); }
+    else if(this.state==='atk'){ img=this._img('atk',0); }
+    else { img=this._img('idle',0)||this._img('run',0); }
     if(img){
       const scale=this.h/img.height, w=img.width*scale, h=this.h;
       ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
+    }else{
+      placeholderDraw(ctx,this,world,this.name,this.tint);
     }
     ctx.restore();
     this.drawHPBar(ctx,world);
   }
 }
+function placeholderDraw(ctx,self,world,label='#'){
+  const w=self.w, h=self.h;
+  ctx.fillStyle='rgba(60,90,140,.35)'; ctx.fillRect(-w/2,-h/2,w,h);
+  ctx.strokeStyle='#89a'; ctx.strokeRect(-w/2,-h/2,w,h);
+  ctx.font='10px system-ui'; ctx.fillStyle='#cfe3ff'; ctx.textAlign='center';
+  ctx.fillText(label,0,4);
+}
 
-/* ===== World（MOBAステージ） ===== */
+/* ===== World（MOBAステージ & 壁） ===== */
 class World{
   constructor(assets, canvas, effects){
     this.assets=assets; this.effects=effects; this.canvas=canvas;
@@ -790,7 +734,8 @@ class World{
   updateCam(p){
     const offs=this.effects.getCamOffset();
     const target=p.x - this.gameW*0.35 + offs.x;
-    this.camX = clamp(lerp(this.camX,target,0.12), 0, Math.max(0, (this.stageW - this.gameW)));
+    const unclamped = lerp(this.camX,target,0.12);
+    this.camX = clamp(unclamped, 0, Math.max(0, (this.stageW - this.gameW)));
     this.camY=offs.y;
   }
   updateTimer(dt){
@@ -799,17 +744,21 @@ class World{
   }
   draw(player, enemies){
     const ctx=this.ctx; ctx.clearRect(0,0,this.gameW,this.gameH);
-
     if(this.bgImg){
       ctx.drawImage(this.bgImg, 0,0,this.bgImg.width,this.bgImg.height,
         Math.round(-this.camX*this.bgSpeed), 0, this.bgDW, this.bgDH);
     } else {
-      const g=ctx.createLinearGradient(0,0,0,this.gameH); g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18'); ctx.fillStyle=g; ctx.fillRect(0,0,this.gameH,this.gameH);
+      const g=ctx.createLinearGradient(0,0,0,this.gameH); g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18'); ctx.fillStyle=g; ctx.fillRect(0,0,this.gameW,this.gameH);
     }
-    // 地面ライン
     ctx.fillStyle='#0b0f17'; const yTop=Math.floor(GROUND_TOP_Y); ctx.fillRect(0,yTop-1,this.gameW,1);
+    ctx.fillStyle='rgba(10,15,25,0.55)';
+    const leftWallX = -this.camX;
+    const rightWallX = (this.stageW - this.camX);
+    if(leftWallX<20){ ctx.fillRect(0,0, 20-leftWallX, this.gameH); }
+    if(rightWallX<this.gameW+20){ const w = 20 - (this.gameW - rightWallX); ctx.fillRect(this.gameW-w,0,w,this.gameH); }
 
     if(this._skillBullets){ for(const p of this._skillBullets) p.draw(ctx); }
+
     for(const e of enemies) e.draw(ctx,this); player.draw(ctx,this); this.effects.draw(ctx,this);
   }
 }
@@ -817,123 +766,130 @@ class World{
 /* ===== UI HP ===== */
 const updateHPUI=(hp,maxhp)=>{ const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=hp; fill.style.width=Math.max(0,Math.min(100,(hp/maxhp)*100))+'%'; };
 
-/* ===== 敵レジストリ ===== */
-window.EnemyRegistry = (function(prev){
-  if (Array.isArray(prev) && prev.length) return prev; // 既存を優先
-  return [
-    { id:'gabking', name:'ガブキング', factory:(w,e,a,x)=>new GabKing(w,e,a,x), assets:['t1.png','t2.png','t3.png','t4.png','t5.png','t6.png','t7.png','t8.png','t9.png','t10.png','t11.png'] },
-    { id:'screw',   name:'MOBスクリュー', factory:(w,e,a,x)=>new Screw(w,e,a,x), assets:['B1.png','B2.png','B3.png','B4.png','B5.png','B6.png','B7.png','B8.png','B9.png','B10.png','B11.png','B12.png','B13.png','B14.png'] }
-  ];
-})(window.EnemyRegistry);
+/* ===== レジストリ：ここで“復活”を管理 ===== */
+const REGISTRY = [
+  // id, 表示名, クラスファクトリ, 推奨HP/挙動, 代表PNG（あれば）
+  { id:'gabking', name:'ガブキング', icon:'t1.png',
+    spawn:(world,effects,assets,x)=> new GabKing(world,effects,assets,x) },
+
+  { id:'golem_robo', name:'ゴレムロボ', icon:'golem.png',
+    spawn:(w,e,a,x)=> new EnemyBasic(w,e,a,{name:'ゴレムロボ', w:82,h:96,hp:1800,power:32,speed:70, x, frames:{idle:'golem.png', run:['golem.png','golem.png'], atk:'golem.png'}}) },
+
+  { id:'ice_robo', name:'アイスロボ', icon:'icerobo.png',
+    spawn:(w,e,a,x)=> new EnemyBasic(w,e,a,{name:'アイスロボ', w:72,h:88,hp:1200,power:24,speed:85, x, frames:{idle:'icerobo.png', run:['icerobo.png','icerobo.png'], atk:'icerobo.png'}, tint:'#9cf'}) },
+
+  { id:'ice_robo_mini', name:'アイスロボミニ', icon:'icerobo_mini.png',
+    spawn:(w,e,a,x)=> new EnemyBasic(w,e,a,{name:'アイスミニ', w:56,h:66,hp:600,power:14,speed:110, x, frames:{idle:'icerobo_mini.png', run:['icerobo_mini.png','icerobo_mini.png'], atk:'icerobo_mini.png'}, tint:'#bde'}) },
+
+  { id:'war_mob', name:'ワルMOB', icon:'war_mob.png',
+    spawn:(w,e,a,x)=> new EnemyBasic(w,e,a,{name:'ワルMOB', w:64,h:72,hp:800,power:22,speed:100, x, frames:{idle:'war_mob.png', run:['war_mob.png','war_mob.png'], atk:'war_mob.png'}}) },
+
+  { id:'wizard', name:'ウィザード', icon:'wizard.png',
+    spawn:(w,e,a,x)=> new EnemyBasic(w,e,a,{name:'ウィザード', w:62,h:72,hp:700,power:18,speed:90, x, frames:{idle:'wizard.png', run:['wizard.png','wizard.png'], atk:'wizard.png', proj:'magic_ball.png'}}) },
+
+  { id:'shield', name:'シールド', icon:'shieldman.png',
+    spawn:(w,e,a,x)=> new EnemyBasic(w,e,a,{name:'シールド', w:74,h:86,hp:1400,power:16,speed:60, x, frames:{idle:'shieldman.png', run:['shieldman.png','shieldman.png'], atk:'shieldman.png'}}) },
+
+  { id:'kyojin', name:'巨神', icon:'giant.png',
+    spawn:(w,e,a,x)=> new EnemyBasic(w,e,a,{name:'巨神', w:96,h:120,hp:2600,power:38,speed:55, x, frames:{idle:'giant.png', run:['giant.png','giant.png'], atk:'giant.png'}}) },
+
+  { id:'screw', name:'スクリュー', icon:'screw.png',
+    spawn:(w,e,a,x)=> new EnemyBasic(w,e,a,{name:'スクリュー', w:60,h:68,hp:850,power:20,speed:120, x, frames:{idle:'screw.png', run:['screw.png','screw.png'], atk:'screw.png'}}) },
+
+  { id:'wing_villain', name:'ウィングヴィラン', icon:'wing.png',
+    spawn:(w,e,a,x)=> new EnemyBasic(w,e,a,{name:'ウィングヴィラン', w:66,h:72,hp:900,power:20,speed:115, x, frames:{idle:'wing.png', run:['wing.png','wing.png'], atk:'wing.png', proj:'feather.png'}}) },
+
+  { id:'danball', name:'段ボール', icon:'danball.png',
+    spawn:(w,e,a,x)=> new EnemyBasic(w,e,a,{name:'段ボール', w:58,h:58,hp:500,power:12,speed:95, x, frames:{idle:'danball.png', run:['danball.png','danball.png'], atk:'danball.png'}}) },
+
+  // 必要に応じてここへ追記すれば即セレクトに反映
+];
 
 /* ===== Game ===== */
 class Game{
   constructor(){
     this.assets=new Assets(); this.canvas=document.getElementById('game'); this.input=new Input(); this.effects=new Effects();
     this.player=null; this.enemies=[]; this.world=null; this.lastT=0;
-    this._selectedAlly='player';
-    this.MAX_TOTAL = 20; // 合計上限（必要なら上げてOK）
     addEventListener('resize',()=>this.world?.resize());
   }
   async start(){
-    // 画像一覧はレジストリから自動で収集（足りない分だけ追加）
-    const baseImgs=[ 'MOBA.png','back1.png', 'M1-1.png','M1-2.png','M1-3.png','M1-4.png', 'K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png', 'h1.png','h2.png','h3.png','h4.png','J.png', 'UL1.PNG','UL2.PNG','UL3.png', 'Y1.png','Y2.png','Y3.png','Y4.png', 'kem.png' ];
-    const enemyImgs = window.EnemyRegistry.flatMap(e=>e.assets||[]);
-    const imgs = Array.from(new Set([...baseImgs, ...enemyImgs]));
-    await this.assets.load(imgs);
+    const baseImgs=[
+      'MOBA.png','back1.png',
+      'M1-1.png','M1-2.png','M1-3.png','M1-4.png',
+      'K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png',
+      'h1.png','h2.png','h3.png','h4.png','J.png',
+      'UL1.PNG','UL2.PNG','UL3.png',
+      'Y1.png','Y2.png','Y3.png','Y4.png',
+      'kem.png',
+      /* GabKing */
+      't1.png','t2.png','t3.png','t4.png','t5.png','t6.png','t7.png','t8.png','t9.png','t10.png','t11.png'
+    ];
+    // レジストリのアイコンも読みにいく（無くても動く）
+    const regIcons = REGISTRY.map(r=>r.icon).filter(Boolean);
+    await this.assets.load([...baseImgs, ...regIcons]);
 
     this.world=new World(this.assets,this.canvas,this.effects);
     this.player=new Player(this.assets,this.world,this.effects);
+    updateHPUI(this.player.hp,this.player.maxhp);
 
-    // 選択UI構築
-    const modal=document.getElementById('selectModal');
-    const enemyList=document.getElementById('enemyList');
-    const totalCountEl=document.getElementById('totalCount');
-    const maxTotalLabel=document.getElementById('maxTotalLabel');
-    maxTotalLabel.textContent = this.MAX_TOTAL;
-
-    const fromStorage=()=>{ try{return JSON.parse(localStorage.getItem('mb_select_counts')||'{}');}catch{return{}} };
-    const toStorage=(obj)=>{ try{localStorage.setItem('mb_select_counts', JSON.stringify(obj));}catch{} };
-
-    const rows=[]; // {id, input}
-    const saved=fromStorage();
-    window.EnemyRegistry.forEach((reg)=>{
-      const row=document.createElement('div'); row.className='enemyRow';
-      const name=document.createElement('div'); name.className='enemyName'; name.textContent=reg.name||reg.id; row.appendChild(name);
-      const right=document.createElement('div'); right.className='rowRight';
-      const badge=document.createElement('div'); badge.className='badge'; badge.textContent=reg.id; right.appendChild(badge);
-      const input=document.createElement('input'); input.type='number'; input.min='0'; input.max='10'; input.value = clamp(parseInt(saved[reg.id]??'0',10)||0,0,10); input.className='countInput'; right.appendChild(input);
-      row.appendChild(right);
-      enemyList.appendChild(row);
-      rows.push({id:reg.id, input});
-    });
-
-    const readCounts=()=>{
-      const counts={}; let total=0;
-      for(const r of rows){ const n=clamp(parseInt(r.input.value||'0',10)||0,0,99); counts[r.id]=n; total+=n; }
-      // 上限超えたら丸め（先頭から減らす簡易）
-      if(total>this.MAX_TOTAL){
-        let over = total - this.MAX_TOTAL;
-        for(const r of rows){
-          if(over<=0) break; const cur=counts[r.id]; if(cur<=0) continue; const dec=Math.min(cur, over); counts[r.id]-=dec; r.input.value=counts[r.id]; over-=dec;
-        }
-        total=this.MAX_TOTAL;
-      }
-      totalCountEl.textContent = total;
-      return counts;
-    };
-
-    enemyList.addEventListener('input', ()=>{ const c=readCounts(); toStorage(c); });
-
-    // プリセット
-    document.getElementById('btnClear').addEventListener('click',()=>{ rows.forEach(r=>r.input.value=0); const c=readCounts(); toStorage(c); });
-    document.getElementById('btnOneEach').addEventListener('click',()=>{ rows.forEach(r=>r.input.value=1); const c=readCounts(); toStorage(c); });
-    document.getElementById('btnLoadPrev').addEventListener('click',()=>{ const s=fromStorage(); rows.forEach(r=>{ r.input.value = clamp(parseInt(s[r.id]||'0',10)||0,0,10); }); const c=readCounts(); toStorage(c); });
-
-    // 初期合計反映
-    readCounts();
-
-    const startBtn=document.getElementById('startBtn');
-    startBtn.addEventListener('click',()=>{
-      const counts=readCounts(); toStorage(counts);
-      // 敵生成：キャラごとに count 分スポーン
-      this.enemies = [];
-      const spawnPositions = this._computeSpawnPositions(Object.values(counts).reduce((a,b)=>a+b,0));
-
-      let idx=0;
-      for(const reg of window.EnemyRegistry){
-        const n = counts[reg.id]||0; if(n<=0) continue;
-        for(let i=0;i<n;i++){
-          const x = spawnPositions[idx++] || Math.min(640, this.world.stageW - 200);
-          const ctor = reg.factory || ((w,e,a,xx)=>{ console.warn('Factory missing for',reg.id); return new GabKing(w,e,a,xx);});
-          this.enemies.push(ctor(this.world,this.effects,this.assets,x));
-        }
-      }
-
-      modal.style.display='none';
-      updateHPUI(this.player.hp,this.player.maxhp);
-      this._run();
-    },{once:true});
-  }
-
-  _computeSpawnPositions(total){
-    total = Math.max(1,total|0);
-    const left = Math.min(640, this.world.stageW - 600);
-    const right = Math.min(this.world.stageW - 60, this.world.stageW - 80);
-    const span = Math.max(140, Math.floor((right - left) / Math.max(1,(total-1))));
-    const startX = Math.min(left + 200, this.world.stageW - 200);
-    const xs=[]; for(let i=0;i<total;i++){ xs.push(Math.min(startX + span*i, this.world.stageW - 150)); }
-    return xs;
-  }
-
-  _run(){
     this.lastT=now();
+
+    // 壁クランプ
     const clampActorToWalls = (a)=>{
       const half=a.w/2;
       if(a.x < half){ a.x = half; if(a.vx<0) a.vx=0; }
       if(a.x > this.world.stageW - half){ a.x = this.world.stageW - half; if(a.vx>0) a.vx=0; }
     };
 
+    // ===== セレクトUIの構築 =====
+    const sel=document.getElementById('selector');
+    const list=document.getElementById('list');
+    const btnStart=document.getElementById('btnStart');
+    const btnClear=document.getElementById('btnClear');
+    const selCount=document.getElementById('selCount');
+    const counts=new Map(REGISTRY.map(r=>[r.id,0]));
+    const refresh=()=>{
+      const total=[...counts.values()].reduce((a,b)=>a+b,0);
+      selCount.textContent=`${total} / ${MAX_ENEMIES}`;
+      btnStart.disabled = total===0;
+    };
+    REGISTRY.forEach(r=>{
+      const row=document.createElement('div'); row.className='card';
+      const th=document.createElement('div'); th.className='thumb';
+      if(this.assets.has(r.icon)){ const img=this.assets.img(r.icon); const cvs=document.createElement('canvas'); cvs.width=44; cvs.height=44; const c=cvs.getContext('2d'); c.imageSmoothingEnabled=false; const scale=Math.min(40/img.width,40/img.height); const w=img.width*scale, h=img.height*scale; c.drawImage(img,(44-w)/2,(44-h)/2,w,h); th.appendChild(cvs); } else { th.textContent='NO IMG'; }
+      const meta=document.createElement('div'); meta.className='meta'; meta.innerHTML=`<div class="name">${r.name}</div><div class="desc">ID: ${r.id}</div>`;
+      const badge=document.createElement('div'); badge.className='badge'; badge.textContent='敵';
+      const ctr=document.createElement('div'); ctr.className='counter';
+      const b1=document.createElement('button'); b1.textContent='−';
+      const num=document.createElement('div'); num.className='num'; num.textContent='0';
+      const b2=document.createElement('button'); b2.textContent='＋';
+      b1.onclick=()=>{ const v=counts.get(r.id); if(v>0){ counts.set(r.id,v-1); num.textContent=String(v-1); refresh(); } };
+      b2.onclick=()=>{
+        const total=[...counts.values()].reduce((a,b)=>a+b,0);
+        if(total<MAX_ENEMIES){ const v=counts.get(r.id); counts.set(r.id,v+1); num.textContent=String(v+1); refresh(); }
+      };
+      ctr.append(b1,num,b2);
+      row.append(th,meta,badge,ctr);
+      list.appendChild(row);
+    });
+    btnClear.onclick=()=>{ REGISTRY.forEach(r=>counts.set(r.id,0)); [...list.querySelectorAll('.num')].forEach(n=>n.textContent='0'); refresh(); };
+    refresh();
+
+    btnStart.onclick=()=>{
+      // 敵生成
+      this.enemies.length=0;
+      const order = REGISTRY.flatMap(r=> Array(counts.get(r.id)).fill(r));
+      let spawnStart = Math.min(640, this.world.stageW - 200);
+      let gap = 120;
+      order.forEach((r,i)=>{
+        const x = spawnStart + i*gap;
+        const enemy = r.spawn(this.world,this.effects,this.assets, Math.min(x, this.world.stageW-60));
+        this.enemies.push(enemy);
+      });
+      sel.remove();
+    };
+
+    // ===== メインループ =====
     const loop=()=>{
       const t=now(); let dt=(t-this.lastT)/1000; if(dt>0.05) dt=0.05; this.lastT=t;
       if(this.effects.hitstop>0){ this.effects.update(dt); this.world.updateCam(this.player); this.world.draw(this.player,this.enemies); requestAnimationFrame(loop); return; }
@@ -946,7 +902,6 @@ class Game{
 
       for(const e of this.enemies){ e.update(dt,this.player); clampActorToWalls(e); }
 
-      // 弾など
       if(this.world._skillBullets){
         for(const p of this.world._skillBullets){
           p.update(dt);
@@ -954,10 +909,7 @@ class Game{
             if(!p.dead && !e.dead && rectsOverlap(p.aabb(), e.aabb())){
               p.dead=true;
               const dir = (e.x>=p.x)? 1 : -1;
-              // ULT の場合は SA貫通・超ノックバック
-              const opts = p.isUlt
-                ? { lift:(p.lift??1.0), kbMul: (p.kbMul??2.2), kbuMul:(p.kbuMul??2.2), forceBreakSA:true }
-                : { lift:(p.lift??0.3), kbMul:(p.kbMul??0.9), kbuMul:(p.kbuMul??0.9) };
+              const opts = { lift: (p.lift??0.3), kbMul: (p.kbMul??0.9), kbuMul: (p.kbuMul??0.9) };
               const hit = e.hurt(p.power, dir, opts, this.effects);
               if(hit) this.effects.addSpark(e.x, e.y-10, p.power>=40);
             }
@@ -966,7 +918,7 @@ class Game{
         this.world._skillBullets = this.world._skillBullets.filter(p=>!p.dead && p.life>0);
       }
 
-      // のめり込み解消
+      // のめり込み解消（プレイヤー vs 敵）
       for(const e of this.enemies){
         if(e.dead || this.player.dead) continue;
         const a=this.player.aabb(), b=e.aabb();
@@ -990,22 +942,6 @@ class Game{
         clampActorToWalls(this.player); clampActorToWalls(e);
       }
 
-      // 敵同士の重なり軽減
-      for(let i=0;i<this.enemies.length;i++){
-        for(let j=i+1;j<this.enemies.length;j++){
-          const ei=this.enemies[i], ej=this.enemies[j];
-          if(ei.dead || ej.dead) continue;
-          const a=ei.aabb(), b=ej.aabb();
-          if(!rectsOverlap(a,b)) continue;
-          const dx=(ei.x-ej.x);
-          const overlapX=(a.w+b.w)/2-Math.abs(dx);
-          const dirX=dx>=0?1:-1;
-          const push=overlapX*0.5;
-          ei.x += dirX*push; ej.x -= dirX*push;
-          clampActorToWalls(ei); clampActorToWalls(ej);
-        }
-      }
-
       this.effects.update(dt); this.world.updateCam(this.player); this.world.updateTimer(dt); this.world.draw(this.player, this.enemies);
       requestAnimationFrame(loop);
     };
@@ -1013,7 +949,7 @@ class Game{
   }
 }
 
-/* ===== プレイヤー被弾調整 ===== */
+/* ===== プレイヤー被弾：吹っ飛び増し ===== */
 Player.prototype.hurt = function(amount,dir,opts,effects){
   if(this.state==='skill2'){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
   else if(this.saT>0){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
@@ -1036,13 +972,8 @@ Player.prototype.hurt = function(amount,dir,opts,effects){
   return hit;
 };
 
-const game = new Game();
-game.start();
+new Game().start();
 })();
 </script>
 </body>
-</html>"""
-path = "/mnt/data/mob_breaker_rev32.html"
-with open(path, "w", encoding="utf-8") as f:
-    f.write(html)
-path
+</html>
