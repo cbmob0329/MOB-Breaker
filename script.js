@@ -1,16 +1,26 @@
+// script.js (Part 1/2)
 (function(){
 'use strict';
-/* ===== helpers ===== */
+
+/* =============================
+ * Helpers / Constants
+ * ============================= */
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
 const now=()=>performance.now();
 
-/* ===== Stage invisible walls ===== */
 const STAGE_LEFT = 0;
-const STAGE_RIGHT = 2200;   // 調整可
+const STAGE_RIGHT = 2200;
 const WALL_PAD = 12;
 
-/* ===== Effects ===== */
+const GRAV=2000, MOVE=260, JUMP_V=760, MAX_FALL=1200;
+const GROUND_TOP_Y=360, FOOT_PAD=2;
+
+const rectsOverlap=(a,b)=> Math.abs(a.x-b.x)*2 < (a.w+b.w) && Math.abs(a.y-b.y)*2 < (a.h+b.h);
+
+/* =============================
+ * Effects
+ * ============================= */
 class Effects{
   constructor(){ this.sparks=[]; this.shakeT=0; this.shakeAmp=0; this.hitstop=0; }
   addSpark(x,y,strong=false){
@@ -38,7 +48,9 @@ class Effects{
   }
 }
 
-/* ===== Assets ===== */
+/* =============================
+ * Assets
+ * ============================= */
 class Assets{
   constructor(){ this.images=new Map(); this.missing=new Set(); }
   load(srcs){
@@ -53,7 +65,9 @@ class Assets{
   has(n){ return this.images.has(n) && !this.missing.has(n); }
 }
 
-/* ===== Input ===== */
+/* =============================
+ * Input
+ * ============================= */
 class Input{
   constructor(){
     this.left=0; this.right=0; this.jump=false;
@@ -145,12 +159,9 @@ class Input{
   }
 }
 
-/* ===== Constants ===== */
-const GRAV=2000, MOVE=260, JUMP_V=760, MAX_FALL=1200;
-const GROUND_TOP_Y=360, FOOT_PAD=2;
-const rectsOverlap=(a,b)=> Math.abs(a.x-b.x)*2 < (a.w+b.w) && Math.abs(a.y-b.y)*2 < (a.h+b.h);
-
-/* ===== CharacterBase ===== */
+/* =============================
+ * Character Base
+ * ============================= */
 class CharacterBase{
   constructor(w,h){
     this.w=w; this.h=h; this.x=0; this.y=0; this.vx=0; this.vy=0; this.face=1;
@@ -179,7 +190,6 @@ class CharacterBase{
     this.vy = Math.min(this.vy + GRAV*dt, MAX_FALL);
     this.x += this.vx*dt; this.y += this.vy*dt;
 
-    /* 横壁クランプ（非描画壁） */
     const leftBound  = STAGE_LEFT  + WALL_PAD + this.w*0.4;
     const rightBound = STAGE_RIGHT - WALL_PAD - this.w*0.4;
     if(this.x < leftBound){ this.x = leftBound; this.vx = Math.max(this.vx, 0); }
@@ -198,15 +208,18 @@ class CharacterBase{
   drawHPBar(ctx,world){
     const w=36, h=4, x=this.x-world.camX, y=this.y-world.camY - this.h/2 - 10;
     const ratio=Math.max(0,this.hp/this.maxhp);
+    const rW = Math.round((w-2)*ratio);
     ctx.save(); ctx.translate(x,y);
     ctx.fillStyle='rgba(10,18,32,.7)'; ctx.fillRect(-w/2,-h/2,w,h);
     ctx.strokeStyle='#1a263d'; ctx.lineWidth=1; ctx.strokeRect(-w/2,-h/2,w,h);
-    ctx.fillStyle='#7dd3fc'; ctx.fillRect(-w/2+1,-h/2+1,(w-2)*ratio,h-2);
+    ctx.fillStyle='#7dd3fc'; if(rW>0) ctx.fillRect(-w/2+1,-h/2+1,rW,h-2);
     ctx.restore();
   }
 }
 
-/* ===== Projectiles ===== */
+/* =============================
+ * Projectiles
+ * ============================= */
 class Projectile{
   constructor(world,x,y,dir,img,power=10){
     this.world=world; this.x=x; this.y=y; this.dir=dir; this.vx=160*dir; this.vy=0; this.img=img; this.power=power; this.life=3.2; this.dead=false; this.w=40; this.h=28;
@@ -232,10 +245,9 @@ class EnergyBall extends Projectile{
     this.life = 3.6;
   }
 }
-/* ULT: プレイヤーの弾（威力300・CT3sに対応） */
 class UltBlast extends Projectile{
   constructor(world,x,y,dir,img,chargeSec){
-    super(world,x,y,dir,img,300); // ★威力300固定
+    super(world,x,y,dir,img,300); // 威力300固定
     const cs = clamp(chargeSec,0,3.0);
     const sizeMul = lerp(0.35, 1.6, clamp(cs/3.0,0,1));
     this.w = Math.round(60*sizeMul);
@@ -244,7 +256,6 @@ class UltBlast extends Projectile{
     this.life = 1.7 + 0.55*sizeMul;
   }
 }
-/* スパイク（既存） */
 class GroundSpike extends Projectile{
   constructor(world,x,dir,img){
     super(world,x,Math.floor(GROUND_TOP_Y)-8,dir,img,80);
@@ -264,7 +275,9 @@ class GroundSpike extends Projectile{
   }
 }
 
-/* ===== Player ===== */
+/* =============================
+ * Player
+ * ============================= */
 class Player extends CharacterBase{
   constructor(assets, world, effects){
     super(56,64);
@@ -315,19 +328,32 @@ class Player extends CharacterBase{
     this.overhead.label.textContent=text;
     this.overhead.fill.style.width=((ratio*100)|0)+'%';
   }
+
+  // ★ 攻撃ソースタグ付きヒットボックス
   currentHitbox(){
     if(!(this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='ult') || !this._actionSeq) return null;
     const cur=this._actionSeq[this._actionIndex]; if(!cur) return null;
+    const srcTag = (this.state==='ult') ? 'ult' : (this.state==='skill2' ? 'skill2' : (this.state==='skill' ? 'skill' : 'atk'));
+
     if(this.state==='skill' || this.state==='skill2' || this.state==='ult'){
       const W=86,H=64; const x=this.x + this.face*(this.w*0.2);
-      return {x, y:this.y, w:W, h:H, power:cur.power||0, dir:this.face, lift:cur.lift||0, kbMul:cur.kbMul||1.6, kbuMul:cur.kbuMul||1.3};
+      return {x, y:this.y, w:W, h:H,
+        power:cur.power||0, dir:this.face, lift:cur.lift||0,
+        kbMul:cur.kbMul||1.6, kbuMul:cur.kbuMul||1.3,
+        src: srcTag
+      };
     }
     if(cur.kind==='hit' || cur.kind==='sp'){
       const w=52, h=42, x=this.x + this.face*(this.w*0.3 + w*0.5), y=this.y - 6;
-      return {x,y,w,h, power:cur.power||0, dir:this.face, lift:cur.lift||1, kbMul:cur.kbMul||1, kbuMul:cur.kbuMul||1};
+      return {x,y,w,h,
+        power:cur.power||0, dir:this.face, lift:cur.lift||1,
+        kbMul:cur.kbMul||1, kbuMul:cur.kbuMul||1,
+        src: srcTag
+      };
     }
     return null;
   }
+
   update(dt,input,world,enemies){
     input.beginFrame(); this._posOverhead();
     if(this.saT>0) this.saT=Math.max(0,this.saT-dt);
@@ -342,13 +368,12 @@ class Player extends CharacterBase{
 
     if(this.dead){ this.updatePhysics(dt); if(this.fade<=0){ this._respawn(world); } world.updateTimer(dt); return; }
 
-    /* ● スキル1チャージ */
+    // Skill charge UI
     if(input.skillCharging && this.skillCDT<=0){
       input.skillChargeT=Math.min(1.0, input.skillChargeT+dt);
       this._showGauge(true,'● Charge', input.skillChargeT/1.0);
       this.saT = 0.08;
     }
-    /* ULT：溜めながら移動可 */
     this.isUltCharging = input.ultCharging && this.ultCDT<=0;
     if(this.isUltCharging){
       input.ultChargeT = Math.min(3, input.ultChargeT + dt);
@@ -356,7 +381,7 @@ class Player extends CharacterBase{
       this.saT = 0.12;
     }
 
-    // リリース
+    // Release
     if(input.edge.skillRelease && input.skillChargeT>0 && this.skillCDT<=0){
       this._startSkill1Release(input.skillChargeT);
       input.skillChargeT=0; input.edge.skillRelease=false;
@@ -366,14 +391,14 @@ class Player extends CharacterBase{
       input.ultChargeT=0; input.edge.ultRelease=false;
     }
 
-    // 実行中（ultChargeは含めない）
+    // Executing action
     if(this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='ult'){
       const hb=this.currentHitbox();
       if(hb){
         for(const e of enemies){
           if(!e || e.dead || e.invulnT>0) continue;
           if(rectsOverlap({x:hb.x,y:hb.y,w:hb.w,h:hb.h}, e.aabb())){
-            const hit = e.hurt(hb.power, hb.dir, {lift:hb.lift, kbMul:hb.kbMul, kbuMul:hb.kbuMul}, this.effects);
+            const hit = e.hurt(hb.power, hb.dir, {lift:hb.lift, kbMul:hb.kbMul, kbuMul:hb.kbuMul, src: hb.src}, this.effects);
             if(hit && rectsOverlap(this.aabb(), e.aabb())){ e.x = this.x + hb.dir * (this.w*0.55); }
             if(hit && this.state==='atk' && this._actionSeq && this._actionSeq[this._actionIndex]?.tag==='chaseFinisher'){
               this.effects.addSpark(e.x, e.y-10, true);
@@ -386,15 +411,13 @@ class Player extends CharacterBase{
       return;
     }
 
-    // 入力
+    // Input to action
     if(input.edge.a1) this.bufferA1=true;
-
-    // 起動優先
     if(input.edge.skill2 && this.skill2CDT<=0){ input.edge.skill2=false; this.bufferA1=false; this._startSkill2(); return; }
     if(input.edge.a2Press && this.a2LockoutT<=0){ input.edge.a2Press=false; this.bufferA1=false; this._startA2(); return; }
     if(this.bufferA1 && this.comboStep<3){ this.bufferA1=false; this._startA1(); return; }
 
-    // 通常移動/ジャンプ
+    // Movement
     let ax=0; if(input.left){ ax-=MOVE; this.face=-1; } if(input.right){ ax+=MOVE; this.face=1; }
     this.vx = ax!==0 ? (ax>0?MOVE:-MOVE) : 0;
     if(input.consumeJump() && this.jumpsLeft>0){ this.vy=-JUMP_V; this.onGround=false; this.jumpsLeft--; }
@@ -483,7 +506,7 @@ class Player extends CharacterBase{
     ];
     this._actionIndex=0; this._actionTime=0;
 
-    this.ultCDT=3.0; // ★CT 3秒
+    this.ultCDT=3.0;
 
     const img=this.world.assets.img(this.frames.ul3);
     const ox=this.face*30, oy=-12;
@@ -581,7 +604,57 @@ class Player extends CharacterBase{
   }
 }
 
-/* ===== 敵：既存 ===== */
+/* ===== Player custom hurt (SA during skill etc.) ===== */
+Player.prototype.hurt = function(amount,dir,opts,effects){
+  if(this.state==='skill2'){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
+  else if(this.saT>0){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
+
+  const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
+  if(hit){
+    const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=this.hp; fill.style.width=Math.max(0,Math.min(100,(this.hp/this.maxhp)*100))+'%';
+    if(this.state!=='skill2'){
+      this._actionSeq = null; this._actionIndex = 0; this._actionTime = 0;
+      this.bufferA1 = false; this.comboStep = 0; this.comboGraceT = 0; this.a2LockoutT = 0;
+      this.overhead?.root && (this.overhead.root.style.display='none');
+      this.jumpsLeft=this.maxJumps;
+      this.isUltCharging=false;
+    }
+  }
+  return hit;
+};
+
+/* =============================
+ * ここから敵/World/Gameは Part 2
+ * ============================= */
+
+window.__GamePieces__ = {
+  // これらを Part 2 で参照・拡張
+  Effects, Assets, Input, CharacterBase,
+  Projectile, EnergyBall, UltBlast, GroundSpike,
+  Player,
+  constants:{ STAGE_LEFT, STAGE_RIGHT, WALL_PAD, GRAV, MOVE, JUMP_V, MAX_FALL, GROUND_TOP_Y, FOOT_PAD },
+  utils:{ clamp, lerp, now, rectsOverlap }
+};
+
+})();
+// script.js (Part 2/2)
+(function(){
+'use strict';
+
+const {
+  Effects, Assets, Input, CharacterBase,
+  Projectile, EnergyBall, UltBlast, GroundSpike,
+  Player, constants, utils
+} = window.__GamePieces__;
+
+const { STAGE_LEFT, STAGE_RIGHT, WALL_PAD, GRAV, MOVE, JUMP_V, MAX_FALL, GROUND_TOP_Y, FOOT_PAD } = constants;
+const { clamp, lerp, now, rectsOverlap } = utils;
+
+/* =================================
+ * Enemies
+ * ================================= */
+
+// --- KozouStone (projectile) ---
 class KozouStone extends Projectile{
   constructor(world,x,y,dir,img){ super(world,x,y,dir,img,5); this.vx = 120*dir; this.vy = -360; this.w = 24; this.h = 24; this.gravity = 900; }
   update(dt){
@@ -589,6 +662,8 @@ class KozouStone extends Projectile{
     const ground = Math.floor(GROUND_TOP_Y); if(this.y + this.h/2 >= ground+FOOT_PAD){ this.dead=true; }
   }
 }
+
+// --- WaruMOB (ranged + fallback melee) ---
 class WaruMOB extends CharacterBase{
   constructor(world,effects,assets,x=520){
     super(52,60); this.world=world; this.effects=effects; this.assets=assets;
@@ -598,18 +673,35 @@ class WaruMOB extends CharacterBase{
   imgByKey(key){ const a=this.assets; const map={ idle:'teki1.png', walk1:'teki1.png', walk2:'teki2.png', prep1:'teki1.png', prep2:'teki3.png' }; return a.img(map[key]||'teki1.png'); }
   addBullet(){ const img=this.assets.img('teki7.png'); const ox=this.face*28; const oy=-8; this.projectiles.push(new Projectile(this.world,this.x+ox,this.y+oy,this.face,img,10)); }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.85}; }
+
+  _forceAction(player){
+    const dx = player.x - this.x, adx = Math.abs(dx); this.face=dx>=0?1:-1;
+    if(adx < 110){
+      this.state='atk'; this._seq=[
+        {kind:'pose',dur:0.12,key:'prep2'},
+        {kind:'hit', dur:0.20,key:'prep2', hx:22, hw:44, hh:40, power:18, lift:0.4, kbm:1.0, kbum:1.0}
+      ];
+      this._idx=0; this._t=0; this.cool=1.2; return true;
+    }
+    this._seq=[ {kind:'pose',dur:0.18,key:'prep1'}, {kind:'pose',dur:0.22,key:'prep2'} ];
+    this.cool=1.4; this.state='atk'; this._idx=0; this._t=0; return true;
+  }
+
   update(dt,player){
     if(this.dead){ this.updatePhysics(dt); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
     for(const p of this.projectiles) p.update(dt); this.projectiles=this.projectiles.filter(p=>!p.dead);
+
     if(this.state==='atk'){
       this.updatePhysics(dt); if(this._seq){ this._t+=dt; const cur=this._seq[this._idx];
         if(cur && this._t>=cur.dur){ this._idx++; this._t=0; if(this._idx===2){ this.addBullet(); }
           if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; } } }
       this.animT+=dt; return;
     }
+
     const dx=player.x - this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
     const near=110, mid=170, far=240, fire=220; const patrol=70, backSp=100;
+
     if(this.cool<=0 && adx<=fire){
       this._seq=[ {kind:'pose',dur:0.18,key:'prep1'}, {kind:'pose',dur:0.22,key:'prep2'} ];
       this.cool=1.6; this.state='atk'; this._idx=0; this._t=0; this.vx=0; this.updatePhysics(dt); this.animT+=dt; return;
@@ -625,6 +717,11 @@ class WaruMOB extends CharacterBase{
     this.updatePhysics(dt);
     this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
     this.animT+=dt;
+
+    // fallback: 常に何かする
+    if(this.state!=='atk' && this.cool<=0){
+      if(this._forceAction?.(player)){ this.animT=0; return; }
+    }
   }
   draw(ctx,world){
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
@@ -639,6 +736,8 @@ class WaruMOB extends CharacterBase{
     for(const p of this.projectiles) p.draw(ctx);
   }
 }
+
+// --- IceRobo (mid boss) ---
 class IceRobo extends CharacterBase{
   constructor(world,effects,assets,x=900){
     super(64,70); this.world=world; this.effects=effects; this.assets=assets;
@@ -647,21 +746,6 @@ class IceRobo extends CharacterBase{
     this.modeJump=false; this.modeSwapT=0; this._seq=null; this._idx=0; this._t=0; this.chargeT=0; this.energyOrbs=[];
   }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.9}; }
-  hurt(amount, dir, opts={}, effects){
-    if(this.invulnT>0||this.dead) return false;
-    this.hp=Math.max(0,this.hp-amount);
-    const kbMul = this.superArmor ? 0.15 : (opts.kbMul||1);
-    const kbuMul= this.superArmor ? 0.10 : (opts.kbuMul||1);
-    const baseKb = 140 + amount*12;
-    const baseKbu = opts.lift ? 360 : (amount>=15? 300 : 210);
-    this.vx = clamp(dir * baseKb * kbMul, -220, 220);
-    this.vy = - clamp(baseKbu * kbuMul, 0, 380);
-    this.x += dir * 2; this.face = -dir;
-    if(!this.superArmor){ this.state='hurt'; this.hurtT=0; this.invulnT=0.25; }
-    if(effects) effects.addSpark(this.x, this.y-10, amount>=20);
-    if(this.hp<=0){ this.dead=true; this.vx = dir * 540; this.vy = -560; this.spinSpeed = 18; this.deathT = 0; this.fade = 1; }
-    return true;
-  }
   img(key){ const map={ idle:'I1.png', walk1:'I1.png', walk2:'I2.png', jump1:'I1.png', jump2:'I2.png', jump3:'I3.png', charge:'I4.png', release:'I5.png', dashPrep:'I6.png', dashAtk:'I7.png', orb:'I8.png' }; return this.assets.img(map[key]||'I1.png'); }
   addEnergyBall(chargeSec){ const img=this.img('orb'); const ox=this.face*30, oy=-10; this.energyOrbs.push(new EnergyBall(this.world,this.x+ox,this.y+oy,this.face,img,20,chargeSec,1)); }
   update(dt, player){
@@ -732,6 +816,8 @@ class IceRobo extends CharacterBase{
     for(const p of this.energyOrbs) p.draw(ctx);
   }
 }
+
+// --- IceRoboMini (zako) ---
 class IceRoboMini extends CharacterBase{
   constructor(world, effects, assets, x=1200){
     super(40,44); this.world=world; this.effects=effects; this.assets=assets;
@@ -744,6 +830,7 @@ class IceRoboMini extends CharacterBase{
   update(dt, player){
     if(this.dead){ this.updatePhysics(dt); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
+
     if(this.state==='sp'){
       this.superArmor=true; this.hopT+=dt; const period=0.24, bounces=5;
       const bi=Math.floor(this.hopT/period); const dir = (bi%2===0)? this.face : -this.face;
@@ -764,19 +851,22 @@ class IceRoboMini extends CharacterBase{
       if(this.hopT>=dur){ this.state='idle'; this.hopT=0; this.vx=0; this.cool=0.9; }
       this.animT+=dt; return;
     }
+
     const dx=player.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
     this.vx = (dx>0? 70 : -70); this.hopT+=dt;
     if(this.onGround && this.hopT>0.35){ this.vy=-JUMP_V*0.35; this.hopT=0; }
+
     if(this.cool<=0){
       if(adx<120 && Math.random()<0.7){ this.state='atk'; this.hopT=0; this.animT=0; }
       else if(adx<220 && Math.random()<0.35){ this.state='sp'; this.hopT=0; this.animT=0; }
+      else if(this.state==='idle'){ // fallback
+        if(adx<150){ this.state='atk'; this.hopT=0; this.animT=0; }
+        else { this.state='sp'; this.hopT=0; this.animT=0; }
+      }
     }
     this.updatePhysics(dt);
     this.state = (this.state==='idle'||this.state==='run') ? (this.onGround? 'run':'jump') : this.state;
     this.animT+=dt;
-  }
-  hurt(amount, dir, opts={}, effects){ if(this.state==='sp'){ opts={...(opts||{}), kbMul:0.2, kbuMul:0.2}; }
-    return super.hurt(amount, dir, opts, effects);
   }
   draw(ctx,world){
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
@@ -792,6 +882,8 @@ class IceRoboMini extends CharacterBase{
     ctx.restore(); this.drawHPBar(ctx,world);
   }
 }
+
+// --- Kozou (zako + guard/counter) ---
 class Kozou extends CharacterBase{
   constructor(world,effects,assets,x=1400){
     super(50,58); this.world=world; this.effects=effects; this.assets=assets;
@@ -801,6 +893,13 @@ class Kozou extends CharacterBase{
   }
   img(key){ const map={ idle:'SL.png', w1:'SL2.png', w2:'SL3.png', prep:'SL4.png', throw:'SL5.png', guard:'SL6.png', counter:'SL7.png', stone:'SL8.png'}; return this.assets.img(map[key]||'SL.png'); }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.9}; }
+
+  _forceAction(player){
+    const dx=player.x - this.x, adx = Math.abs(dx); this.face = dx>=0?1:-1;
+    if(adx < 120){ this.state='counter'; this.animT=0; this.vx=this.face*140; this.cool=1.0; return true; }
+    this.state='throw'; this.animT=0; this.vx=0; this._thrown=false; this.cool=1.2; return true;
+  }
+
   update(dt,player){
     if(this.dead){ this.updatePhysics(dt); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
@@ -835,10 +934,14 @@ class Kozou extends CharacterBase{
     this.updatePhysics(dt);
     this.state = this.onGround ? (Math.abs(this.vx)>1?'run':'idle') : 'jump';
     this.animT+=dt;
+
+    if(this.state!=='throw' && this.state!=='counter' && this.cool<=0){
+      if(this._forceAction?.(player)){ return; }
+    }
   }
   hurt(amount, dir, opts={}, effects){
     if(this.guard){ amount = Math.ceil(amount*0.5); this.guardHits = Math.min(3, this.guardHits+1); if(this.guardHits>=3 && this.state!=='counter'){ this.state='counter'; this.animT=0; this.vx=0; } }
-    return super.hurt(amount, dir, opts, effects);
+    return CharacterBase.prototype.hurt.call(this, amount, dir, opts, effects);
   }
   draw(ctx,world){
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
@@ -853,6 +956,8 @@ class Kozou extends CharacterBase{
     for(const p of this.projectiles) p.draw(ctx);
   }
 }
+
+// --- MOBGiant (boss) ---
 class MOBGiant extends CharacterBase{
   constructor(world,effects,assets,x=1650){
     super(100,120);
@@ -869,24 +974,6 @@ class MOBGiant extends CharacterBase{
     const map={ idle:'P1.png', w1:'P1.png', w2:'P2.png', j1:'P1.png', j2:'P2.png', j3:'P3.png',
       dashPrep:'P4.png', dashAtk:'P5.png', charge:'P6.png', release:'P7.png', orb:'P10.png' };
     return this.assets.img(map[key]||'P1.png');
-  }
-  hurt(amount, dir, opts={}, effects){
-    if(this.invulnT>0||this.dead) return false;
-    const stateSA = this.superArmor;
-    const halfSA = Math.random()<0.65;
-    const activeSA = stateSA || halfSA;
-    this.hp=Math.max(0,this.hp-amount);
-    const kbMul = activeSA ? 0.12 : (opts.kbMul||1);
-    const kbuMul= activeSA ? 0.10 : (opts.kbuMul||1);
-    const baseKb = 140 + amount*12;
-    const baseKbu = opts.lift ? 360 : (amount>=15? 300 : 210);
-    this.vx = clamp(dir * baseKb * kbMul, -220, 220);
-    this.vy = - clamp(baseKbu * kbuMul, 0, 340);
-    this.x += dir * 1.5; this.face = -dir;
-    if(!activeSA){ this.state='hurt'; this.hurtT=0; this.invulnT=0.20; }
-    if(effects) effects.addSpark(this.x, this.y-12, amount>=25);
-    if(this.hp<=0){ this.dead=true; this.vx = dir * 540; this.vy = -540; this.spinSpeed = 16; this.deathT = 0; this.fade = 1; }
-    return true;
   }
   addEnergyPair(chargeSec){
     const img=this.img('orb');
@@ -986,12 +1073,9 @@ class MOBGiant extends CharacterBase{
   }
 }
 
-/* ======== 新規敵：MOBガブキング ======== */
+// --- GabuKing (boss) ---
 class GabuUltShot extends Projectile{
-  constructor(world,x,y,dir,img){
-    super(world,x,y,dir,img,130);
-    this.w=60; this.h=60; this.vx=260*dir; this.life=2.0;
-  }
+  constructor(world,x,y,dir,img){ super(world,x,y,dir,img,130); this.w=60; this.h=60; this.vx=260*dir; this.life=2.0; }
 }
 class GabuKing extends CharacterBase{
   constructor(world,effects,assets,x=1200){
@@ -1001,7 +1085,7 @@ class GabuKing extends CharacterBase{
     this.maxhp=500; this.hp=500;
     this.cool=0; this.state='idle'; this.animT=0; this._seq=null; this._idx=0; this._t=0;
     this.superArmor=false;
-    this.bullets=[]; // ULT弾（プレイヤーに当たる）
+    this.bullets=[];
   }
   img(key){
     const map={
@@ -1014,26 +1098,13 @@ class GabuKing extends CharacterBase{
     return this.assets.img(map[key]||'t1.png');
   }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.7, h:this.h*0.95}; }
-  hurt(amount, dir, opts={}, effects){
-    const proc = Math.random()<0.50; // 50%でミドルSA
-    if(proc){
-      opts={...(opts||{}), kbMul:0.25, kbuMul:0.22};
-      const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
-      if(hit){ this.state='idle'; }
-      return hit;
-    }
-    return CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
-  }
-  addUltShot(){
-    const img=this.img('shot');
-    const ox=this.face*38, oy=-18;
-    this.bullets.push(new GabuUltShot(this.world, this.x+ox, this.y+oy, this.face, img));
-  }
+  addUltShot(){ const img=this.img('shot'); const ox=this.face*38, oy=-18; this.bullets.push(new GabuUltShot(this.world, this.x+ox, this.y+oy, this.face, img)); }
+
   update(dt, player){
     if(this.dead){ this.updatePhysics(dt); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
 
-    // ULT弾更新＆当たり判定（プレイヤー）
+    // bullets update & hit player
     for(const b of this.bullets){
       b.update(dt);
       if(!b.dead && player.invulnT<=0 && rectsOverlap(b.aabb(), player.aabb())){
@@ -1116,12 +1187,11 @@ class GabuKing extends CharacterBase{
     else img=this.img('idle');
     if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); }
     ctx.restore(); this.drawHPBar(ctx,world);
-    // 弾
     for(const b of this.bullets) b.draw(world.ctx);
   }
 }
 
-/* ======== 新規敵：MOBスクリュー ======== */
+// --- Screw (boss) ---
 class Screw extends CharacterBase{
   constructor(world,effects,assets,x=1500){
     super(62,68);
@@ -1143,16 +1213,6 @@ class Screw extends CharacterBase{
     return this.assets.img(map[key]||'B1.png');
   }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.68, h:this.h*0.92}; }
-  hurt(amount, dir, opts={}, effects){
-    const proc = Math.random()<0.30; // 30%ミニSA
-    if(proc){
-      opts={...(opts||{}), kbMul:0.40, kbuMul:0.38};
-      const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
-      if(hit){ this.state='idle'; }
-      return hit;
-    }
-    return CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
-  }
   update(dt, player){
     if(this.dead){ this.updatePhysics(dt); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
@@ -1239,7 +1299,98 @@ class Screw extends CharacterBase{
   }
 }
 
-/* ===== World（MOBA背景優先） ===== */
+/* =================================
+ * Knockback tuning (your request)
+ * ================================= */
+
+// Zako: もっと吹っ飛ぶ
+WaruMOB.prototype.hurt = function(amount, dir, opts={}, effects){
+  opts = {...opts, kbMul:(opts.kbMul??1)*1.45, kbuMul:(opts.kbuMul??1)*1.35};
+  return CharacterBase.prototype.hurt.call(this, amount, dir, opts, effects);
+};
+IceRoboMini.prototype.hurt = function(amount, dir, opts={}, effects){
+  opts = {...opts, kbMul:(opts.kbMul??1)*1.55, kbuMul:(opts.kbuMul??1)*1.45};
+  return CharacterBase.prototype.hurt.call(this, amount, dir, opts, effects);
+};
+Kozou.prototype.hurt = function(amount, dir, opts={}, effects){
+  // 盾計算→既存の半減などはKozou.hurt内で処理済み、その後で更に飛びやすく
+  opts = {...opts, kbMul:(opts.kbMul??1)*1.4, kbuMul:(opts.kbuMul??1)*1.3};
+  return CharacterBase.prototype.hurt.call(this, amount, dir, opts, effects);
+};
+
+// Boss4: スキル/ウルト時はSA無効＆強い吹っ飛び
+IceRobo.prototype.hurt = function(amount, dir, opts={}, effects){
+  const isBig = opts?.src==='ult' || opts?.src==='skill' || opts?.src==='skill2';
+  if(this.invulnT>0||this.dead) return false;
+  this.hp=Math.max(0,this.hp-amount);
+
+  const saActive = this.superArmor && !isBig;
+  const kbMul = saActive ? 0.15 : Math.max( (opts.kbMul||1), isBig?1.35:1 );
+  const kbuMul= saActive ? 0.10 : Math.max( (opts.kbuMul||1), isBig?1.25:1 );
+
+  const baseKb = 140 + amount*12;
+  const baseKbu = opts.lift ? 360 : (amount>=15? 300 : 210);
+  this.vx = clamp(dir * baseKb * kbMul, -260, 260);
+  this.vy = - clamp(baseKbu * kbuMul, 0, 420);
+  this.x += dir * 2; this.face = -dir;
+
+  if(!saActive){ this.state='hurt'; this.hurtT=0; this.invulnT=0.25; }
+  if(effects) effects.addSpark(this.x, this.y-10, amount>=20);
+  if(this.hp<=0){ this.dead=true; this.vx = dir * 540; this.vy = -560; this.spinSpeed = 18; this.deathT = 0; this.fade = 1; }
+  return true;
+};
+GabuKing.prototype.hurt = function(amount, dir, opts={}, effects){
+  const isBig = opts?.src==='ult' || opts?.src==='skill' || opts?.src==='skill2';
+  const procSA = (!isBig) && (Math.random()<0.50);
+  if(procSA){
+    opts={...(opts||{}), kbMul:0.25, kbuMul:0.22};
+    const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
+    if(hit){ this.state='idle'; }
+    return hit;
+  }
+  opts = {...opts, kbMul:Math.max(opts.kbMul||1, isBig?1.4:1), kbuMul:Math.max(opts.kbuMul||1, isBig?1.3:1)};
+  return CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
+};
+Screw.prototype.hurt = function(amount, dir, opts={}, effects){
+  const isBig = opts?.src==='ult' || opts?.src==='skill' || opts?.src==='skill2';
+  const procSA = (!isBig) && (Math.random()<0.30);
+  if(procSA){
+    opts={...(opts||{}), kbMul:0.40, kbuMul:0.38};
+    const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
+    if(hit){ this.state='idle'; }
+    return hit;
+  }
+  opts = {...opts, kbMul:Math.max(opts.kbMul||1, isBig?1.35:1), kbuMul:Math.max(opts.kbuMul||1, isBig?1.25:1)};
+  return CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
+};
+MOBGiant.prototype.hurt = function(amount, dir, opts={}, effects){
+  const isBig = opts?.src==='ult' || opts?.src==='skill' || opts?.src==='skill2';
+  if(this.invulnT>0||this.dead) return false;
+
+  const stateSA = this.superArmor && !isBig;
+  const halfSA  = (!isBig) && (Math.random()<0.65);
+  const activeSA = stateSA || halfSA;
+
+  this.hp=Math.max(0,this.hp-amount);
+
+  const kbMul = activeSA ? 0.12 : Math.max((opts.kbMul||1), isBig?1.35:1);
+  const kbuMul= activeSA ? 0.10 : Math.max((opts.kbuMul||1), isBig?1.25:1);
+
+  const baseKb = 140 + amount*12;
+  const baseKbu = opts.lift ? 360 : (amount>=15? 300 : 210);
+  this.vx = clamp(dir * baseKb * kbMul, -300, 300);
+  this.vy = - clamp(baseKbu * kbuMul, 0, 420);
+  this.x += dir * 1.5; this.face = -dir;
+
+  if(!activeSA){ this.state='hurt'; this.hurtT=0; this.invulnT=0.20; }
+  if(effects) effects.addSpark(this.x, this.y-12, amount>=25);
+  if(this.hp<=0){ this.dead=true; this.vx = dir * 540; this.vy = -540; this.spinSpeed = 16; this.deathT = 0; this.fade = 1; }
+  return true;
+};
+
+/* =================================
+ * World
+ * ================================= */
 class World{
   constructor(assets, canvas, effects){
     this.assets=assets; this.effects=effects; this.canvas=canvas;
@@ -1277,9 +1428,14 @@ class World{
   }
 }
 
+/* =================================
+ * UI helper
+ * ================================= */
 const updateHPUI=(hp,maxhp)=>{ const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=hp; fill.style.width=Math.max(0,Math.min(100,(hp/maxhp)*100))+'%'; };
 
-/* ===== Game ===== */
+/* =================================
+ * Game
+ * ================================= */
 class Game{
   constructor(){
     this.assets=new Assets(); this.canvas=document.getElementById('game'); this.input=new Input(); this.effects=new Effects();
@@ -1289,9 +1445,9 @@ class Game{
   }
   async start(){
     const imgs=[
-      /* 背景 */
+      // BG
       'MOBA.png','back1.png',
-      /* Player */
+      // Player
       'M1-1.png','M1-2.png','M1-3.png','M1-4.png',
       'K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png',
       'h1.png','h2.png','h3.png','h4.png',
@@ -1299,15 +1455,19 @@ class Game{
       'Y1.png','Y2.png','Y3.png','Y4.png',
       'UL1.PNG','UL2.PNG','UL3.png',
       'kem.png',
-      /* 既存敵 */
+      // WaruMOB
       'teki1.png','teki2.png','teki3.png','teki7.png',
+      // IceRobo
       'I1.png','I2.png','I3.png','I4.png','I5.png','I6.png','I7.png','I8.png',
+      // IceRoboMini
       'IC.png','IC2.png','IC3.png','IC4.png',
+      // Kozou
       'SL.png','SL2.png','SL3.png','SL4.png','SL5.png','SL6.png','SL7.png','SL8.png',
+      // MOBGiant
       'P1.png','P2.png','P3.png','P4.png','P5.png','P6.png','P7.png','P10.png',
-      /* 新規：ガブキング */
+      // GabuKing
       't1.png','t2.png','t3.png','t4.png','t5.png','t6.png','t7.png','t8.png','t9.png','t10.png','t11.png',
-      /* 新規：スクリュー */
+      // Screw
       'B1.png','B2.png','B3.png','B4.png','B5.png','B6.png','B7.png','B8.png','B9.png','B10.png','B11.png','B12.png','B13.png','B14.png'
     ];
     await this.assets.load(imgs);
@@ -1319,8 +1479,8 @@ class Game{
       ()=> new IceRoboMini(this.world,this.effects,this.assets,spawnX),
       ()=> new Kozou(this.world,this.effects,this.assets,spawnX),
       ()=> new WaruMOB(this.world,this.effects,this.assets,spawnX),
-      ()=> new GabuKing(this.world,this.effects,this.assets,spawnX+200), /* NEW */
-      ()=> new Screw(this.world,this.effects,this.assets,spawnX+280),    /* NEW */
+      ()=> new GabuKing(this.world,this.effects,this.assets,spawnX+200), // NEW
+      ()=> new Screw(this.world,this.effects,this.assets,spawnX+280),    // NEW
       ()=> new IceRobo(this.world,this.effects,this.assets,spawnX+360),
       ()=> new MOBGiant(this.world,this.effects,this.assets,spawnX+420)
     ];
@@ -1332,6 +1492,7 @@ class Game{
 
     const loop=()=>{
       const t=now(); let dt=(t-this.lastT)/1000; if(dt>0.05) dt=0.05; this.lastT=t;
+
       if(this.effects.hitstop>0){ this.effects.update(dt); this.world.updateCam(this.player); this.world.draw(this.player,this.enemies); requestAnimationFrame(loop); return; }
 
       const input=this.input;
@@ -1339,10 +1500,10 @@ class Game{
 
       this.player.update(dt,this.input,this.world,this.enemies);
 
+      // Enemies update + their projectiles to player
       for(const e of this.enemies){
         e.update(dt,this.player);
 
-        // 既存の被弾処理
         if(e instanceof WaruMOB){
           for(const p of e.projectiles){
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
@@ -1389,11 +1550,10 @@ class Game{
             }
           }
         }
-
-        // GabuKingの弾はクラス内で処理（上で衝突判定済）
+        // GabuKing の弾はクラス内で処理済み
       }
 
-      // プレイヤーの弾・スパイク（敵に当たる）
+      // Player skill bullets -> enemies (強化ノックバック含む)
       if(this.world._skillBullets){
         for(const p of this.world._skillBullets){
           p.update(dt);
@@ -1401,24 +1561,31 @@ class Game{
             if(!p.dead && !e.dead && rectsOverlap(p.aabb(), e.aabb())){
               p.dead=true;
               const dir = (e.x>=p.x)? 1 : -1;
-              const hit=e.hurt(p.power, dir, {lift:0.3,kbMul:0.9,kbuMul:0.9}, this.effects);
-              if(hit) this.effects.addSpark(e.x, e.y-10, p.power>=40);
+
+              // source tagging & KB boost
+              let srcTag = 'skill';
+              let kbMul = 1.0, kbuMul = 1.0, lift = 0.35;
+              if(p instanceof UltBlast){ srcTag='ult'; kbMul=1.6; kbuMul=1.5; lift=0.5; }
+              else if(p instanceof GroundSpike){ srcTag='skill2'; kbMul=1.25; kbuMul=1.15; lift=0.4; }
+
+              e.hurt(p.power, dir, {lift, kbMul, kbuMul, src:srcTag}, this.effects);
+              if(p.power>=40) this.effects.addSpark(e.x, e.y-10, true);
             }
           }
         }
         this.world._skillBullets = this.world._skillBullets.filter(p=>!p.dead && p.life>0);
       }
 
-      // 撃破整理
+      // Remove dead enemies
       this.enemies=this.enemies.filter(e=>!(e.dead && e.fade<=0));
 
-      // 次の敵スポーン
+      // Spawn next
       if(this.enemies.length===0 && this.enemyIndex < this.enemyOrder.length-1){
         this.enemyIndex++;
         this.enemies.push(this.enemyOrder[this.enemyIndex]());
       }
 
-      // のめり込み解消
+      // Separate overlap
       for(const e of this.enemies){
         if(e.dead || this.player.dead) continue;
         const a=this.player.aabb(), b=e.aabb();
@@ -1448,24 +1615,6 @@ class Game{
   }
 }
 
-/* ===== Player 被弾カスタム ===== */
-Player.prototype.hurt = function(amount,dir,opts,effects){
-  if(this.state==='skill2'){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
-  else if(this.saT>0){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
-
-  const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
-  if(hit){
-    const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=this.hp; fill.style.width=Math.max(0,Math.min(100,(this.hp/this.maxhp)*100))+'%';
-    if(this.state!=='skill2'){
-      this._actionSeq = null; this._actionIndex = 0; this._actionTime = 0;
-      this.bufferA1 = false; this.comboStep = 0; this.comboGraceT = 0; this.a2LockoutT = 0;
-      this.overhead?.root && (this.overhead.root.style.display='none');
-      this.jumpsLeft=this.maxJumps;
-      this.isUltCharging=false;
-    }
-  }
-  return hit;
-};
-
 new Game().start();
+
 })();
