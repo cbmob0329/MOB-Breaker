@@ -1,17 +1,14 @@
-/* script.js — FULL (Part 1/2)
-   - 起動時の入力で敵/味方の種類と数を選択
-   - 味方AI（MOBYOKI）実装：最寄り敵を自動ターゲット
-   - チーム弾判定、非密集スポーン、ぶっ飛び強化
-*/
-
+// script.js — Rev33 (Title & Team Select + Allies AI + Big Knockback)
+// そのままフル置き換えしてください
 (function(){
 'use strict';
 
-/* ========= ユーティリティ ========= */
-const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+/* =========================
+ * Utils / Const
+ * ========================= */
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
-const now=()=>performance.now();
-const rectsOverlap=(a,b)=> Math.abs(a.x-b.x)*2 < (a.w+b.w) && Math.abs(a.y-b.y)*2 < (a.h+b.h);
+const now = ()=>performance.now();
 
 const STAGE_LEFT = 0;
 const STAGE_RIGHT = 2200;
@@ -20,14 +17,11 @@ const WALL_PAD = 12;
 const GRAV=2000, MOVE=260, JUMP_V=760, MAX_FALL=1200;
 const GROUND_TOP_Y=360, FOOT_PAD=2;
 
-/* ========= UI ========= */
-const updateHPUI=(hp,maxhp)=>{
-  const fill=document.getElementById('hpfill'); if(!fill) return;
-  document.getElementById('hpnum').textContent=hp;
-  fill.style.width=Math.max(0,Math.min(100,(hp/maxhp)*100))+'%';
-};
+const rectsOverlap=(a,b)=> Math.abs(a.x-b.x)*2 < (a.w+b.w) && Math.abs(a.y-b.y)*2 < (a.h+b.h);
 
-/* ========= 画面効果 ========= */
+/* =========================
+ * Effects
+ * ========================= */
 class Effects{
   constructor(){ this.sparks=[]; this.shakeT=0; this.shakeAmp=0; this.hitstop=0; }
   addSpark(x,y,strong=false){
@@ -55,7 +49,9 @@ class Effects{
   }
 }
 
-/* ========= アセット ========= */
+/* =========================
+ * Assets
+ * ========================= */
 class Assets{
   constructor(){ this.images=new Map(); this.missing=new Set(); }
   load(srcs){
@@ -70,7 +66,9 @@ class Assets{
   has(n){ return this.images.has(n) && !this.missing.has(n); }
 }
 
-/* ========= 入力 ========= */
+/* =========================
+ * Input
+ * ========================= */
 class Input{
   constructor(){
     this.left=0; this.right=0; this.jump=false;
@@ -107,7 +105,6 @@ class Input{
   _initTouch(){
     const stickArea=document.getElementById('stickArea');
     const thumb=document.getElementById('stickThumb');
-    if(!stickArea) return;
     let stickId=-1, origin=null;
     const updateStick=t=>{
       if(!origin) return;
@@ -116,7 +113,8 @@ class Input{
       const nx=(len>rMax? dx/len*rMax:dx);
       const ny=(len>rMax? dy/len*rMax:dy);
       thumb.style.left=`calc(50% + ${nx}px)`; thumb.style.top =`calc(50% + ${ny}px)`;
-      this.left =(nx<-8)?1:0; this.right=(nx> 8)?1:0;
+      this.left =(nx<-8)?1:0;
+      this.right=(nx> 8)?1:0;
     };
     const onStart=e=>{
       for(const t of e.changedTouches){
@@ -138,9 +136,8 @@ class Input{
     stickArea.addEventListener('touchmove', e=>{e.preventDefault();onMove(e); },{passive:false});
     stickArea.addEventListener('touchend', e=>{e.preventDefault();onEnd(e); },{passive:false});
     stickArea.addEventListener('touchcancel',e=>{e.preventDefault();onEnd(e);},{passive:false});
-
     const bind=(id,onDown,onUp)=>{
-      const el=document.getElementById(id); if(!el) return;
+      const el=document.getElementById(id);
       el.addEventListener('pointerdown',e=>{e.preventDefault(); onDown(); el.setPointerCapture?.(e.pointerId);});
       el.addEventListener('pointerup',  e=>{e.preventDefault(); onUp();   el.releasePointerCapture?.(e.pointerId);});
       el.addEventListener('pointercancel',()=>{ onUp(); });
@@ -156,35 +153,40 @@ class Input{
     bind('btnJMP', ()=>{ this.jump=true; }, ()=>{ /* release */ });
   }
   consumeJump(){ const j=this.jump; this.jump=false; return j; }
-  beginFrame(){
-    this.edge.a1 = this.btn.a1 && !this.prev.a1;
-    this.prev.a1=this.btn.a1; this.prev.a2=this.btn.a2; this.prev.skill=this.btn.skill; this.prev.skill2=this.btn.skill2; this.prev.ult=this.btn.ult;
-  }
+  beginFrame(){ this.edge.a1 = this.btn.a1 && !this.prev.a1; this.prev={...this.btn}; }
 }
 
-/* ========= キャラ基底 ========= */
+/* =========================
+ * Base
+ * ========================= */
 class CharacterBase{
-  constructor(w,h){
+  constructor(w,h,team='enemy'){
+    this.team=team; // 'player' | 'ally' | 'enemy'
     this.w=w; this.h=h; this.x=0; this.y=0; this.vx=0; this.vy=0; this.face=1;
     this.onGround=false; this.state='idle'; this.animT=0;
     this.hp=100; this.maxhp=100; this.dead=false; this.deathT=0;
     this.invulnT=0; this.spinAngle=0; this.spinSpeed=0; this.fade=1; this.hurtT=0; this.maxHurt=0.22;
-    this.team='enemy';
   }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.8}; }
+  // 強攻撃タグなら吹っ飛び超強化（skill/ult）
+  _kbScaleFromTag(tag){
+    if(tag==='ult') return {kbMul:1.8, kbuMul:1.7};
+    if(tag==='skill') return {kbMul:1.4, kbuMul:1.35};
+    return {kbMul:1.0, kbuMul:1.0};
+  }
   hurt(amount, dir, opts={}, effects){
     if(this.invulnT>0||this.dead) return false;
-    const lift = opts.lift ?? 0;
-    const kbMul = (opts.kbMul??1);
-    const kbuMul=(opts.kbuMul??1);
+    const tagScale=this._kbScaleFromTag(opts.tag);
+    const kbMul = (opts.kbMul??1)*tagScale.kbMul;
+    const kbuMul= (opts.kbuMul??1)*tagScale.kbuMul;
+
     this.hp=Math.max(0,this.hp-amount);
     const baseKb = 140 + amount*12;
-    const baseKbu = lift ? 360 : (amount>=15? 300 : 210);
-    // ★ぶっ飛び強化（全体）
-    this.vx = clamp(dir * baseKb * kbMul * 1.15, -380, 380);
-    this.vy = - clamp(baseKbu * kbuMul * 1.15, 0, 520);
+    const baseKbu = opts.lift ? 360 : (amount>=15? 300 : 210);
+    this.vx = clamp(dir * baseKb * kbMul, -360, 360);
+    this.vy = - clamp(baseKbu * kbuMul, 0, 520);
     this.x += dir * 3; this.face = -dir;
-    this.state='hurt'; this.hurtT=0; this.animT=0; this.invulnT=0.35;
+    this.state='hurt'; this.hurtT=0; this.animT=0; this.invulnT=0.25;
     if(effects) effects.addSpark(this.x, this.y-10, amount>=15);
     if(this.hp<=0){
       this.dead=true; this.vx = dir * 520; this.vy = -520; this.spinSpeed = 18; this.deathT = 0; this.fade = 1;
@@ -211,22 +213,26 @@ class CharacterBase{
     if(this.dead){ this.deathT += dt; this.spinAngle += this.spinSpeed*dt; this.fade = clamp(1 - this.deathT/1.2, 0, 1); }
   }
   drawHPBar(ctx,world){
-    const w=36, h=4, x=this.x-world.camX, y=this.y-world.camY - this.h/2 - 10;
-    const ratio=Math.max(0,this.hp/this.maxhp);
-    ctx.save(); ctx.translate(x,y);
-    ctx.fillStyle='rgba(10,18,32,.7)'; ctx.fillRect(-w/2,-h/2,w,h);
-    ctx.strokeStyle='#1a263d'; ctx.lineWidth=1; ctx.strokeRect(-w/2,-h/2,w,h);
-    ctx.fillStyle=(this.team==='ally'?'#a7f3d0':'#7dd3fc');
-    ctx.fillRect(-w/2+1,-h/2+1,(w-2)*ratio,h-2);
-    ctx.restore();
+    if(this.team==='ally' || this.team==='enemy'){
+      const w=36, h=4, x=this.x-world.camX, y=this.y-world.camY - this.h/2 - 10;
+      const ratio=Math.max(0,this.hp/this.maxhp);
+      ctx.save(); ctx.translate(x,y);
+      ctx.fillStyle='rgba(10,18,32,.7)'; ctx.fillRect(-w/2,-h/2,w,h);
+      ctx.strokeStyle='#1a263d'; ctx.lineWidth=1; ctx.strokeRect(-w/2,-h/2,w,h);
+      ctx.fillStyle=(this.team==='ally'?'#7dffa1':'#7dd3fc');
+      ctx.fillRect(-w/2+1,-h/2+1,(w-2)*ratio,h-2);
+      ctx.restore();
+    }
   }
 }
 
-/* ========= 弾 ========= */
+/* =========================
+ * Projectiles
+ * ========================= */
 class Projectile{
-  constructor(world,x,y,dir,img,power=10,owner='ally'){
+  constructor(world,x,y,dir,img,power=10,team='enemy',tag=null){
     this.world=world; this.x=x; this.y=y; this.dir=dir; this.vx=160*dir; this.vy=0; this.img=img; this.power=power; this.life=3.2; this.dead=false; this.w=40; this.h=28;
-    this.owner=owner; // 'ally' or 'enemy'
+    this.team=team; this.tag=tag; // tag: null|skill|ult
   }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.9, h:this.h*0.9}; }
   update(dt){ if(this.dead) return; this.x+=this.vx*dt; this.y+=this.vy*dt; this.life-=dt; if(this.life<=0) this.dead=true; }
@@ -239,10 +245,10 @@ class Projectile{
   }
 }
 class EnergyBall extends Projectile{
-  constructor(world,x,y,dir,img,basePower=20,chargeSec=0, incPerTenth=1, owner='enemy'){
-    super(world,x,y,dir,img,basePower,owner);
+  constructor(world,x,y,dir,img,basePower=20,chargeSec=0, incrementPerTenth=1,team='enemy'){
+    super(world,x,y,dir,img,basePower,team,'skill');
     this.chargeSec = clamp(chargeSec,0,2.0);
-    this.power = basePower + Math.floor(this.chargeSec / 0.1) * incPerTenth;
+    this.power = basePower + Math.floor(this.chargeSec / 0.1) * incrementPerTenth;
     const sizeMul = 1 + 0.55*(this.chargeSec/2);
     this.w = Math.round(48*sizeMul); this.h = Math.round(36*sizeMul);
     this.vx = (210 + 70*(this.chargeSec/2)) * dir;
@@ -250,8 +256,8 @@ class EnergyBall extends Projectile{
   }
 }
 class UltBlast extends Projectile{
-  constructor(world,x,y,dir,img,chargeSec,owner='ally'){
-    super(world,x,y,dir,img,300,owner);
+  constructor(world,x,y,dir,img,chargeSec,team='player'){
+    super(world,x,y,dir,img,300,team,'ult');
     const cs = clamp(chargeSec,0,3.0);
     const sizeMul = lerp(0.35, 1.6, clamp(cs/3.0,0,1));
     this.w = Math.round(60*sizeMul);
@@ -261,8 +267,8 @@ class UltBlast extends Projectile{
   }
 }
 class GroundSpike extends Projectile{
-  constructor(world,x,dir,img,owner='ally'){
-    super(world,x,Math.floor(GROUND_TOP_Y)-8,dir,img,80,owner);
+  constructor(world,x,dir,img,team='player'){
+    super(world,x,Math.floor(GROUND_TOP_Y)-8,dir,img,80,team,'skill');
     this.vx = 0; this.h = 10; this.w = 42; this.life = 1.0; this.riseT=0; this.maxH=90;
   }
   aabb(){ return {x:this.x, y:this.y - this.h/2, w:this.w*0.9, h:this.h}; }
@@ -279,14 +285,15 @@ class GroundSpike extends Projectile{
   }
 }
 
-/* ========= プレイヤー ========= */
+/* =========================
+ * Player (MOBYOKI固定)
+ * ========================= */
 class Player extends CharacterBase{
   constructor(assets, world, effects){
-    super(56,64);
+    super(56,64,'player');
     this.assets=assets; this.world=world; this.effects=effects;
     this.x=100; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD;
     this.hp=1000; this.maxhp=1000; this.lives=3;
-    this.team='ally';
 
     this.maxJumps=2; this.jumpsLeft=this.maxJumps;
 
@@ -294,8 +301,7 @@ class Player extends CharacterBase{
     this.bufferA1=false; this.a2LockoutT=0;
     this.skillCDT=0; this.skill2CDT=0; this.ultCDT=0;
 
-    this.saT=0;
-    this.isUltCharging=false;
+    this.saT=0; this.isUltCharging=false;
 
     this.frames={
       idle:['M1-1.png'],
@@ -308,7 +314,7 @@ class Player extends CharacterBase{
       ul1:'UL1.PNG', ul2:'UL2.PNG', ul3:'UL3.png'
     };
     this.overhead=this._createOverheadGauge();
-    document.querySelector('.gamewrap')?.appendChild(this.overhead.root);
+    document.querySelector('.gamewrap').appendChild(this.overhead.root);
 
     this._activeSpikes=null;
   }
@@ -336,11 +342,11 @@ class Player extends CharacterBase{
     const cur=this._actionSeq[this._actionIndex]; if(!cur) return null;
     if(this.state==='skill' || this.state==='skill2' || this.state==='ult'){
       const W=86,H=64; const x=this.x + this.face*(this.w*0.2);
-      return {x, y:this.y, w:W, h:H, power:cur.power||0, dir:this.face, lift:cur.lift||0, kbMul:cur.kbMul||1.6, kbuMul:cur.kbuMul||1.3};
+      return {x, y:this.y, w:W, h:H, power:cur.power||0, dir:this.face, lift:cur.lift||0, kbMul:cur.kbMul||1.6, kbuMul:cur.kbuMul||1.3, tag:cur.tag||null};
     }
     if(cur.kind==='hit' || cur.kind==='sp'){
       const w=52, h=42, x=this.x + this.face*(this.w*0.3 + w*0.5), y=this.y - 6;
-      return {x,y,w,h, power:cur.power||0, dir:this.face, lift:cur.lift||1, kbMul:cur.kbMul||1, kbuMul:cur.kbuMul||1};
+      return {x,y,w,h, power:cur.power||0, dir:this.face, lift:cur.lift||1, kbMul:cur.kbMul||1, kbuMul:cur.kbuMul||1, tag:cur.tag||null};
     }
     return null;
   }
@@ -352,17 +358,19 @@ class Player extends CharacterBase{
     if(this.a2LockoutT>0) this.a2LockoutT=Math.max(0,this.a2LockoutT-dt);
 
     const skBtn=document.getElementById('btnSK'); const sk2Btn=document.getElementById('btnSK2'); const ultBtn=document.getElementById('btnULT');
-    if(this.skillCDT>0){ this.skillCDT=Math.max(0,this.skillCDT-dt); skBtn?.setAttribute('disabled',''); } else skBtn?.removeAttribute('disabled');
-    if(this.skill2CDT>0){ this.skill2CDT=Math.max(0,this.skill2CDT-dt); sk2Btn?.setAttribute('disabled',''); } else sk2Btn?.removeAttribute('disabled');
-    if(this.ultCDT>0){ this.ultCDT=Math.max(0,this.ultCDT-dt); ultBtn?.setAttribute('disabled',''); } else ultBtn?.removeAttribute('disabled');
+    if(this.skillCDT>0){ this.skillCDT=Math.max(0,this.skillCDT-dt); skBtn.setAttribute('disabled',''); } else skBtn.removeAttribute('disabled');
+    if(this.skill2CDT>0){ this.skill2CDT=Math.max(0,this.skill2CDT-dt); sk2Btn.setAttribute('disabled',''); } else sk2Btn.removeAttribute('disabled');
+    if(this.ultCDT>0){ this.ultCDT=Math.max(0,this.ultCDT-dt); ultBtn.setAttribute('disabled',''); } else ultBtn.removeAttribute('disabled');
 
     if(this.dead){ this.updatePhysics(dt); if(this.fade<=0){ this._respawn(world); } world.updateTimer(dt); return; }
 
+    /* ● スキル1チャージ */
     if(input.skillCharging && this.skillCDT<=0){
       input.skillChargeT=Math.min(1.0, input.skillChargeT+dt);
       this._showGauge(true,'● Charge', input.skillChargeT/1.0);
       this.saT = 0.08;
     }
+    /* ULT：溜めながら移動可 */
     this.isUltCharging = input.ultCharging && this.ultCDT<=0;
     if(this.isUltCharging){
       input.ultChargeT = Math.min(3, input.ultChargeT + dt);
@@ -370,6 +378,7 @@ class Player extends CharacterBase{
       this.saT = 0.12;
     }
 
+    // リリース
     if(input.edge.skillRelease && input.skillChargeT>0 && this.skillCDT<=0){
       this._startSkill1Release(input.skillChargeT);
       input.skillChargeT=0; input.edge.skillRelease=false;
@@ -379,13 +388,14 @@ class Player extends CharacterBase{
       input.ultChargeT=0; input.edge.ultRelease=false;
     }
 
+    // 実行中
     if(this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='ult'){
       const hb=this.currentHitbox();
       if(hb){
         for(const e of enemies){
-          if(!e || e.dead || e.invulnT>0) continue;
+          if(!e || e.dead || e.invulnT>0 || e.team!=='enemy') continue;
           if(rectsOverlap({x:hb.x,y:hb.y,w:hb.w,h:hb.h}, e.aabb())){
-            const hit = e.hurt(hb.power, hb.dir, {lift:hb.lift, kbMul:hb.kbMul, kbuMul:hb.kbuMul}, this.effects);
+            const hit = e.hurt(hb.power, hb.dir, {lift:hb.lift, kbMul:hb.kbMul, kbuMul:hb.kbuMul, tag:hb.tag}, this.effects);
             if(hit && rectsOverlap(this.aabb(), e.aabb())){ e.x = this.x + hb.dir * (this.w*0.55); }
             if(hit && this.state==='atk' && this._actionSeq && this._actionSeq[this._actionIndex]?.tag==='chaseFinisher'){
               this.effects.addSpark(e.x, e.y-10, true);
@@ -398,12 +408,15 @@ class Player extends CharacterBase{
       return;
     }
 
+    // 入力
     if(input.edge.a1) this.bufferA1=true;
 
+    // 起動優先
     if(input.edge.skill2 && this.skill2CDT<=0){ input.edge.skill2=false; this.bufferA1=false; this._startSkill2(); return; }
     if(input.edge.a2Press && this.a2LockoutT<=0){ input.edge.a2Press=false; this.bufferA1=false; this._startA2(); return; }
     if(this.bufferA1 && this.comboStep<3){ this.bufferA1=false; this._startA1(); return; }
 
+    // 移動/ジャンプ
     let ax=0; if(input.left){ ax-=MOVE; this.face=-1; } if(input.right){ ax+=MOVE; this.face=1; }
     this.vx = ax!==0 ? (ax>0?MOVE:-MOVE) : 0;
     if(input.consumeJump() && this.jumpsLeft>0){ this.vy=-JUMP_V; this.onGround=false; this.jumpsLeft--; }
@@ -414,7 +427,6 @@ class Player extends CharacterBase{
     if(!(input.skillCharging||this.isUltCharging)) this._showGauge(false);
     world.updateTimer(dt);
   }
-
   _startA1(){
     this.state='atk'; this.animT=0; this.comboStep=Math.min(this.comboStep+1,3);
     const seq=[ {kind:'prep',dur:0.08,frame:'k1prep',fx:80,power:0} ];
@@ -454,7 +466,7 @@ class Player extends CharacterBase{
     for(let r=0;r<rounds;r++){
       for(let i=0;i<frames.length;i++){
         const pow = base*(i===1?1:0.6); const lift=(i===1?1:0);
-        seq.push({kind:'sp',dur:0.06,frame:frames[i],fx:80,power:pow,lift, kbMul:kbm, kbuMul:kbum});
+        seq.push({kind:'sp',dur:0.06,frame:frames[i],fx:80,power:pow,lift, kbMul:kbm, kbuMul:kbum, tag:'skill'});
       }
     }
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
@@ -465,19 +477,19 @@ class Player extends CharacterBase{
     this.state='skill2'; this.animT=0; this.skill2CDT=10.0;
     this._skill2SAT = 1.6;
     this._actionSeq=[
-      {kind:'hit', dur:0.12, frame:'y1', fx:30, power:5},
-      {kind:'hit', dur:0.12, frame:'y2', fx:30, power:5},
-      {kind:'hit', dur:0.12, frame:'y3', fx:30, power:5},
-      {kind:'hit', dur:0.12, frame:'y4', fx:0,  power:10},
-      {kind:'emit',dur:1.00,  frame:'y4', fx:0,  power:0}
+      {kind:'hit', dur:0.12, frame:'y1', fx:30, power:5, tag:'skill'},
+      {kind:'hit', dur:0.12, frame:'y2', fx:30, power:5, tag:'skill'},
+      {kind:'hit', dur:0.12, frame:'y3', fx:30, power:5, tag:'skill'},
+      {kind:'hit', dur:0.12, frame:'y4', fx:0,  power:10, tag:'skill'},
+      {kind:'emit',dur:1.00, frame:'y4', fx:0,  power:0 }
     ];
     this._actionIndex=0; this._actionTime=0;
 
     const kem=this.world.assets.img('kem.png');
     if(kem){
       const off=68;
-      const L=new GroundSpike(this.world, this.x - off, -1, kem,'ally');
-      const R=new GroundSpike(this.world, this.x + off,  1, kem,'ally');
+      const L=new GroundSpike(this.world, this.x - off, -1, kem,'player');
+      const R=new GroundSpike(this.world, this.x + off,  1, kem,'player');
       (this.world._skillBullets||(this.world._skillBullets=[])).push(L,R);
       this._activeSpikes=[L,R];
       this.effects.shake(0.12,6);
@@ -486,15 +498,18 @@ class Player extends CharacterBase{
   _releaseULT(chargeSec){
     if(this.ultCDT>0) return;
     this.state='ult'; this.animT=0;
-    this._actionSeq=[ {kind:'pose',dur:0.10,frame:'ul2',fx:40}, {kind:'post',dur:0.22,frame:'ul2',fx:20} ];
+    this._actionSeq=[
+      {kind:'pose',dur:0.10,frame:'ul2',fx:40},
+      {kind:'post',dur:0.22,frame:'ul2',fx:20}
+    ];
     this._actionIndex=0; this._actionTime=0;
     this.ultCDT=3.0;
-
     const img=this.world.assets.img(this.frames.ul3);
     const ox=this.face*30, oy=-12;
-    const blast=new UltBlast(this.world, this.x+ox, this.y+oy, this.face, img, chargeSec,'ally');
+    const blast=new UltBlast(this.world, this.x+ox, this.y+oy, this.face, img, chargeSec,'player');
     (this.world._skillBullets||(this.world._skillBullets=[])).push(blast);
-    this.saT=0; this._showGauge(false); this.effects.addSpark(this.x+ox, this.y-14, true);
+    this.saT=0; this._showGauge(false);
+    this.effects.addSpark(this.x+ox, this.y-14, true);
   }
   _updateAction(dt,world,input){
     const cur=this._actionSeq?.[this._actionIndex];
@@ -503,6 +518,7 @@ class Player extends CharacterBase{
       this._skill2SAT = Math.max(0, this._skill2SAT - dt);
       this.saT = Math.max(this.saT, 0.08);
     }
+
     if(cur?.fx){ this.x += this.face * cur.fx * dt; }
 
     if(this._actionSeq && this.state==='atk' && cur?.after==='enableChase'){
@@ -512,6 +528,10 @@ class Player extends CharacterBase{
         input.edge.a2Press=false; this._startA2Chase(); return;
       }
     }
+
+    if((this.state==='skill2' && (cur.frame==='y4' || cur.kind==='emit')) || this.state==='ult'){
+      const ox=Math.sin(performance.now()/25)*2; this._shakeOX = ox;
+    } else this._shakeOX=0;
 
     this.vx = 0; this.updatePhysics(dt);
 
@@ -531,7 +551,8 @@ class Player extends CharacterBase{
   _respawn(world){
     this.dead=false; this.fade=1; this.spinAngle=0; this.spinSpeed=0;
     this.state='idle'; this.comboStep=0; this.comboGraceT=0; this.bufferA1=false;
-    this.invulnT=0.6; this.hp=this.maxhp; updateHPUI(this.hp,this.maxhp);
+    this.invulnT=0.6; this.hp=this.maxhp;
+    updateHPUI(this.hp,this.maxhp);
     this.x=world.camX+80; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.vx=0; this.vy=0;
     this.jumpsLeft=this.maxJumps; this.saT=0; this._activeSpikes=null; this.isUltCharging=false;
   }
@@ -540,7 +561,7 @@ class Player extends CharacterBase{
     if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
     if(this.face<0 && !this.dead) ctx.scale(-1,1);
 
-    let img=null;
+    let img=null, ox=this._shakeOX||0;
     if(this.state==='idle'){ img=this._imgByKey('idle',0); }
     else if(this.state==='run'){
       const speed=Math.abs(this.vx);
@@ -555,265 +576,165 @@ class Player extends CharacterBase{
 
     if(img){
       const scale=this.h/img.height, w=img.width*scale, h=this.h;
-      ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
+      ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2+ox), Math.round(-h/2), Math.round(w), Math.round(h));
+    }
+
+    if(this.isUltCharging){
+      const holder=this.world.assets.img(this.frames.ul1);
+      if(holder){
+        const scale=this.h/holder.height, w=holder.width*scale, h=this.h;
+        ctx.save(); if(this.face<0) ctx.scale(-1,1);
+        ctx.globalAlpha=0.95; ctx.drawImage(holder, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
+        ctx.restore();
+      }
+      const ul3=this.world.assets.img(this.frames.ul3);
+      if(ul3){
+        const t=Math.min(3, (window._inputUltT||0));
+        const mul = lerp(0.35, 1.6, clamp(t/3.0,0,1));
+        const hh=60*mul, ww=60*mul; const oxh = this.face*26, oyh=-14;
+        ctx.save(); ctx.translate(oxh, oyh); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.95; ctx.drawImage(ul3, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh)); ctx.restore();
+      }
     }
     ctx.restore();
   }
 }
+const updateHPUI=(hp,maxhp)=>{ const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=hp; fill.style.width=Math.max(0,Math.min(100,(hp/maxhp)*100))+'%'; };
 
-/* ========= 味方 MOBYOKI（AI） ========= */
-class AllyMOBYOKI extends Player{
-  constructor(assets, world, effects, x=180){
-    super(assets, world, effects);
-    this.x=x; this.team='ally';
-    this.overhead.root.style.display='none';
-    this.ai = {thinkT:0, want:'approach', shotT:0, ultT:0};
+/* =========================
+ * Ally MOBYOKI（CPU）— 既存操作の簡易AI版
+ * ========================= */
+class MobyCPU extends Player{
+  constructor(assets,world,effects,team='ally'){
+    super(assets,world,effects);
+    this.team=team;
+    this.maxhp=700; this.hp=this.maxhp;
   }
-  update(dt, _ignored, world, enemies){
-    const target = nearestAlive(enemies, this);
-    const input = { left:false, right:false, jump:false, skillCharging:false, ultCharging:false,
-                    edge:{a1:false,a2Press:false,skillPress:false,skillRelease:false,skill2:false,ultPress:false,ultRelease:false} };
-    if(!target){ super.update(dt,{...new Input(), consumeJump(){return false;}}, world, enemies); return; }
-    const dx=target.x-this.x, adx=Math.abs(dx); this.face=(dx>=0?1:-1);
-
-    this.ai.thinkT-=dt; this.ai.shotT-=dt; this.ai.ultT-=dt;
-    if(this.ai.thinkT<=0){
-      this.ai.thinkT=0.25+Math.random()*0.1;
-      if(adx>260) this.ai.want='dash';
-      else if(adx>140) this.ai.want = Math.random()<0.6?'dash':'charge';
-      else this.ai.want = Math.random()<0.5?'melee':'skill';
-    }
-
-    if(this.ai.want==='dash'){ input.right = dx>0; input.left = dx<0; }
-    if(this.onGround && Math.random()<0.05) input.jump=true;
-
-    if(this.ai.want==='melee' && adx<150){ input.edge.a1=true; if(Math.random()<0.25) input.edge.a2Press=true; }
-    if(this.ai.want==='charge' && this.skillCDT<=0 && this.ai.shotT<=0){
-      input.skillCharging=true;
-      this._pendingCharge = (this._pendingCharge||0)+dt;
-      if(this._pendingCharge>0.6){ input.edge.skillRelease=true; input.skillCharging=false; this._pendingCharge=0; this.ai.shotT=2.0; }
-    } else { this._pendingCharge=0; }
-
-    if(this.ai.want!=='charge' && this.ultCDT<=0 && this.ai.ultT<=0 && adx<280 && Math.random()<0.08){
-      input.ultCharging=true;
-      this._ultHold=(this._ultHold||0)+dt;
-      if(this._ultHold>0.8){ input.edge.ultRelease=true; input.ultCharging=false; this._ultHold=0; this.ai.ultT=4.0; }
-    } else { this._ultHold=0; }
-
-    super.update(dt,{
-      left:input.left?1:0,right:input.right?1:0,
-      jump:input.jump,
-      btn:{}, prev:{}, edge:input.edge,
-      skillCharging:!!input.skillCharging, skillChargeT:this._pendingCharge||0,
-      ultCharging:!!input.ultCharging,   ultChargeT:this._ultHold||0,
-      beginFrame(){}, consumeJump(){ const j=!!this.jump; this.jump=false; return j; }
-    }, world, enemies);
+  update(dt, _input, world, allChars){
+    // 近い敵を狙う
+    const enemies = allChars.filter(c=>c && !c.dead && c.team==='enemy');
+    if(enemies.length===0){ return super.update(dt,new Input(),world,allChars); }
+    let target=enemies[0], best=1e9;
+    for(const e of enemies){ const d=Math.abs(e.x-this.x); if(d<best){ best=d; target=e; } }
+    // 簡易AI入力
+    const ai=new Input();
+    ai.left = (target.x<this.x)?1:0;
+    ai.right= (target.x>this.x)?1:0;
+    ai.jump = (!this.onGround && Math.random()<0.02)? true : (this.onGround && Math.random()<0.03);
+    // 距離に応じて攻撃
+    const adx = Math.abs(target.x-this.x);
+    if(adx<90){ ai.btn.a1=true; ai.edge.a1=true; if(Math.random()<0.15) ai.edge.a2Press=true; }
+    else if(adx<180){ if(Math.random()<0.02){ ai.edge.skill2=true; } }
+    else { if(Math.random()<0.02){ ai.edge.skillPress=true; ai.skillCharging=true; ai.skillChargeT=1.0; ai.edge.skillRelease=true; } }
+    if(Math.random()<0.01){ ai.ultCharging=true; ai.ultChargeT=0.8; ai.edge.ultRelease=true; }
+    return super.update(dt,ai,world,allChars);
   }
 }
 
-/* ========= 近い対象取得 ========= */
-function nearestAlive(list, from){
-  let best=null, bd=Infinity;
-  for(const o of list){ if(!o || o.dead) continue; const d=Math.abs(o.x-from.x); if(d<bd){bd=d; best=o;} }
-  return best;
-}
-
-/* ========= ここから敵クラス ========= */
-/* ---- WaruMOB, IceRobo, IceRoboMini, Kozou, GabuKing, Screw, MOBGiant ---- */
-
-/* こぞうの投石弾 */
-class KozouStone extends Projectile{
-  constructor(world,x,y,dir,img){ super(world,x,y,dir,img,5,'enemy'); this.vx = 120*dir; this.vy = -360; this.w = 24; this.h = 24; this.gravity = 900; }
-  update(dt){
-    if(this.dead) return; this.vy += this.gravity*dt; this.x += this.vx*dt; this.y += this.vy*dt;
-    const ground = Math.floor(GROUND_TOP_Y); if(this.y + this.h/2 >= ground+FOOT_PAD){ this.dead=true; }
-  }
-}
-class IceRoboMini extends CharacterBase{
-  constructor(world, effects, assets, x=1200){
-    super(40,44); this.world=world; this.effects=effects; this.assets=assets;
-    this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
-    this.maxhp=50; this.hp=50; this.cool=0; this.state='idle'; this.animT=0; this.hopT=0; this.superArmor=false;
-    this._lastImg=null;
-  }
-  img(key){ const map={ idle:'IC.png', move:'IC2.png', atk1:'IC3.png', sp:'IC4.png' }; return this.assets.img(map[key]||'IC.png'); }
-  aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.9}; }
-  update(dt, player){
-    if(this.dead){ this.updatePhysics(dt); return; }
-    if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
-    if(this.state==='sp'){
-      this.superArmor=true; this.hopT+=dt; const period=0.24, bounces=5;
-      const bi=Math.floor(this.hopT/period); const dir = (bi%2===0)? this.face : -this.face;
-      this.vx = dir * 240; if(this.onGround) this.vy = -JUMP_V*0.45;
-      this.updatePhysics(dt);
-      if(this.hopT>=period*bounces){ this.state='idle'; this.vx=0; this.superArmor=false; this.hopT=0; this.cool=1.6; }
-      if(player && !player.dead && player.invulnT<=0){
-        const hb={x:this.x, y:this.y, w:this.w*0.7, h:this.h*0.7};
-        if(rectsOverlap(hb, player.aabb())){ const hit=player.hurt(7, (player.x>=this.x?1:-1), {lift:0.3,kbMul:0.9,kbuMul:0.9}, this.effects); if(hit && player instanceof Player) updateHPUI(player.hp,player.maxhp); }
-      }
-      this.animT+=dt; return;
-    }
-    if(this.state==='atk'){
-      this.hopT+=dt; const dur=0.32; this.vx = this.face * 140; this.updatePhysics(dt);
-      if(this.hopT>dur*0.5 && this.hopT<=dur*0.75){
-        const hb={x:this.x + this.face*18, y:this.y, w:36, h:28};
-        if(player && !player.dead && player.invulnT<=0 && rectsOverlap(hb, player.aabb())){ const hit=player.hurt(5, this.face, {lift:0.2,kbMul:0.8,kbuMul:0.8}, this.effects); if(hit && player instanceof Player) updateHPUI(player.hp,player.maxhp); }
-      }
-      if(this.hopT>=dur){ this.state='idle'; this.hopT=0; this.vx=0; this.cool=0.9; }
-      this.animT+=dt; return;
-    }
-    const dx=player.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
-    this.vx = (dx>0? 70 : -70); this.hopT+=dt;
-    if(this.onGround && this.hopT>0.35){ this.vy=-JUMP_V*0.35; this.hopT=0; }
-    if(this.cool<=0){
-      if(adx<120 && Math.random()<0.7){ this.state='atk'; this.hopT=0; this.animT=0; }
-      else if(adx<220 && Math.random()<0.35){ this.state='sp'; this.hopT=0; this.animT=0; }
-    }
-    this.updatePhysics(dt);
-    this.state = (this.state==='idle'||this.state==='run') ? (this.onGround? 'run':'jump') : this.state;
-    this.animT+=dt;
-  }
-  hurt(amount, dir, opts={}, effects){ if(this.state==='sp'){ opts={...(opts||{}), kbMul:0.2, kbuMul:0.2}; }
-    return super.hurt(amount, dir, opts, effects);
-  }
-  draw(ctx,world){
-    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
-    let img=null; if(this.state==='sp') img=this.img('sp');
-    else if(this.state==='atk'){ img=this.hopT<0.16? this.img('idle'): this.img('atk1'); }
-    else if(!this.onGround) img=this.img('move'); else img=this.img('move');
-    if(!img) img=this._lastImg;
-    if(img){
-      const scale=this.h/img.height, w=img.width*scale, h=this.h;
-      ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
-      this._lastImg=img;
-    }
-    ctx.restore(); this.drawHPBar(ctx,world);
-  }
-}
-class Kozou extends CharacterBase{
-  constructor(world,effects,assets,x=1400){
-    super(50,58); this.world=world; this.effects=effects; this.assets=assets;
-    this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
-    this.maxhp=100; this.hp=100; this.cool=0; this.state='idle'; this.animT=0; this.projectiles=[];
-    this.guard=false; this.guardHits=0; this._thrown=false;
-  }
-  img(key){ const map={ idle:'SL.png', w1:'SL2.png', w2:'SL3.png', prep:'SL4.png', throw:'SL5.png', guard:'SL6.png', counter:'SL7.png', stone:'SL8.png'}; return this.assets.img(map[key]||'SL.png'); }
-  aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.9}; }
-  update(dt,player){
-    if(this.dead){ this.updatePhysics(dt); return; }
-    if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
-    for(const p of this.projectiles) p.update(dt); this.projectiles=this.projectiles.filter(p=>!p.dead);
-
-    if(this.state==='counter'){
-      this.updatePhysics(dt); this.animT+=dt; const dur=0.28; const mid=0.14;
-      if(this.animT<dur){ this.vx=this.face*120; }
-      if(this.animT>mid){
-        const hb={x:this.x + this.face*18, y:this.y, w:36, h:30};
-        if(player && !player.dead && player.invulnT<=0 && rectsOverlap(hb, player.aabb())){ const hit=player.hurt(8, this.face, {lift:0.3,kbMul:0.9,kbuMul:0.9}, this.effects); if(hit && player instanceof Player) updateHPUI(player.hp,player.maxhp); }
-      }
-      if(this.animT>=dur){ this.state='idle'; this.vx=0; this.cool=1.2; this.guard=false; this.guardHits=0; }
-      return;
-    }
-    if(this.state==='throw'){
-      this.updatePhysics(dt); this.animT+=dt;
-      if(this.animT>0.22 && !this._thrown){ this._thrown=true; const img=this.img('stone'); const ox=this.face*14, oy=-18;
-        this.projectiles.push(new KozouStone(this.world, this.x+ox, this.y+oy, this.face, img)); }
-      if(this.animT>0.4){ this.state='idle'; this.vx=0; this.cool=1.4; this._thrown=false; }
-      return;
-    }
-    if(this.guard){ this.vx=0; this.updatePhysics(dt); this.animT+=dt;
-      const dx=player.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1; if(adx<120){ this.vx = (dx>0? -80 : 80); } return; }
-
-    const dx=player.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
-    if(adx>140){ this.vx = (dx>0? 70 : -70); } else this.vx=0;
-    if(this.cool<=0){
-      if(adx>120 && Math.random()<0.5){ this.state='throw'; this.animT=0; this.vx=0; }
-      else if(Math.random()<0.35){ this.guard=true; this.state='idle'; this.animT=0; this.vx=0; }
-    }
-    this.updatePhysics(dt);
-    this.state = this.onGround ? (Math.abs(this.vx)>1?'run':'idle') : 'jump';
-    this.animT+=dt;
-  }
+/* =========================
+ * Enemies（味方化にも使う：teamで切替）
+ * ========================= */
+// 軽量敵の追加ノックバック補正
+const lightHurtBoost = (base)=>({
   hurt(amount, dir, opts={}, effects){
-    if(this.guard){ amount = Math.ceil(amount*0.5); this.guardHits = Math.min(3, this.guardHits+1); if(this.guardHits>=3 && this.state!=='counter'){ this.state='counter'; this.animT=0; this.vx=0; } }
-    return super.hurt(amount, dir, opts, effects);
+    opts = {...opts, kbMul:(opts.kbMul??1)*1.25, kbuMul:(opts.kbuMul??1)*1.2};
+    return base.call(this,amount,dir,opts,effects);
   }
-  draw(ctx,world){
-    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
-    let img=null;
-    if(this.state==='throw'){ img=this.animT<0.2? this.img('prep'): this.img('throw'); }
-    else if(this.state==='counter'){ img=this.img('counter'); }
-    else if(this.guard){ img=this.img('guard'); }
-    else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.img(f?'w1':'w2'); }
-    else { img=this.img('idle'); }
-    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); }
-    ctx.restore(); this.drawHPBar(ctx,world);
-    for(const p of this.projectiles) p.draw(ctx);
-  }
-}
-/* script.js — FULL (Part 2/2) */
+});
 
-/* ====== 続き：敵クラス ====== */
 class WaruMOB extends CharacterBase{
-  constructor(world,effects,assets,x=520){
-    super(52,60); this.world=world; this.effects=effects; this.assets=assets;
+  constructor(world,effects,assets,x=520,team='enemy'){
+    super(52,60,team); this.world=world; this.effects=effects; this.assets=assets;
     this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1; this.maxhp=100; this.hp=100;
     this.cool=0; this._seq=null; this._idx=0; this._t=0; this.projectiles=[];
+    this.brainT=0; this.intent='patrol';
   }
   imgByKey(key){ const a=this.assets; const map={ idle:'teki1.png', walk1:'teki1.png', walk2:'teki2.png', prep1:'teki1.png', prep2:'teki3.png' }; return a.img(map[key]||'teki1.png'); }
-  addBullet(){ const img=this.assets.img('teki7.png'); const ox=this.face*28; const oy=-8; this.projectiles.push(new Projectile(this.world,this.x+ox,this.y+oy,this.face,img,10,'enemy')); }
+  addBullet(){
+    const img=this.assets.img('teki7.png'); const ox=this.face*28; const oy=-8;
+    this.projectiles.push(new Projectile(this.world,this.x+ox,this.y+oy,this.face,img,10,this.team,'skill'));
+  }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.85}; }
+  hurt(amount,dir,opts,effects){ return lightHurtBoost(CharacterBase.prototype.hurt).hurt.call(this,amount,dir,opts,effects); }
   update(dt,player){
+    const foeTeam = (this.team==='ally')?'enemy':'player';
+    const target = this._pickTarget(player, foeTeam);
     if(this.dead){ this.updatePhysics(dt); return; }
-    if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
     for(const p of this.projectiles) p.update(dt); this.projectiles=this.projectiles.filter(p=>!p.dead);
 
-    // 発射シーケンス中
+    if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
+    this.brainT-=dt;
+    if(this.brainT<=0){
+      this.brainT=0.4+Math.random()*0.2;
+      const dx=target.x-this.x, adx=Math.abs(dx);
+      this.face = dx>=0?1:-1;
+      if(adx<110) this.intent = Math.random()<0.55 ? 'backstep' : 'strafe';
+      else if(adx<220) this.intent = Math.random()<0.5 ? 'strafe' : 'shoot';
+      else this.intent = 'approach';
+    }
+
     if(this.state==='atk'){
-      this.updatePhysics(dt); if(this._seq){ this._t+=dt; const cur=this._seq[this._idx];
-        if(cur && this._t>=cur.dur){ this._idx++; this._t=0; if(this._idx===2){ this.addBullet(); }
-          if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; } } }
+      this.updatePhysics(dt); if(this._seq){
+        this._t+=dt; const cur=this._seq[this._idx];
+        if(cur && this._t>=cur.dur){
+          this._idx++; this._t=0;
+          if(this._idx===2){ this.addBullet(); }
+          if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; }
+        }
+      }
       this.animT+=dt; return;
     }
 
-    const dx=player.x - this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
-    const near=110, mid=170, far=240, fire=220; const patrol=70, backSp=100;
-
-    // ★頻度ダウン（以前より間隔長め）
-    if(this.cool<=0 && adx<=fire && Math.random()<0.55){
-      this._seq=[ {kind:'pose',dur:0.18,key:'prep1'}, {kind:'pose',dur:0.22,key:'prep2'} ];
-      this.cool=2.2; this.state='atk'; this._idx=0; this._t=0; this.vx=0; this.updatePhysics(dt); this.animT+=dt; return;
+    const dx=target.x-this.x, adx=Math.abs(dx); const dir = dx>=0?1:-1;
+    let targetVX=0;
+    if(this.intent==='approach'){
+      targetVX = dir*90;
+    }else if(this.intent==='backstep'){
+      targetVX = -dir*120;
+    }else if(this.intent==='strafe'){
+      const s = (Math.sin(performance.now()/300)+1)/2; targetVX = dir*(60 + s*60) * (Math.random()<0.5?1:-1);
+    }else if(this.intent==='shoot'){
+      targetVX = 0;
+      if(this.cool<=0){
+        this._seq=[ {kind:'pose',dur:0.22,key:'prep1'}, {kind:'pose',dur:0.26,key:'prep2'} ];
+        this.cool=2.2 + Math.random()*0.8;
+        this.state='atk'; this._idx=0; this._t=0; this.vx=0; this.animT=0;
+        return;
+      }
     }
 
-    if(this.cool>0){
-      if(adx<near){ this.vx = (dx>0? -backSp : backSp); }
-      else if(adx>far){ this.vx = (dx>0? patrol : -patrol); }
-      else if(adx>mid){ this.vx = (dx>0? patrol : -patrol); }
-      else { this.vx = 0; }
-    } else {
-      if(adx>fire){ this.vx = (dx>0? patrol : -patrol); } else { this.vx = 0; }
+    if(adx<180 && this.cool<=0 && Math.random()<0.25){
+      this._seq=[ {kind:'pose',dur:0.22,key:'prep1'}, {kind:'pose',dur:0.26,key:'prep2'} ];
+      this.cool=2.4 + Math.random()*1.0;
+      this.state='atk'; this._idx=0; this._t=0; this.vx=0; this.animT=0;
+      return;
     }
+
+    this.vx = targetVX;
     this.updatePhysics(dt);
     this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
     this.animT+=dt;
   }
+  _pickTarget(player, foeTeam){
+    const all = this.world.game?.allChars || [];
+    let best=1e9, tgt=null;
+    for(const c of all){ if(!c || c.dead || c.team!==foeTeam) continue; const d=Math.abs(c.x-this.x); if(d<best){ best=d; tgt=c; } }
+    return tgt||player;
+  }
   draw(ctx,world){
-    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
-    if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
-    if(this.face<0 && !this.dead) ctx.scale(-1,1);
+    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0 && !this.dead) ctx.scale(-1,1);
     let img=null;
     if(this.state==='atk' && this._seq){ const cur=this._seq[this._idx]; img=this.imgByKey(cur.key||'prep2'); }
     else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.imgByKey(f? 'walk1':'walk2'); }
     else { img=this.imgByKey('idle'); }
     if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); }
     ctx.restore(); this.drawHPBar(ctx,world);
-    for(const p of this.projectiles) p.draw(ctx);
+    for(const p of this.projectiles) if(p.team===this.team) p.draw(ctx);
   }
 }
 
 class IceRobo extends CharacterBase{
-  constructor(world,effects,assets,x=900){
-    super(64,70); this.world=world; this.effects=effects; this.assets=assets;
+  constructor(world,effects,assets,x=900,team='enemy'){
+    super(64,70,team); this.world=world; this.effects=effects; this.assets=assets;
     this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
     this.maxhp=1200; this.hp=1200; this.superArmor=false; this.cool=0; this.recoverT=0;
     this.modeJump=false; this.modeSwapT=0; this._seq=null; this._idx=0; this._t=0; this.chargeT=0; this.energyOrbs=[];
@@ -835,8 +756,10 @@ class IceRobo extends CharacterBase{
     return true;
   }
   img(key){ const map={ idle:'I1.png', walk1:'I1.png', walk2:'I2.png', jump1:'I1.png', jump2:'I2.png', jump3:'I3.png', charge:'I4.png', release:'I5.png', dashPrep:'I6.png', dashAtk:'I7.png', orb:'I8.png' }; return this.assets.img(map[key]||'I1.png'); }
-  addEnergyBall(chargeSec){ const img=this.img('orb'); const ox=this.face*30, oy=-10; this.energyOrbs.push(new EnergyBall(this.world,this.x+ox,this.y+oy,this.face,img,20,chargeSec,1,'enemy')); }
+  addEnergyBall(chargeSec){ const img=this.img('orb'); const ox=this.face*30, oy=-10; this.energyOrbs.push(new EnergyBall(this.world,this.x+ox,this.y+oy,this.face,img,20,chargeSec,1,this.team)); }
   update(dt, player){
+    const foeTeam = (this.team==='ally')?'enemy':'player';
+    const target = this._pickTarget(player,foeTeam);
     if(this.dead){ this.updatePhysics(dt); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
     if(this.recoverT>0){ this.recoverT=Math.max(0,this.recoverT-dt); }
@@ -845,7 +768,7 @@ class IceRobo extends CharacterBase{
     if(this.state==='charge'){
       this.superArmor = true; this.vx = 0; this.updatePhysics(dt);
       this._t += dt; this.chargeT = Math.min(2.0, this.chargeT + dt); this.animT += dt;
-      const adx = Math.abs(player.x - this.x);
+      const adx = Math.abs(target.x - this.x);
       if(adx < 180 && this.chargeT > 0.25){ this.releaseEnergy(); }
       else if(this.chargeT >= 2.0){ this.releaseEnergy(); }
       return;
@@ -858,7 +781,7 @@ class IceRobo extends CharacterBase{
     if(this.state==='atk' || this.state==='recover'){ this.updatePhysics(dt); this.animT += dt; if(this.state==='recover' && this.recoverT<=0){ this.state='idle'; } return; }
     if(this.state==='hurt'){ this.updatePhysics(dt); if(this.onGround) this.state='idle'; this.animT += dt; return; }
 
-    const dx = player.x - this.x; const adx = Math.abs(dx); this.face = dx>=0? 1 : -1;
+    const dx = target.x - this.x; const adx = Math.abs(dx); this.face = dx>=0? 1 : -1;
     this.modeSwapT -= dt; if(this.modeSwapT<=0 && this.onGround){ this.modeSwapT = 2.0 + Math.random()*1.6; this.modeJump = !this.modeJump; }
     const desireCharge = (adx>=140 && adx<=520);
     if(this.cool<=0 && this.recoverT<=0 && desireCharge){
@@ -875,6 +798,12 @@ class IceRobo extends CharacterBase{
     this.updatePhysics(dt);
     this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
     this.animT += dt;
+  }
+  _pickTarget(player, foeTeam){
+    const all = this.world.game?.allChars || [];
+    let best=1e9, tgt=null;
+    for(const c of all){ if(!c || c.dead || c.team!==foeTeam) continue; const d=Math.abs(c.x-this.x); if(d<best){ best=d; tgt=c; } }
+    return tgt||player;
   }
   releaseEnergy(){ this.addEnergyBall(this.chargeT); this.state='recover'; this.recoverT=0.7; this.superArmor=false; }
   draw(ctx,world){
@@ -901,16 +830,179 @@ class IceRobo extends CharacterBase{
     }
     ctx.restore();
     this.drawHPBar(ctx,world);
-    for(const p of this.energyOrbs) p.draw(ctx);
+    for(const p of this.energyOrbs) if(p.team===this.team) p.draw(ctx);
+  }
+}
+
+class IceRoboMini extends CharacterBase{
+  constructor(world, effects, assets, x=1200,team='enemy'){
+    super(40,44,team); this.world=world; this.effects=effects; this.assets=assets;
+    this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
+    this.maxhp=50; this.hp=50; this.cool=0; this.state='idle'; this.animT=0; this.hopT=0; this.superArmor=false;
+    this._lastImg=null;
+  }
+  img(key){ const map={ idle:'IC.png', move:'IC2.png', atk1:'IC3.png', sp:'IC4.png' }; return this.assets.img(map[key]||'IC.png'); }
+  aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.9}; }
+  hurt(amount, dir, opts={}, effects){ opts={...(opts||{}), kbMul:(opts.kbMul??1)*1.35, kbuMul:(opts.kbuMul??1)*1.25}; return super.hurt(amount, dir, opts, effects); }
+  update(dt, player){
+    const foeTeam = (this.team==='ally')?'enemy':'player';
+    const target = this._pickTarget(player, foeTeam);
+    if(this.dead){ this.updatePhysics(dt); return; }
+    if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
+    if(this.state==='sp'){
+      this.superArmor=true; this.hopT+=dt; const period=0.24, bounces=5;
+      const bi=Math.floor(this.hopT/period); const dir = (bi%2===0)? this.face : -this.face;
+      this.vx = dir * 240; if(this.onGround) this.vy = -JUMP_V*0.45;
+      this.updatePhysics(dt);
+      if(this.hopT>=period*bounces){ this.state='idle'; this.vx=0; this.superArmor=false; this.hopT=0; this.cool=1.6; }
+      if(rectsOverlap(this.aabb(), target.aabb()) && target.invulnT<=0){
+        const hit = target.hurt(7, (target.x>=this.x?1:-1), {lift:0.3,kbMul:0.9,kbuMul:0.9}, this.effects);
+        if(hit && this.world.game?.player?.team==='player' && target===this.world.game.player) updateHPUI(target.hp,target.maxhp);
+      }
+      this.animT+=dt; return;
+    }
+    if(this.state==='atk'){
+      this.hopT+=dt; const dur=0.32; this.vx = this.face * 140; this.updatePhysics(dt);
+      if(this.hopT>dur*0.5 && this.hopT<=dur*0.75){
+        const hb={x:this.x + this.face*18, y:this.y, w:36, h:28};
+        if(target.invulnT<=0 && rectsOverlap(hb, target.aabb())){ target.hurt(5, this.face, {lift:0.2,kbMul:0.8,kbuMul:0.8}, this.effects); }
+      }
+      if(this.hopT>=dur){ this.state='idle'; this.hopT=0; this.vx=0; this.cool=0.9; }
+      this.animT+=dt; return;
+    }
+    const dx=target.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
+    const swirl = Math.sin(performance.now()/350)*60;
+    this.vx = (dx>0? 70 : -70) + (this.face>0?swirl:-swirl)*0.2;
+    this.hopT+=dt;
+    if(this.onGround && this.hopT>0.35){ this.vy=-JUMP_V*0.35; this.hopT=0; }
+    if(this.cool<=0){
+      if(adx<120 && Math.random()<0.6){ this.state='atk'; this.hopT=0; this.animT=0; }
+      else if(adx<220 && Math.random()<0.35){ this.state='sp'; this.hopT=0; this.animT=0; }
+    }
+    this.updatePhysics(dt);
+    this.state = (this.state==='idle'||this.state==='run') ? (this.onGround? 'run':'jump') : this.state;
+    this.animT+=dt;
+  }
+  _pickTarget(player, foeTeam){
+    const all = this.world.game?.allChars || [];
+    let best=1e9, tgt=null;
+    for(const c of all){ if(!c || c.dead || c.team!==foeTeam) continue; const d=Math.abs(c.x-this.x); if(d<best){ best=d; tgt=c; } }
+    return tgt||player;
+  }
+  draw(ctx,world){
+    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
+    let img=null; if(this.state==='sp') img=this.img('sp');
+    else if(this.state==='atk'){ img=this.hopT<0.16? this.img('idle'): this.img('atk1'); }
+    else if(!this.onGround) img=this.img('move'); else img=this.img('move');
+    if(!img) img=this._lastImg;
+    if(img){
+      const scale=this.h/img.height, w=img.width*scale, h=this.h;
+      ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
+      this._lastImg=img;
+    }
+    ctx.restore(); this.drawHPBar(ctx,world);
+  }
+}
+
+class KozouStone extends Projectile{
+  constructor(world,x,y,dir,img,team){ super(world,x,y,dir,img,5,team,'skill'); this.vx = 120*dir; this.vy = -360; this.w = 24; this.h = 24; this.gravity = 900; }
+  update(dt){
+    if(this.dead) return; this.vy += this.gravity*dt; this.x += this.vx*dt; this.y += this.vy*dt;
+    const ground = Math.floor(GROUND_TOP_Y); if(this.y + this.h/2 >= ground+FOOT_PAD){ this.dead=true; }
+  }
+}
+class Kozou extends CharacterBase{
+  constructor(world,effects,assets,x=1400,team='enemy'){
+    super(50,58,team); this.world=world; this.effects=effects; this.assets=assets;
+    this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
+    this.maxhp=100; this.hp=100; this.cool=0; this.state='idle'; this.animT=0; this.projectiles=[];
+    this.guard=false; this.guardHits=0; this._thrown=false; this.brainT=0;
+  }
+  img(key){ const map={ idle:'SL.png', w1:'SL2.png', w2:'SL3.png', prep:'SL4.png', throw:'SL5.png', guard:'SL6.png', counter:'SL7.png', stone:'SL8.png'}; return this.assets.img(map[key]||'SL.png'); }
+  aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.9}; }
+  hurt(amount, dir, opts={}, effects){
+    if(this.guard){ amount = Math.ceil(amount*0.5); this.guardHits = Math.min(3, this.guardHits+1); if(this.guardHits>=3 && this.state!=='counter'){ this.state='counter'; this.animT=0; this.vx=0; } }
+    opts = {...opts, kbMul:(opts.kbMul??1)*1.25, kbuMul:(opts.kbuMul??1)*1.2};
+    return super.hurt(amount, dir, opts, effects);
+  }
+  update(dt,player){
+    const foeTeam = (this.team==='ally')?'enemy':'player';
+    const target = this._pickTarget(player,foeTeam);
+    if(this.dead){ this.updatePhysics(dt); return; }
+    if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
+    for(const p of this.projectiles) p.update(dt); this.projectiles=this.projectiles.filter(p=>!p.dead);
+
+    if(this.state==='counter'){
+      this.updatePhysics(dt); this.animT+=dt; const dur=0.28; const mid=0.14;
+      if(this.animT<dur){ this.vx=this.face*120; }
+      if(this.animT>mid){
+        const hb={x:this.x + this.face*18, y:this.y, w:36, h:30};
+        if(target.invulnT<=0 && rectsOverlap(hb, target.aabb())){ target.hurt(8, this.face, {lift:0.3,kbMul:0.9,kbuMul:0.9}, this.effects); }
+      }
+      if(this.animT>=dur){ this.state='idle'; this.vx=0; this.cool=1.2; this.guard=false; this.guardHits=0; }
+      return;
+    }
+    if(this.state==='throw'){
+      this.updatePhysics(dt); this.animT+=dt;
+      if(this.animT>0.22 && !this._thrown){ this._thrown=true; const img=this.img('stone'); const ox=this.face*14, oy=-18;
+        this.projectiles.push(new KozouStone(this.world, this.x+ox, this.y+oy, this.face, img, this.team)); }
+      if(this.animT>0.4){ this.state='idle'; this.vx=0; this.cool=1.4; this._thrown=false; }
+      return;
+    }
+    if(this.guard){ this.vx=0; this.updatePhysics(dt); this.animT+=dt;
+      const dx=target.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1; if(adx<120){ this.vx = (dx>0? -80 : 80); } return; }
+
+    this.brainT-=dt;
+    if(this.brainT<=0){
+      this.brainT=0.45+Math.random()*0.2;
+      const dx=target.x-this.x, adx=Math.abs(dx); this.face=dx>=0?1:-1;
+      if(adx>180) this.intent='approach';
+      else if(adx>120) this.intent='strafe';
+      else this.intent = Math.random()<0.5?'guard':'throw';
+    }
+
+    const dx=target.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
+
+    if(this.intent==='throw' && this.cool<=0){ this.state='throw'; this.animT=0; this.vx=0; return; }
+    if(this.intent==='guard' && !this.guard){ this.guard=true; this.state='idle'; this.animT=0; this.vx=0; }
+
+    if(this.intent==='approach') this.vx = (dx>0? 70 : -70);
+    else if(this.intent==='strafe'){
+      const swirl=Math.sin(performance.now()/320)*60;
+      this.vx = (dx>0? 50 : -50) + (this.face>0?swirl:-swirl)*0.4;
+    }
+    if(this.cool<=0 && adx>120 && Math.random()<0.15){ this.state='throw'; this.animT=0; this.vx=0; }
+
+    this.updatePhysics(dt);
+    this.state = this.onGround ? (Math.abs(this.vx)>1?'run':'idle') : 'jump';
+    this.animT+=dt;
+  }
+  _pickTarget(player, foeTeam){
+    const all = this.world.game?.allChars || [];
+    let best=1e9, tgt=null;
+    for(const c of all){ if(!c || c.dead || c.team!==foeTeam) continue; const d=Math.abs(c.x-this.x); if(d<best){ best=d; tgt=c; } }
+    return tgt||player;
+  }
+  draw(ctx,world){
+    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
+    let img=null;
+    if(this.state==='throw'){ img=this.animT<0.2? this.img('prep'): this.img('throw'); }
+    else if(this.state==='counter'){ img=this.img('counter'); }
+    else if(this.guard){ img=this.img('guard'); }
+    else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.img(f?'w1':'w2'); }
+    else { img=this.img('idle'); }
+    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); }
+    ctx.restore(); this.drawHPBar(ctx,world);
+    for(const p of this.projectiles) if(p.team===this.team) p.draw(ctx);
   }
 }
 
 class GabuUltShot extends Projectile{
-  constructor(world,x,y,dir,img){ super(world,x,y,dir,img,130,'enemy'); this.w=60; this.h=60; this.vx=260*dir; this.life=2.0; }
+  constructor(world,x,y,dir,img,team){ super(world,x,y,dir,img,130,team,'ult'); this.w=60; this.h=60; this.vx=260*dir; this.life=2.0; }
 }
 class GabuKing extends CharacterBase{
-  constructor(world,effects,assets,x=1200){
-    super(80,90);
+  constructor(world,effects,assets,x=1200,team='enemy'){
+    super(80,90,team);
     this.world=world; this.effects=effects; this.assets=assets;
     this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
     this.maxhp=500; this.hp=500; this.cool=0; this.state='idle'; this.animT=0; this._seq=null; this._idx=0; this._t=0;
@@ -931,15 +1023,21 @@ class GabuKing extends CharacterBase{
     }
     return CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
   }
-  addUltShot(){ const img=this.img('shot'); const ox=this.face*38, oy=-18; this.bullets.push(new GabuUltShot(this.world, this.x+ox, this.y+oy, this.face, img)); }
+  addUltShot(){
+    const img=this.img('shot'); const ox=this.face*38, oy=-18;
+    this.bullets.push(new GabuUltShot(this.world, this.x+ox, this.y+oy, this.face, img, this.team));
+  }
   update(dt, player){
+    const foeTeam = (this.team==='ally')?'enemy':'player';
+    const target = this._pickTarget(player,foeTeam);
     if(this.dead){ this.updatePhysics(dt); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
 
     for(const b of this.bullets){
       b.update(dt);
-      if(!b.dead && player && !player.dead && player.invulnT<=0 && rectsOverlap(b.aabb(), player.aabb())){
-        b.dead=true; const hit=player.hurt(b.power, b.dir, {lift:1.0, kbMul:1.1, kbuMul:1.1}, this.effects); if(hit && player instanceof Player) updateHPUI(player.hp,player.maxhp);
+      if(!b.dead && rectsOverlap(b.aabb(), target.aabb())){
+        b.dead=true; const hit=target.hurt(b.power, b.dir, {lift:1.3, kbMul:1.2, kbuMul:1.2, tag:'ult'}, this.effects);
+        if(hit && target===this.world.game?.player) updateHPUI(target.hp,target.maxhp);
       }
     }
     this.bullets=this.bullets.filter(b=>!b.dead);
@@ -949,9 +1047,9 @@ class GabuKing extends CharacterBase{
       if(cur?.fx){ this.x += this.face * cur.fx * dt; }
       if(cur?.hit){
         const hb={x:this.x + this.face*cur.hx, y:this.y, w:cur.hw, h:cur.hh};
-        if(player && !player.dead && player.invulnT<=0 && rectsOverlap(hb, player.aabb())){
-          const hit=player.hurt(cur.power, this.face, {lift:cur.lift,kbMul:cur.kbm,kbuMul:cur.kbum}, this.effects);
-          if(hit && player instanceof Player) updateHPUI(player.hp,player.maxhp);
+        if(rectsOverlap(hb, target.aabb())){
+          const hit=target.hurt(cur.power, this.face, {lift:cur.lift,kbMul:cur.kbm,kbuMul:cur.kbum, tag:'skill'}, this.effects);
+          if(hit && target===this.world.game?.player) updateHPUI(target.hp,target.maxhp);
         }
       }
       if(cur?.fire && !cur._fired){ this.addUltShot(); cur._fired=true; }
@@ -959,9 +1057,9 @@ class GabuKing extends CharacterBase{
       this.animT+=dt; return;
     }
 
-    const dx=player.x-this.x, adx=Math.abs(dx); this.face=dx>=0?1:-1;
+    const dx=target.x-this.x, adx=Math.abs(dx); this.face=dx>=0?1:-1;
     const slow=80;
-    if(adx>180){ this.vx = (dx>0? slow : -slow); }
+    if(adx>220) this.vx = (dx>0? slow : -slow);
     else this.vx=0;
 
     if(this.cool<=0){
@@ -977,35 +1075,30 @@ class GabuKing extends CharacterBase{
       }
       if(adx<320 && Math.random()<0.35){
         this.state='skill'; this.superArmor=true;
-        this._seq=[
-          {dur:0.50, key:'prep', fx:0},
-          {dur:0.30, key:'prep', fx:520, hit:true, hx:28, hw:70, hh:46, power:70, lift:0.9, kbm:1.2, kbum:1.1}
-        ];
+        this._seq=[ {dur:0.50, key:'prep', fx:0}, {dur:0.30, key:'prep', fx:520, hit:true, hx:28, hw:70, hh:46, power:70, lift:0.9, kbm:1.2, kbum:1.1} ];
         this.cool=3.0; this._idx=0; this._t=0; return;
       }
       if(adx<340 && Math.random()<0.30){
         this.state='skill'; this.superArmor=true;
-        this._seq=[
-          {dur:0.50, key:'prep', fx:0},
-          {dur:0.28, key:'prep', fx:540, hit:true, hx:28, hw:74, hh:48, power:100, lift:1.2, kbm:1.2, kbum:1.2},
-          {dur:0.12, key:'fin8', fx:60, hit:false},
-          {dur:0.18, key:'fin9', fx:80, hit:false}
-        ];
+        this._seq=[ {dur:0.50, key:'prep', fx:0}, {dur:0.28, key:'prep', fx:540, hit:true, hx:28, hw:74, hh:48, power:100, lift:1.2, kbm:1.2, kbum:1.2}, {dur:0.12, key:'fin8', fx:60}, {dur:0.18, key:'fin9', fx:80} ];
         this.cool=4.2; this._idx=0; this._t=0; return;
       }
       if(adx<420 && Math.random()<0.22){
         this.state='ult'; this.superArmor=true;
-        this._seq=[
-          {dur:0.50, key:'hold', fx:0},
-          {dur:0.18, key:'pose', fx:0, hit:true, hx:24, hw:56, hh:50, power:50, lift:0.6, kbm:1.0, kbum:1.0},
-          {dur:0.30, key:'pose', fx:0, fire:true}
-        ];
+        this._seq=[ {dur:0.50, key:'hold', fx:0}, {dur:0.18, key:'pose', fx:0, hit:true, hx:24, hw:56, hh:50, power:50, lift:0.6, kbm:1.0, kbum:1.0}, {dur:0.30, key:'pose', fx:0, fire:true} ];
         this.cool=8.0; this._idx=0; this._t=0; return;
       }
     }
+
     this.updatePhysics(dt);
     this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
     this.animT+=dt;
+  }
+  _pickTarget(player, foeTeam){
+    const all = this.world.game?.allChars || [];
+    let best=1e9, tgt=null;
+    for(const c of all){ if(!c || c.dead || c.team!==foeTeam) continue; const d=Math.abs(c.x-this.x); if(d<best){ best=d; tgt=c; } }
+    return tgt||player;
   }
   draw(ctx,world){
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
@@ -1015,18 +1108,18 @@ class GabuKing extends CharacterBase{
     else img=this.img('idle');
     if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); }
     ctx.restore(); this.drawHPBar(ctx,world);
-    for(const b of this.bullets) b.draw(world.ctx);
+    for(const b of this.bullets) if(b.team===this.team) b.draw(world.ctx);
   }
 }
 
 class Screw extends CharacterBase{
-  constructor(world,effects,assets,x=1500){
-    super(62,68);
+  constructor(world,effects,assets,x=1500,team='enemy'){
+    super(62,68,team);
     this.world=world; this.effects=effects; this.assets=assets;
     this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
     this.maxhp=500; this.hp=500;
     this.cool=0; this.state='idle'; this.animT=0; this._seq=null; this._idx=0; this._t=0;
-    this.jumpModeT=0; this.highJump=false;
+    this.jumpModeT=0; this.highJump=false; this.brainT=0;
   }
   img(key){
     const map={ idle:'B1.png', w1:'B2.png', w2:'B3.png', jump:'B3.png', high:'B4.png', a1a:'B5.png', a1b:'B6.png', a2a:'B5.png', a2b:'B7.png', sPrep:'B8.png', s1:'B9.png', s2:'B10.png', s3:'B11.png', uPrep:'B12.png', uDash:'B13.png', uFin:'B14.png' };
@@ -1034,7 +1127,7 @@ class Screw extends CharacterBase{
   }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.68, h:this.h*0.92}; }
   hurt(amount, dir, opts={}, effects){
-    const proc = Math.random()<0.30; // 30%ミニSA
+    const proc = Math.random()<0.30;
     if(proc){
       opts={...(opts||{}), kbMul:0.40, kbuMul:0.38};
       const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
@@ -1044,6 +1137,8 @@ class Screw extends CharacterBase{
     return CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
   }
   update(dt, player){
+    const foeTeam = (this.team==='ally')?'enemy':'player';
+    const target = this._pickTarget(player,foeTeam);
     if(this.dead){ this.updatePhysics(dt); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
 
@@ -1052,70 +1147,65 @@ class Screw extends CharacterBase{
       if(cur?.fx){ this.x += this.face * cur.fx * dt; }
       if(cur?.hit){
         const hb={x:this.x + this.face*cur.hx, y:this.y, w:cur.hw, h:cur.hh};
-        if(player && !player.dead && player.invulnT<=0 && rectsOverlap(hb, player.aabb())){
-          const hit=player.hurt(cur.power, this.face, {lift:cur.lift,kbMul:cur.kbm,kbuMul:cur.kbum}, this.effects);
-          if(hit && player instanceof Player) updateHPUI(player.hp,player.maxhp);
+        if(rectsOverlap(hb, target.aabb())){
+          target.hurt(cur.power, this.face, {lift:cur.lift,kbMul:cur.kbm,kbuMul:cur.kbum, tag:'skill'}, this.effects);
         }
       }
-      if(this._t>=cur.dur){ this._idx++; this._t=0;
-        if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; this.vx=0; } }
+      if(this._t>=cur.dur){ this._idx++; this._t=0; if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; this.vx=0; } }
       this.animT+=dt; return;
     }
 
-    const dx=player.x-this.x, adx=Math.abs(dx); this.face=dx>=0?1:-1;
-    this.jumpModeT -= dt;
-    if(this.jumpModeT<=0){ this.jumpModeT = 1.8 + Math.random()*1.2; this.highJump = Math.random()<0.45; }
-    const slow=70, fast=MOVE;
-    if(adx>160){ this.vx = (dx>0? (this.highJump? fast : slow) : -(this.highJump? fast : slow)); }
-    else this.vx = 0;
-
-    if(this.onGround){
-      if(this.highJump && Math.random()<0.4){ this.vy = -JUMP_V*0.95; }
-      else if(Math.random()<0.25){ this.vy = -JUMP_V*0.55; }
+    this.brainT-=dt;
+    if(this.brainT<=0){
+      this.brainT=0.25+Math.random()*0.1;
+      const dx=target.x-this.x, adx=Math.abs(dx); this.face=dx>=0?1:-1;
+      if(adx>280) this.intent='dashApproach';
+      else if(adx>160) this.intent = Math.random()<0.6 ? 'dashApproach' : 'highHop';
+      else this.intent = Math.random()<0.5 ? 'melee' : 'skill';
     }
+
+    const dx=target.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
 
     if(this.cool<=0){
-      if(adx<130 && Math.random()<0.55){
-        this.state='atk';
-        this._seq=[
-          {dur:0.10, key:'a1a', fx:140},
-          {dur:0.16, key:'a1b', fx:200, hit:true, hx:20, hw:44, hh:36, power:30, lift:0.4, kbm:0.9, kbum:0.9}
-        ];
-        this.cool=1.0; this._idx=0; this._t=0; return;
+      if(this.intent==='melee' && adx<150){
+        if(Math.random()<0.55){
+          this.state='atk'; this._seq=[ {dur:0.10, key:'a1a', fx:140}, {dur:0.16, key:'a1b', fx:190, hit:true, hx:20, hw:44, hh:36, power:30, lift:0.4, kbm:0.9, kbum:0.9} ];
+          this.cool=0.9+Math.random()*0.5;
+        }else{
+          this.state='atk'; this._seq=[ {dur:0.10, key:'a2a', fx:160}, {dur:0.18, key:'a2b', fx:220, hit:true, hx:22, hw:48, hh:38, power:35, lift:0.6, kbm:1.0, kbum:1.0} ];
+          this.cool=1.2+Math.random()*0.6;
+        }
+        this._idx=0; this._t=0; this.animT=0; return;
       }
-      if(adx<170 && Math.random()<0.45){
-        this.state='atk';
-        this._seq=[
-          {dur:0.10, key:'a2a', fx:160},
-          {dur:0.18, key:'a2b', fx:220, hit:true, hx:22, hw:48, hh:38, power:35, lift:0.6, kbm:1.0, kbum:1.0}
-        ];
-        this.cool=1.2; this._idx=0; this._t=0; return;
-      }
-      if(adx<320 && Math.random()<0.30){
+      if(this.intent==='skill' && adx<330){
         this.state='skill';
-        this._seq=[
-          {dur:0.50, key:'sPrep', fx:0},
-          {dur:0.22, key:'s1', fx:560, hit:true, hx:22, hw:56, hh:40, power:50, lift:0.5, kbm:0.95, kbum:0.95},
-          {dur:0.16, key:'s2', fx:420, hit:true, hx:20, hw:44, hh:36, power:20, lift:0.3, kbm:0.9, kbum:0.9},
-          {dur:0.22, key:'s3', fx:560, hit:true, hx:24, hw:58, hh:42, power:50, lift:1.0, kbm:1.05, kbum:1.05}
-        ];
-        this.cool=4.2; this._idx=0; this._t=0; return;
+        this._seq=[ {dur:0.46, key:'sPrep', fx:0}, {dur:0.20, key:'s1', fx:540, hit:true, hx:22, hw:56, hh:40, power:50, lift:0.5, kbm:0.95, kbum:0.95}, {dur:0.14, key:'s2', fx:420, hit:true, hx:20, hw:44, hh:36, power:22, lift:0.3, kbm:0.9, kbum:0.9}, {dur:0.20, key:'s3', fx:560, hit:true, hx:24, hw:58, hh:42, power:52, lift:1.0, kbm:1.05, kbum:1.05} ];
+        this.cool=3.6+Math.random()*0.8; this._idx=0; this._t=0; this.animT=0; return;
       }
-      if(adx<360 && Math.random()<0.22){
+      if(this.intent==='dashApproach' && adx<360 && Math.random()<0.7){
         this.state='ult';
-        this._seq=[
-          {dur:0.50, key:'uPrep', fx:0},
-          {dur:0.26, key:'uDash', fx:600},
-          {dur:0.22, key:'uFin',  fx:0, hit:true, hx:26, hw:64, hh:50, power:140, lift:1.4, kbm:1.2, kbum:1.2}
-        ];
-        this.cool=16.0; this._idx=0; this._t=0; return;
+        this._seq=[ {dur:0.40, key:'uPrep', fx:0}, {dur:0.24, key:'uDash', fx:620}, {dur:0.20, key:'uFin',  fx:0, hit:true, hx:26, hw:64, hh:50, power:120, lift:1.4, kbm:1.2, kbum:1.2} ];
+        this.cool=8.0+Math.random()*3.0; this._idx=0; this._t=0; this.animT=0; return;
       }
     }
 
+    if(this.intent==='dashApproach'){
+      const run = MOVE*1.05; this.vx = (dx>0? run : -run);
+    }else if(this.intent==='highHop'){
+      this.vx = (dx>0? MOVE*0.7 : -MOVE*0.7);
+      if(this.onGround && Math.random()<0.4) this.vy = -JUMP_V*0.9;
+    }else{
+      this.vx = (Math.sin(performance.now()/300))*40;
+    }
     this.updatePhysics(dt);
-    if(!this.onGround) this.state = this.highJump? 'jump':'jump';
-    else this.state = Math.abs(this.vx)>1? 'run':'idle';
+    if(!this.onGround) this.state = 'jump'; else this.state = Math.abs(this.vx)>1? 'run':'idle';
     this.animT+=dt;
+  }
+  _pickTarget(player, foeTeam){
+    const all = this.world.game?.allChars || [];
+    let best=1e9, tgt=null;
+    for(const c of all){ if(!c || c.dead || c.team!==foeTeam) continue; const d=Math.abs(c.x-this.x); if(d<best){ best=d; tgt=c; } }
+    return tgt||player;
   }
   draw(ctx,world){
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
@@ -1130,8 +1220,8 @@ class Screw extends CharacterBase{
 }
 
 class MOBGiant extends CharacterBase{
-  constructor(world,effects,assets,x=1650){
-    super(100,120);
+  constructor(world,effects,assets,x=1650,team='enemy'){
+    super(100,120,team);
     this.world=world; this.effects=effects; this.assets=assets;
     this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
     this.maxhp=2800; this.hp=2800;
@@ -1165,12 +1255,13 @@ class MOBGiant extends CharacterBase{
     return true;
   }
   addEnergyPair(chargeSec){
-    const img=this.img('orb');
-    const ox=this.face*40, oy=-20;
-    this.energyOrbs.push(new EnergyBall(this.world,this.x+ox,this.y+oy, this.face,  img, 36, chargeSec, 2,'enemy'));
-    this.energyOrbs.push(new EnergyBall(this.world,this.x-ox,this.y+oy,-this.face, img, 36, chargeSec, 2,'enemy'));
+    const img=this.img('orb'); const ox=this.face*40, oy=-20;
+    this.energyOrbs.push(new EnergyBall(this.world,this.x+ox,this.y+oy, this.face,  img, 36, chargeSec, 2,this.team));
+    this.energyOrbs.push(new EnergyBall(this.world,this.x-ox,this.y+oy,-this.face, img, 36, chargeSec, 2,this.team));
   }
   update(dt, player){
+    const foeTeam = (this.team==='ally')?'enemy':'player';
+    const target = this._pickTarget(player,foeTeam);
     if(this.dead){ this.updatePhysics(dt); return; }
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
     if(this.recoverT>0){ this.recoverT=Math.max(0,this.recoverT-dt); }
@@ -1180,7 +1271,7 @@ class MOBGiant extends CharacterBase{
     if(this.state==='charge'){
       this.superArmor = true; this.vx=0; this.updatePhysics(dt);
       this.chargeT=Math.min(2.2, this.chargeT + dt);
-      const adx=Math.abs(player.x - this.x);
+      const adx=Math.abs(target.x - this.x);
       if(adx<220 && this.chargeT>0.3){ this.releaseEnergy(); }
       else if(this.chargeT>=2.2){ this.releaseEnergy(); }
       this.animT+=dt; return;
@@ -1191,33 +1282,25 @@ class MOBGiant extends CharacterBase{
       return;
     }
     if(this.state==='post'){
-      this.updatePhysics(dt); this.animT+=dt;
-      if(this.postLagT<=0){ this.state='idle'; }
-      return;
+      this.updatePhysics(dt); this.animT+=dt; if(this.postLagT<=0){ this.state='idle'; } return;
     }
     if(this.state==='hurt'){ this.updatePhysics(dt); if(this.onGround) this.state='idle'; this.animT+=dt; return; }
 
-    const dx = player.x - this.x; const adx = Math.abs(dx); this.face = dx>=0?1:-1;
+    const dx = target.x - this.x; const adx = Math.abs(dx); this.face = dx>=0?1:-1;
     this.modeSwapT -= dt;
-    if(this.modeSwapT<=0 && this.onGround){
-      this.modeSwapT = 2.4 + Math.random()*2.0;
-      this.modeJump = !this.modeJump;
-    }
+    if(this.modeSwapT<=0 && this.onGround){ this.modeSwapT = 2.4 + Math.random()*2.0; this.modeJump = !this.modeJump; }
     this.lowFreqBias = clamp(this.lowFreqBias + (Math.random()*0.2-0.1), 0.0, 1.2);
 
     const desireCharge = (adx>=220 && adx<=620);
     if(this.cool<=0 && this.recoverT<=0 && this.postLagT<=0 && desireCharge){
       if(this.onGround || Math.random()<0.45){
         this.state='charge'; this.chargeT=0; this.superArmor=true; this.vx=0;
-        this.cool = 2.8 + this.lowFreqBias; this.animT=0;
-        return;
+        this.cool = 2.8 + this.lowFreqBias; this.animT=0; return;
       }
     }
     if(this.cool<=0 && this.recoverT<=0 && adx<260){
-      this.state='dash'; this.animT=0; this.superArmor=true;
-      this.vx = (this.face>0? 560 : -560);
-      this.cool = 2.4 + this.lowFreqBias;
-      return;
+      this.state='dash'; this.animT=0; this.superArmor=true; this.vx = (this.face>0? 560 : -560);
+      this.cool = 2.4 + this.lowFreqBias; return;
     }
 
     const walk=78, run=220;
@@ -1228,9 +1311,14 @@ class MOBGiant extends CharacterBase{
     } else { this.vx=0; }
 
     this.updatePhysics(dt);
-    if(!this.onGround) this.state='jump';
-    else this.state = Math.abs(this.vx)>1? 'run':'idle';
+    if(!this.onGround) this.state='jump'; else this.state = Math.abs(this.vx)>1? 'run':'idle';
     this.animT+=dt;
+  }
+  _pickTarget(player, foeTeam){
+    const all = this.world.game?.allChars || [];
+    let best=1e9, tgt=null;
+    for(const c of all){ if(!c || c.dead || c.team!==foeTeam) continue; const d=Math.abs(c.x-this.x); if(d<best){ best=d; tgt=c; } }
+    return tgt||player;
   }
   releaseEnergy(){ this.addEnergyPair(this.chargeT); this.state='post'; this.postLagT=1.0; this.superArmor=false; this.animT=0; }
   draw(ctx,world){
@@ -1253,17 +1341,20 @@ class MOBGiant extends CharacterBase{
     }
     ctx.restore();
     this.drawHPBar(ctx,world);
-    for(const p of this.energyOrbs) p.draw(ctx);
+    for(const p of this.energyOrbs) if(p.team===this.team) p.draw(ctx);
   }
 }
 
-/* ====== World ====== */
+/* =========================
+ * World
+ * ========================= */
 class World{
   constructor(assets, canvas, effects){
     this.assets=assets; this.effects=effects; this.canvas=canvas;
     this.ctx=canvas.getContext('2d',{alpha:true}); this.ctx.imageSmoothingEnabled=false;
     this.gameW=canvas.width; this.gameH=canvas.height; this.camX=0; this.camY=0; this.time=0; this._timerAcc=0;
     const r=this.canvas.getBoundingClientRect(); this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
+
     this.bgImg = this.assets.has('MOBA.png') ? this.assets.img('MOBA.png')
                : (this.assets.has('back1.png') ? this.assets.img('back1.png') : null);
     if(this.bgImg){ this.bgScale = this.gameH / this.bgImg.height; this.bgDW = this.bgImg.width*this.bgScale; this.bgDH = this.bgImg.height*this.bgScale; }
@@ -1275,7 +1366,7 @@ class World{
     this._timerAcc+=dt; if(this._timerAcc>=0.2){ this.time+=this._timerAcc; this._timerAcc=0;
       const t=Math.floor(this.time); const mm=String(Math.floor(t/60)).padStart(2,'0'); const ss=String(t%60).padStart(2,'0'); document.getElementById('time').textContent=`${mm}:${ss}`; }
   }
-  draw(player, allies, enemies){
+  draw(player, chars){
     const ctx=this.ctx; ctx.clearRect(0,0,this.gameW,this.gameH);
     if(this.bgImg){
       const w=Math.round(this.bgDW), h=Math.round(this.bgDH); const step=Math.max(1, w - 1);
@@ -1288,14 +1379,15 @@ class World{
     ctx.fillStyle='#0b0f17'; const yTop=Math.floor(GROUND_TOP_Y); ctx.fillRect(0,yTop-1,this.gameW,1);
 
     if(this._skillBullets){ for(const p of this._skillBullets) p.draw(ctx); }
-    for(const a of allies) a.draw(ctx,this);
-    for(const e of enemies) e.draw(ctx,this);
+    for(const e of chars) e.draw(ctx,this);
     player.draw(ctx,this);
     this.effects.draw(ctx,this);
   }
 }
 
-/* ====== スポーン補助 ====== */
+/* =========================
+ * Spawner
+ * ========================= */
 function spawnGroup(factory, count, baseX, spacing=70, jitter=20){
   const arr=[];
   const startX = baseX - ((count-1)*spacing)/2;
@@ -1303,9 +1395,10 @@ function spawnGroup(factory, count, baseX, spacing=70, jitter=20){
     const x = startX + i*spacing + (Math.random()*2-1)*jitter;
     arr.push(factory(x));
   }
-  // 初期反発
+  // 初期軽い反発（密集ほぐし）
   for(let i=0;i<arr.length;i++){
     for(let j=i+1;j<arr.length;j++){
+      if(!arr[i] || !arr[j]) continue;
       const a=arr[i].aabb(), b=arr[j].aabb();
       if(rectsOverlap(a,b)){
         const dx = (arr[j].x - arr[i].x) || (Math.random()<0.5?1:-1);
@@ -1317,23 +1410,28 @@ function spawnGroup(factory, count, baseX, spacing=70, jitter=20){
   return arr;
 }
 
-/* ====== Game（構成選択 + 味方AI + 判定） ====== */
+/* =========================
+ * Game
+ * ========================= */
 class Game{
-  constructor(){
+  constructor(config){
     this.assets=new Assets(); this.canvas=document.getElementById('game'); this.input=new Input(); this.effects=new Effects();
-    this.player=null; this.allies=[]; this.enemies=[]; this.world=null; this.lastT=0;
+    this.player=null; this.world=null; this.lastT=0;
+    this.config=config||{enemies:{}, allies:{}};
+    this.allChars=[]; // player以外（敵+味方）
     addEventListener('resize',()=>this.world?.resize());
   }
   async start(){
     const imgs=[
+      // 背景
       'MOBA.png','back1.png',
-      // player
+      // Player
       'M1-1.png','M1-2.png','M1-3.png','M1-4.png',
       'K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png',
-      'h1.png','h2.png','h3.png','h4.png','J.png',
-      'Y1.png','Y2.png','Y3.png','Y4.png',
+      'h1.png','h2.png','h3.png','h4.png',
+      'J.png','Y1.png','Y2.png','Y3.png','Y4.png',
       'UL1.PNG','UL2.PNG','UL3.png','kem.png',
-      // enemies
+      // Enemies/Allies shared
       'teki1.png','teki2.png','teki3.png','teki7.png',
       'I1.png','I2.png','I3.png','I4.png','I5.png','I6.png','I7.png','I8.png',
       'IC.png','IC2.png','IC3.png','IC4.png',
@@ -1345,193 +1443,135 @@ class Game{
     await this.assets.load(imgs);
     this.world=new World(this.assets,this.canvas,this.effects);
     this.player=new Player(this.assets,this.world,this.effects);
+    this.world.game=this;
+    this.player.x=160;
+
     updateHPUI(this.player.hp,this.player.maxhp);
 
-    const cfg = prompt(
-      "初期構成を入力してください。\n例: enemies=Mini:5,Kozou:5,WaruMOB:3,GabuKing:1,Screw:1,IceRobo:1,Giant:1; allies=MOBYOKI:2,Mini:1",
-      "enemies=Mini:5,Kozou:5,WaruMOB:3; allies=MOBYOKI:1"
-    ) || "";
-    this._applyConfig(cfg);
+    this._buildField(this.config);
 
     this.lastT=now();
     const loop=()=>{ this._tick(); requestAnimationFrame(loop); };
     requestAnimationFrame(loop);
   }
 
-  _applyConfig(cfgStr){
-    const mapName = (s)=>s.trim().toLowerCase();
-    const factories = {
-      'mini': (x)=> new IceRoboMini(this.world,this.effects,this.assets,x),
-      'icerobomini': (x)=> new IceRoboMini(this.world,this.effects,this.assets,x),
-      'kozou': (x)=> new Kozou(this.world,this.effects,this.assets,x),
-      'warumob': (x)=> new WaruMOB(this.world,this.effects,this.assets,x),
-      'waru': (x)=> new WaruMOB(this.world,this.effects,this.assets,x),
-      'gabuking': (x)=> new GabuKing(this.world,this.effects,this.assets,x),
-      'screw': (x)=> new Screw(this.world,this.effects,this.assets,x),
-      'icerobo': (x)=> new IceRobo(this.world,this.effects,this.assets,x),
-      'giant': (x)=> new MOBGiant(this.world,this.effects,this.assets,x),
-      'mobyoki': (x)=> new AllyMOBYOKI(this.assets,this.world,this.effects, x)
+  _buildField(config){
+    this.allChars.length=0;
+    const baseX=720;
+
+    const makeByKey=(key,team)=>(x)=>{
+      switch(key){
+        case 'IceRoboMini': return new IceRoboMini(this.world,this.effects,this.assets,x,team);
+        case 'Kozou':      return new Kozou(this.world,this.effects,this.assets,x,team);
+        case 'WaruMOB':    return new WaruMOB(this.world,this.effects,this.assets,x,team);
+        case 'GabuKing':   return new GabuKing(this.world,this.effects,this.assets,x,team);
+        case 'Screw':      return new Screw(this.world,this.effects,this.assets,x,team);
+        case 'IceRobo':    return new IceRobo(this.world,this.effects,this.assets,x,team);
+        case 'MOBGiant':   return new MOBGiant(this.world,this.effects,this.assets,x,team);
+        case 'MobyCPU':    return new MobyCPU(this.assets,this.world,this.effects,team);
+        default:           return new WaruMOB(this.world,this.effects,this.assets,x,team);
+      }
     };
 
-    let enemiesSpec={}, alliesSpec={};
-    const parts = cfgStr.split(';').map(s=>s.trim());
-    for(const p of parts){
-      if(!p) continue;
-      const [k,v] = p.split('=');
-      if(!v) continue;
-      const bucket = (k.trim().toLowerCase()==='allies')? alliesSpec : (k.trim().toLowerCase()==='enemies'? enemiesSpec : null);
-      if(!bucket) continue;
-      v.split(',').forEach(pair=>{
-        const [name, num] = pair.split(':');
-        if(!name) return;
-        const key = mapName(name);
-        const n = Math.max(0, parseInt(num??'1',10)||0);
-        bucket[key]=(bucket[key]||0)+n;
-      });
+    // 敵
+    let offset=0;
+    for(const [k,n] of Object.entries(config.enemies||{})){
+      if(!n || n<=0) continue;
+      const count = n|0;
+      if(k==='MobyCPU'){
+        const g = spawnGroup((x)=>{ const m=new MobyCPU(this.assets,this.world,this.effects,'enemy'); m.x=x; m.y=Math.floor(GROUND_TOP_Y)-m.h/2+FOOT_PAD; return m; }, count, baseX+offset, 76, 18);
+        this.allChars.push(...g);
+      }else{
+        const g = spawnGroup( makeByKey(k,'enemy'), count, baseX+offset, 76, 18);
+        this.allChars.push(...g);
+      }
+      offset+=220;
     }
-    if(Object.keys(enemiesSpec).length===0){ enemiesSpec={'mini':5,'kozou':5,'warumob':3}; }
-    if(Object.keys(alliesSpec).length===0){ alliesSpec={'mobyoki':1}; }
 
-    this.enemies.length=0; this.allies.length=0;
-
-    let baseX=720;
-    for(const [name,count] of Object.entries(enemiesSpec)){
-      const f = factories[name]; if(!f) continue;
-      const pack = spawnGroup(f, count, baseX, 74, 20);
-      this.enemies.push(...pack);
-      baseX += 200 + count*8;
-    }
-    let allyBase = this.player.x + 120;
-    for(const [name,count] of Object.entries(alliesSpec)){
-      const f = factories[name]; if(!f) continue;
-      const pack = spawnGroup((x)=>{ const a=f(x); a.team='ally'; return a; }, count, allyBase, 56, 14);
-      this.allies.push(...pack);
-      allyBase += 120 + count*6;
+    // 味方
+    offset=120;
+    for(const [k,n] of Object.entries(config.allies||{})){
+      if(!n || n<=0) continue;
+      const count = n|0;
+      if(k==='MobyCPU'){
+        const g = spawnGroup((x)=>{ const m=new MobyCPU(this.assets,this.world,this.effects,'ally'); m.x=x; m.y=Math.floor(GROUND_TOP_Y)-m.h/2+FOOT_PAD; return m; }, count, baseX-offset, 76, 18);
+        this.allChars.push(...g);
+      }else{
+        const g = spawnGroup( makeByKey(k,'ally'), count, baseX-offset, 76, 18);
+        this.allChars.push(...g);
+      }
+      offset+=160;
     }
   }
 
   _tick(){
     const t=now(); let dt=(t-this.lastT)/1000; if(dt>0.05) dt=0.05; this.lastT=t;
-
     if(this.effects.hitstop>0){
-      this.effects.update(dt); this.world.updateCam(this.player); this.world.draw(this.player,this.allies,this.enemies);
+      this.effects.update(dt); this.world.updateCam(this.player); this.world.draw(this.player,this.allChars);
       return;
     }
+    const input=this.input;
+    window._inputUltT = input.ultChargeT || 0;
 
-    // プレイヤー
-    this.player.update(dt,this.input,this.world,this.enemies);
+    this.player.update(dt,this.input,this.world,this.allChars);
 
-    // 味方
-    for(const a of this.allies){
-      a.update(dt,null,this.world,this.enemies);
-    }
+    // 更新
+    for(const e of this.allChars){ e.update(dt,this.player); }
 
-    // 敵（最寄りのプレイヤー/味方を狙う）
-    const friendlies = [this.player, ...this.allies].filter(p=>!p.dead);
-    const targetFor = (e)=> {
-      let best=null, bd=Infinity;
-      for(const f of friendlies){ const d=Math.abs(f.x-e.x); if(d<bd){bd=d; best=f;} }
-      return best || this.player;
-    };
-
-    for(const e of this.enemies){
-      e.update(dt, targetFor(e));
-
-      // 発射物 → 味方/プレイヤー
-      if(e.projectiles){
-        for(const p of e.projectiles){
-          p.update(dt);
-          for(const f of friendlies){
-            if(!p.dead && f.invulnT<=0 && rectsOverlap(p.aabb(), f.aabb())){
-              p.dead=true; const hit=f.hurt(p.power, p.dir, {lift:0.15, kbMul:0.8, kbuMul:0.8}, this.effects);
-              if(hit && f===this.player) updateHPUI(this.player.hp,this.player.maxhp);
-            }
-          }
-        }
-        e.projectiles = e.projectiles.filter(p=>!p.dead);
-      }
-      if(e.energyOrbs){
-        for(const p of e.energyOrbs){
-          p.update(dt);
-          for(const f of friendlies){
-            if(!p.dead && f.invulnT<=0 && rectsOverlap(p.aabb(), f.aabb())){
-              p.dead=true; const hit=f.hurt(p.power, p.dir, {lift:0.25, kbMul:0.85, kbuMul:0.85}, this.effects);
-              if(hit && f===this.player) updateHPUI(this.player.hp,this.player.maxhp);
-            }
-          }
-        }
-        e.energyOrbs = e.energyOrbs.filter(p=>!p.dead);
-      }
-      if(e.bullets){
-        for(const b of e.bullets){
-          b.update(dt);
-          for(const f of friendlies){
-            if(!b.dead && f.invulnT<=0 && rectsOverlap(b.aabb(), f.aabb())){
-              b.dead=true; const hit=f.hurt(b.power, b.dir, {lift:1.0, kbMul:1.1, kbuMul:1.1}, this.effects);
-              if(hit && f===this.player) updateHPUI(this.player.hp,this.player.maxhp);
-            }
-          }
-        }
-        e.bullets=e.bullets.filter(b=>!b.dead);
-      }
-    }
-
-    // 味方/プレイヤーの弾 → 敵
+    // 弾/スパイク（teamで当たり判定）
     if(this.world._skillBullets){
       for(const p of this.world._skillBullets){
         p.update(dt);
-        for(const e of this.enemies){
-          if(!p.dead && !e.dead && rectsOverlap(p.aabb(), e.aabb())){
+        // 衝突相手は敵対チームのみ
+        for(const c of [this.player, ...this.allChars]){
+          if(!c || c.dead || c.team===p.team) continue;
+          if(rectsOverlap(p.aabb(), c.aabb())){
             p.dead=true;
-            const dir = (e.x>=p.x)? 1 : -1;
-            const hit=e.hurt(p.power, dir, {lift:0.3,kbMul:0.9,kbuMul:0.9}, this.effects);
-            if(hit) this.effects.addSpark(e.x, e.y-10, p.power>=40);
+            const dir = (c.x>=p.x)? 1 : -1;
+            const hit=c.hurt(p.power, dir, {lift:0.3,kbMul:0.9,kbuMul:0.9, tag:p.tag}, this.effects);
+            if(hit && c===this.player) updateHPUI(c.hp,c.maxhp);
           }
         }
       }
       this.world._skillBullets = this.world._skillBullets.filter(p=>!p.dead && p.life>0);
     }
 
-    // 撃破整理
-    this.enemies=this.enemies.filter(e=>!(e.dead && e.fade<=0));
-
-    // のめり込み解消
-    const alliesPlus = [this.player, ...this.allies];
-    for(const f of alliesPlus){
-      for(const e of this.enemies){
-        if(e.dead || f.dead) continue;
-        const a=f.aabb(), b=e.aabb();
-        if(!rectsOverlap(a,b)) continue;
-        const dx = (f.x - e.x);
-        const dy = (f.y - e.y);
-        const overlapX = (a.w + b.w)/2 - Math.abs(dx);
-        const overlapY = (a.h + b.h)/2 - Math.abs(dy);
-        if(overlapY < overlapX){
-          const dirY = dy>=0? 1 : -1;
-          f.y += dirY * overlapY * 0.9;
-          e.y -= dirY * overlapY * 0.1;
-          if(dirY<0){ f.vy = Math.max(f.vy, 0); } else { f.vy = Math.min(f.vy, 0); }
-        } else {
-          const dirX = dx>=0? 1 : -1;
-          f.x += dirX * overlapX * 0.6;
-          e.x -= dirX * overlapX * 0.4;
-          f.vx += dirX * 20; e.vx -= dirX * 20;
-        }
+    // 近接のめり込み解消（プレイヤー vs 全員）
+    for(const e of this.allChars){
+      if(e.dead || this.player.dead) continue;
+      const a=this.player.aabb(), b=e.aabb();
+      if(!rectsOverlap(a,b)) continue;
+      const dx = (this.player.x - e.x);
+      const dy = (this.player.y - e.y);
+      const overlapX = (a.w + b.w)/2 - Math.abs(dx);
+      const overlapY = (a.h + b.h)/2 - Math.abs(dy);
+      if(overlapY < overlapX){
+        const dirY = dy>=0? 1 : -1;
+        this.player.y += dirY * overlapY * 0.9;
+        e.y         -= dirY * overlapY * 0.1;
+        if(dirY<0){ this.player.vy = Math.max(this.player.vy, 0); } else { this.player.vy = Math.min(this.player.vy, 0); }
+      } else {
+        const dirX = dx>=0? 1 : -1;
+        this.player.x += dirX * overlapX * 0.6;
+        e.x           -= dirX * overlapX * 0.4;
+        this.player.vx += dirX * 20;
+        e.vx          -= dirX * 20;
       }
     }
 
-    this.effects.update(dt);
-    this.world.updateCam(this.player);
-    this.world.updateTimer(dt);
-    this.world.draw(this.player,this.allies,this.enemies);
+    // 死亡整理
+    this.allChars=this.allChars.filter(e=>!(e.dead && e.fade<=0));
+
+    this.effects.update(dt); this.world.updateCam(this.player); this.world.updateTimer(dt); this.world.draw(this.player,this.allChars);
   }
 }
 
-/* ====== Player 被弾カスタム ====== */
+/* =========================
+ * Player.hurt override（SA中はKB軽減）
+ * ========================= */
 Player.prototype.hurt = function(amount,dir,opts,effects){
   if(this.state==='skill2'){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
   else if(this.saT>0){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
-
   const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
   if(hit){
     updateHPUI(this.hp,this.maxhp);
@@ -1546,14 +1586,12 @@ Player.prototype.hurt = function(amount,dir,opts,effects){
   return hit;
 };
 
-/* ====== 起動 ====== */
-class Boot{
-  static async run(){
-    const game=new Game();
-    await game.start();
-  }
-}
-new Boot();  // 即時起動
+/* =========================
+ * Public hook from index.html
+ * ========================= */
+window.__startGameWithConfig = (config)=>{
+  const game=new Game(config);
+  game.start();
+};
 
-/* ====== ここまで ====== */
 })();
