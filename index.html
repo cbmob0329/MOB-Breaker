@@ -1,164 +1,156 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Rev33 (Title & Team Select)</title>
-<meta name="theme-color" content="#0b0c10" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<title>MOBYOKI Arena</title>
 <style>
-:root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
-html,body{height:100%;margin:0;padding:0;overflow:hidden;background:#0a0d13;color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;overscroll-behavior:none;-webkit-user-select:none;-webkit-touch-callout:none;user-select:none}
-*{box-sizing:border-box}
-#root{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:10px}
-#phone{width:var(--stage-w);height:var(--stage-h);position:relative;overflow:hidden;background:#060910;border:1px solid #0f1726;border-radius:20px;box-shadow:0 12px 48px rgba(0,0,0,.55);touch-action:none;margin:0 auto}
-.grid{position:absolute;inset:0;display:grid;grid-template-rows: 1fr 220px;gap:var(--grid-gap);padding:var(--grid-gap)}
-.gamewrap{position:relative;border-radius:14px;overflow:hidden;background:#05070c;outline:1px solid #0e1522}
-canvas#game{display:block;width:100%;height:100%}
-.controls{position:relative;border-radius:14px;background:var(--hud-bg);outline:1px solid #0e1522;backdrop-filter: blur(6px);padding:12px;display:grid;grid-template-columns: 1fr 1fr;gap:12px}
-.stickArea{position:relative;border-radius:12px;background:#0a121f;outline:1px solid #152033;display:grid;place-items:center;touch-action:none}
-.stick{width:120px;height:120px;border-radius:50%;background:#0d1828;outline:2px solid #22324d;position:relative}
-.stickThumb{width:64px;height:64px;border-radius:50%;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#1a2a45;outline:2px solid #2e4a73;box-shadow:inset 0 0 0 4px #0c1422}
-.buttons{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,1fr);gap:12px;align-content:stretch;justify-items:stretch}
-.btn{border:none;border-radius:14px;background:#0d1828;outline:2px solid #22324d;color:var(--fg);font-size:26px;display:grid;place-items:center;touch-action:none;box-shadow:inset 0 -4px 0 rgba(255,255,255,.04);transition:opacity .15s ease;min-height:64px}
-.btn:active{transform:scale(.98)}
-.btn[disabled]{opacity:.35;pointer-events:none}
-.btn.attack1{background:#112033} /* ■ */
-.btn.attack2{background:#1a2436} /* ▲ */
-.btn.skill1 {background:#132a22} /* ● */
-.btn.skill2 {background:#1f2433} /* ◎ */
-.btn.ult    {background:#2b2030} /* U */
-.btn.jump   {background:#25202b} /* × */
-header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex;gap:10px;align-items:center;z-index:10;pointer-events:none}
-.chip{background:var(--hud-bg);outline:1px solid #0e1522;border-radius:12px;padding:6px 10px;font-weight:600;font-size:12px;display:flex;gap:8px;align-items:center}
-.bar{--w:160px;--h:10px;width:var(--w);height:var(--h);border-radius:999px;outline:1px solid #1a263d;background:#0a1220;position:relative;overflow:hidden}
-.bar>i{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:linear-gradient(90deg,#ff9a9e,#ff6b6b)}
-.timer{margin-left:auto}
-.name{margin-left:6px;opacity:.85}
-.overhead{position:absolute;left:50%;transform:translateX(-50%);display:none;gap:6px;align-items:center;pointer-events:none}
-.gauge{width:96px;height:6px;border-radius:999px;outline:1px solid #1a263d;background:#0a1220;overflow:hidden}
-.gauge>i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#69d0ff,#a0ffe6)}
-@media (max-height: 720px){ :root{ --stage-h: 650px; } }
+  html,body{margin:0;padding:0;background:#0b1020;color:#d7e2ff;font-family:system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;}
+  .wrap{display:flex;flex-direction:column;align-items:center;gap:10px;padding:10px;}
+  .titlescreen{max-width:980px;width:100%;background:#0e1630;border:1px solid #1f2a4d;border-radius:16px;padding:16px;box-shadow:0 8px 20px rgba(0,0,0,.35)}
+  .titlescreen h1{margin:0 0 8px;font-size:20px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  fieldset{border:1px solid #2a3a68;border-radius:12px}
+  legend{padding:0 6px;color:#9fb6ff}
+  .row{display:flex;align-items:center;gap:8px;padding:6px 10px}
+  .row label{min-width:140px}
+  input[type="number"]{width:72px;background:#0b1230;color:#d7e2ff;border:1px solid #26335c;border-radius:8px;padding:4px 6px}
+  .actions{display:flex;gap:12px;justify-content:flex-end;padding:10px}
+  button{background:#2b63ff;border:none;color:#fff;border-radius:12px;padding:10px 16px;cursor:pointer;font-weight:600}
+  button.secondary{background:#20305a}
+  .note{font-size:12px;color:#9fb6ff;margin-top:6px}
 
-/* ===== Title / Select Overlay ===== */
-#title{position:absolute;inset:0;background:linear-gradient(180deg,#0a0f18 0%, #080c12 100%);display:flex;flex-direction:column;z-index:20}
-#title header{padding:16px 16px 8px;font-weight:800;letter-spacing:.06em}
-#title h1{margin:0;font-size:22px}
-#title .panel{flex:1;overflow:auto;padding:10px 14px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.card{background:#0b0f17cc;border:1px solid #152033;border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:10px}
-.card h2{margin:0 0 4px 0;font-size:14px;opacity:.9}
-.row{display:grid;grid-template-columns:1fr 70px;gap:8px;align-items:center}
-.row label{display:flex;align-items:center;gap:8px}
-.row input[type="number"]{width:100%;background:#07101b;border:1px solid #1a263d;color:#dfe7ff;border-radius:8px;padding:4px 6px}
-.chk{accent-color:#7dd3fc}
-.tags{display:flex;flex-wrap:wrap;gap:6px}
-.tag{font-size:11px;padding:4px 6px;border:1px solid #22324d;border-radius:999px;background:#0d1828}
-#startBar{padding:10px;display:flex;gap:10px;align-items:center;justify-content:flex-end;border-top:1px solid #0e1522;background:#0b0f17cc}
-.big{font-size:16px;font-weight:700;border-radius:10px;border:1px solid #2b3e5d;background:#162236;color:#e9eef7;padding:10px 14px;cursor:pointer}
-.big:active{transform:translateY(1px)}
-.small{font-size:12px;opacity:.85}
+  /* ゲーム領域 */
+  .gamewrap{display:none;flex-direction:column;align-items:center;gap:8px}
+  canvas{width:100%;max-width:980px;aspect-ratio:16/9;background:#0a0f18;border:1px solid #1b2748;border-radius:12px}
+  .hud{display:none;align-items:center;justify-content:space-between;gap:10px;width:100%;max-width:980px}
+  .hp{position:relative;flex:1;height:16px;background:#101a35;border:1px solid #22315e;border-radius:999px;overflow:hidden}
+  .hp i{position:absolute;left:0;top:0;bottom:0;width:100%;background:linear-gradient(90deg,#35ffb1,#36a8ff)}
+  .hpnum{min-width:72px;text-align:right}
+  .timer{min-width:64px;text-align:center;background:#111c3b;border:1px solid #233364;border-radius:8px;padding:3px 8px}
+
+  .controls{display:flex;gap:10px;align-items:center;justify-content:space-between;width:100%;max-width:980px}
+  /* 左: スティック */
+  #stickArea{position:relative;width:180px;height:110px;background:#0e1630;border:1px solid #1e2a50;border-radius:12px;touch-action:none}
+  #stickThumb{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:44px;height:44px;background:#2b63ff55;border:2px solid #2b63ff;border-radius:50%}
+  /* 右: ボタン群 */
+  .btns{display:grid;grid-template-columns:repeat(3,minmax(80px,1fr));gap:10px;flex:1}
+  .btns button{padding:10px;border-radius:12px;background:#1b2852;border:1px solid #2d3e7a}
+  .btns button:disabled{opacity:.45}
+  .overhead{position:absolute;display:none;flex-direction:column;align-items:center;gap:2px;pointer-events:none}
+  .overhead .gauge{width:110px;height:6px;background:#0f1a37;border:1px solid #243362;border-radius:999px;overflow:hidden}
+  .overhead .gauge i{display:block;height:100%;width:0;background:linear-gradient(90deg,#ffd43b,#ff6b6b)}
 </style>
 </head>
 <body>
-<div id="root">
-  <div id="phone">
-    <!-- ====== Title / Select ====== -->
-    <div id="title" aria-label="Title / Team Select">
-      <header>
-        <h1>MOB Side Action – TEAM SELECT</h1>
-        <div class="small">プレイヤーは<strong>MOBYOKI</strong>固定。敵/味方に出すキャラと数を選んでください。</div>
-      </header>
-      <div class="panel">
-        <div class="card">
-          <h2>敵（Enemy）</h2>
-          <div class="row"><label><input class="chk enemy" data-key="IceRoboMini" type="checkbox" checked>Ice Robo Mini</label><input type="number" min="0" max="20" value="5" data-count="IceRoboMini"></div>
-          <div class="row"><label><input class="chk enemy" data-key="Kozou" type="checkbox" checked>Kozou</label><input type="number" min="0" max="20" value="5" data-count="Kozou"></div>
-          <div class="row"><label><input class="chk enemy" data-key="WaruMOB" type="checkbox" checked>WaruMOB</label><input type="number" min="0" max="20" value="5" data-count="WaruMOB"></div>
-          <div class="row"><label><input class="chk enemy" data-key="GabuKing" type="checkbox">GabuKing</label><input type="number" min="0" max="5" value="1" data-count="GabuKing"></div>
-          <div class="row"><label><input class="chk enemy" data-key="Screw" type="checkbox">Screw</label><input type="number" min="0" max="5" value="1" data-count="Screw"></div>
-          <div class="row"><label><input class="chk enemy" data-key="IceRobo" type="checkbox">IceRobo</label><input type="number" min="0" max="3" value="1" data-count="IceRobo"></div>
-          <div class="row"><label><input class="chk enemy" data-key="MOBGiant" type="checkbox">MOBGiant</label><input type="number" min="0" max="2" value="1" data-count="MOBGiant"></div>
-          <div class="row"><label><input class="chk enemy" data-key="MobyCPU" type="checkbox">MOBYOKI（CPU敵）</label><input type="number" min="0" max="3" value="1" data-count="MobyCPU"></div>
-          <div class="tags">
-            <span class="tag">4体（Gabu/Screw/Giant/IceRobo）はスキル・ULTで特に強く吹っ飛ぶ</span>
-            <span class="tag">弱キャラは通常でもよく飛ぶ</span>
-          </div>
-        </div>
-        <div class="card">
-          <h2>味方（Allies / 自動で敵を狙います）</h2>
-          <div class="row"><label><input class="chk ally" data-key="IceRoboMini" type="checkbox">Ice Robo Mini</label><input type="number" min="0" max="10" value="2" data-count="Allies_IceRoboMini"></div>
-          <div class="row"><label><input class="chk ally" data-key="Kozou" type="checkbox">Kozou</label><input type="number" min="0" max="10" value="2" data-count="Allies_Kozou"></div>
-          <div class="row"><label><input class="chk ally" data-key="WaruMOB" type="checkbox">WaruMOB</label><input type="number" min="0" max="10" value="2" data-count="Allies_WaruMOB"></div>
-          <div class="row"><label><input class="chk ally" data-key="GabuKing" type="checkbox">GabuKing</label><input type="number" min="0" max="4" value="1" data-count="Allies_GabuKing"></div>
-          <div class="row"><label><input class="chk ally" data-key="Screw" type="checkbox">Screw</label><input type="number" min="0" max="4" value="1" data-count="Allies_Screw"></div>
-          <div class="row"><label><input class="chk ally" data-key="IceRobo" type="checkbox">IceRobo</label><input type="number" min="0" max="3" value="1" data-count="Allies_IceRobo"></div>
-          <div class="row"><label><input class="chk ally" data-key="MOBGiant" type="checkbox">MOBGiant</label><input type="number" min="0" max="2" value="1" data-count="Allies_MOBGiant"></div>
-          <div class="row"><label><input class="chk ally" data-key="MobyCPU" type="checkbox">MOBYOKI（CPU味方）</label><input type="number" min="0" max="3" value="1" data-count="Allies_MobyCPU"></div>
-          <div class="tags">
-            <span class="tag">味方AIは最も近い敵を自動追尾</span>
-            <span class="tag">同士討ちはしません</span>
-          </div>
-        </div>
-      </div>
-      <div id="startBar">
-        <button id="startBtn" class="big">ゲーム開始</button>
-      </div>
-    </div>
+<div class="wrap">
 
-    <!-- ===== Game ===== -->
+  <!-- タイトル＆選択 -->
+  <div class="titlescreen" id="titleScreen">
+    <h1>敵/味方の編成を選んでスタート</h1>
     <div class="grid">
-      <div class="gamewrap">
-        <header class="hud">
-          <div class="chip">残機 <strong id="lives">3</strong></div>
-          <div class="chip">HP <span class="bar"><i id="hpfill" style="width:100%"></i></span> <strong id="hpnum">1000</strong></div>
-          <div class="chip name">MOBYOKI</div>
-          <div class="chip timer">Time <strong id="time">00:00</strong></div>
-        </header>
-        <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
-      </div>
-      <div class="controls">
-        <div class="stickArea" id="stickArea" aria-label="Move Stick">
-          <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
-        </div>
-        <div class="buttons">
-          <button class="btn attack1" id="btnA1"  aria-label="攻撃① ■">■</button>
-          <button class="btn attack2" id="btnA2"  aria-label="攻撃② ▲">▲</button>
-          <button class="btn skill1"  id="btnSK"  aria-label="スキル① ●">●</button>
-          <button class="btn skill2"  id="btnSK2" aria-label="スキル② ◎">◎</button>
-          <button class="btn ult"     id="btnULT" aria-label="ULT U">U</button>
-          <button class="btn jump"    id="btnJMP" aria-label="ジャンプ ×">×</button>
-        </div>
+      <fieldset>
+        <legend>敵を選択（種類と数）</legend>
+        <div class="row"><label>WaruMOB（雑魚）</label><input type="number" min="0" max="30" step="1" value="5" data-team="enemy" data-key="WaruMOB"></div>
+        <div class="row"><label>IceRoboMini（小型）</label><input type="number" min="0" max="30" step="1" value="0" data-team="enemy" data-key="IceRoboMini"></div>
+        <div class="row"><label>Kozou（投石）</label><input type="number" min="0" max="30" step="1" value="0" data-team="enemy" data-key="Kozou"></div>
+        <div class="row"><label>GabuKing</label><input type="number" min="0" max="10" step="1" value="0" data-team="enemy" data-key="GabuKing"></div>
+        <div class="row"><label>Screw</label><input type="number" min="0" max="10" step="1" value="0" data-team="enemy" data-key="Screw"></div>
+        <div class="row"><label>IceRobo</label><input type="number" min="0" max="10" step="1" value="0" data-team="enemy" data-key="IceRobo"></div>
+        <div class="row"><label>MOBGiant（巨神）</label><input type="number" min="0" max="10" step="1" value="0" data-team="enemy" data-key="MOBGiant"></div>
+        <div class="row"><label>MOBYOKI（CPU敵）</label><input type="number" min="0" max="10" step="1" value="0" data-team="enemy" data-key="MobyCPU"></div>
+        <p class="note">※ 雑魚の爽快感を出すなら WaruMOB を 5 の倍数で入れるのがオススメ</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>味方を選択（MOBYOKIはプレイヤー固定）</legend>
+        <div class="row"><label>MOBYOKI（味方CPU）</label><input type="number" min="0" max="10" step="1" value="0" data-team="ally" data-key="MobyCPU"></div>
+        <div class="row"><label>WaruMOB（味方雑魚）</label><input type="number" min="0" max="30" step="1" value="0" data-team="ally" data-key="WaruMOB"></div>
+        <div class="row"><label>IceRoboMini（小型）</label><input type="number" min="0" max="30" step="1" value="0" data-team="ally" data-key="IceRoboMini"></div>
+        <div class="row"><label>GabuKing</label><input type="number" min="0" max="6" step="1" value="0" data-team="ally" data-key="GabuKing"></div>
+        <div class="row"><label>Screw</label><input type="number" min="0" max="6" step="1" value="0" data-team="ally" data-key="Screw"></div>
+        <div class="row"><label>IceRobo</label><input type="number" min="0" max="6" step="1" value="0" data-team="ally" data-key="IceRobo"></div>
+      </fieldset>
+    </div>
+    <div class="actions">
+      <button class="secondary" id="quick5">敵WaruMOB×10 で始める</button>
+      <button id="startBtn">スタート</button>
+    </div>
+    <p class="note">スタート後は [←→ / A D] で移動、[Space/W/↑] ジャンプ、[J] 通常、[K] 強、[L] スキル（長押し可）、[O] 地割れ、[U] ULT（長押し可）</p>
+  </div>
+
+  <!-- HUD -->
+  <div class="hud" id="hud">
+    <div class="hp"><i id="hpfill" style="width:100%"></i></div>
+    <div class="hpnum"><span id="hpnum">1000</span> HP</div>
+    <div class="timer" id="time">00:00</div>
+  </div>
+
+  <!-- ゲーム本体 -->
+  <div class="gamewrap" id="gameWrap">
+    <canvas id="game" width="1280" height="720"></canvas>
+    <div class="controls">
+      <div id="stickArea"><div id="stickThumb"></div></div>
+      <div class="btns">
+        <button id="btnA1">A1 通常</button>
+        <button id="btnA2">A2 強</button>
+        <button id="btnJMP">ジャンプ</button>
+        <button id="btnSK">スキル</button>
+        <button id="btnSK2">地割れ</button>
+        <button id="btnULT">ULT</button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- 外部スクリプト -->
+<!-- あなたの script.js を読み込み -->
 <script src="./script.js"></script>
-<script>
-  // タイトルの設定をscript.jsに渡す
-  document.getElementById('startBtn').addEventListener('click', ()=>{
-    const pick = (cls, prefix='')=>{
-      const checks=[...document.querySelectorAll(`.chk.${cls}`)];
-      const out={};
-      for(const c of checks){
-        if(c.checked){
-          const key=c.dataset.key;
-          const countEl = document.querySelector(`[data-count="${prefix?prefix+'_':''}${key}"]`);
-          const n = Math.max(0, Math.min(50, parseInt(countEl?.value||'0',10)||0));
-          out[key]=n;
-        }
-      }
-      return out;
-    };
-    const enemies = pick('enemy');
-    const allies  = Object.fromEntries(Object.entries(pick('ally','Allies')).map(([k,v])=>[k,v]));
 
-    // タイトルを閉じてゲーム開始
-    document.getElementById('title').style.display='none';
-    if(window.__startGameWithConfig){
-      window.__startGameWithConfig({enemies, allies});
+<!-- タイトル画面→ゲーム開始 の起動コード -->
+<script>
+(function(){
+  const $ = (sel)=>document.querySelector(sel);
+  const $$ = (sel)=>Array.from(document.querySelectorAll(sel));
+
+  function readConfig(){
+    const enemies={}, allies={};
+    $$('#titleScreen input[type="number"]').forEach(input=>{
+      const n = parseInt(input.value,10) || 0;
+      if(n<=0) return;
+      const team = input.dataset.team;
+      const key  = input.dataset.key;
+      (team==='enemy'? enemies : allies)[key] = n;
+    });
+    return { enemies, allies };
+  }
+
+  function startWithConfig(cfg){
+    // 画面切り替え
+    $('#titleScreen').style.display='none';
+    $('#hud').style.display='flex';
+    $('#gameWrap').style.display='flex';
+
+    // ゲーム開始（script.js が公開しているフック）
+    if(typeof window.__startGameWithConfig === 'function'){
+      window.__startGameWithConfig(cfg);
+    }else{
+      alert('ゲーム初期化関数が見つかりませんでした（script.jsの読み込み順を確認してください）');
     }
+  }
+
+  $('#startBtn').addEventListener('click', ()=>{
+    const cfg = readConfig();
+    startWithConfig(cfg);
   });
+
+  // ワンクリック・クイックスタート
+  $('#quick5').addEventListener('click', ()=>{
+    const enemies = { WaruMOB: 10 }; // 爽快さ重視（小型を10体）
+    const allies  = {};
+    startWithConfig({enemies, allies});
+  });
+
+})();
 </script>
 </body>
 </html>
