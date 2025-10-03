@@ -3,13 +3,108 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Rev32 FULL (MOBA stage + GabuKing/Screw + Edge Walls + ULT test)</title>
+<title>MOB Side Action – Rev33 (Title & Team Select)</title>
 <meta name="theme-color" content="#0b0c10" />
-<link rel="stylesheet" href="style.css" />
+<style>
+:root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
+html,body{height:100%;margin:0;padding:0;overflow:hidden;background:#0a0d13;color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;overscroll-behavior:none;-webkit-user-select:none;-webkit-touch-callout:none;user-select:none}
+*{box-sizing:border-box}
+#root{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:10px}
+#phone{width:var(--stage-w);height:var(--stage-h);position:relative;overflow:hidden;background:#060910;border:1px solid #0f1726;border-radius:20px;box-shadow:0 12px 48px rgba(0,0,0,.55);touch-action:none;margin:0 auto}
+.grid{position:absolute;inset:0;display:grid;grid-template-rows: 1fr 220px;gap:var(--grid-gap);padding:var(--grid-gap)}
+.gamewrap{position:relative;border-radius:14px;overflow:hidden;background:#05070c;outline:1px solid #0e1522}
+canvas#game{display:block;width:100%;height:100%}
+.controls{position:relative;border-radius:14px;background:var(--hud-bg);outline:1px solid #0e1522;backdrop-filter: blur(6px);padding:12px;display:grid;grid-template-columns: 1fr 1fr;gap:12px}
+.stickArea{position:relative;border-radius:12px;background:#0a121f;outline:1px solid #152033;display:grid;place-items:center;touch-action:none}
+.stick{width:120px;height:120px;border-radius:50%;background:#0d1828;outline:2px solid #22324d;position:relative}
+.stickThumb{width:64px;height:64px;border-radius:50%;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#1a2a45;outline:2px solid #2e4a73;box-shadow:inset 0 0 0 4px #0c1422}
+.buttons{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,1fr);gap:12px;align-content:stretch;justify-items:stretch}
+.btn{border:none;border-radius:14px;background:#0d1828;outline:2px solid #22324d;color:var(--fg);font-size:26px;display:grid;place-items:center;touch-action:none;box-shadow:inset 0 -4px 0 rgba(255,255,255,.04);transition:opacity .15s ease;min-height:64px}
+.btn:active{transform:scale(.98)}
+.btn[disabled]{opacity:.35;pointer-events:none}
+.btn.attack1{background:#112033} /* ■ */
+.btn.attack2{background:#1a2436} /* ▲ */
+.btn.skill1 {background:#132a22} /* ● */
+.btn.skill2 {background:#1f2433} /* ◎ */
+.btn.ult    {background:#2b2030} /* U */
+.btn.jump   {background:#25202b} /* × */
+header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex;gap:10px;align-items:center;z-index:10;pointer-events:none}
+.chip{background:var(--hud-bg);outline:1px solid #0e1522;border-radius:12px;padding:6px 10px;font-weight:600;font-size:12px;display:flex;gap:8px;align-items:center}
+.bar{--w:160px;--h:10px;width:var(--w);height:var(--h);border-radius:999px;outline:1px solid #1a263d;background:#0a1220;position:relative;overflow:hidden}
+.bar>i{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:linear-gradient(90deg,#ff9a9e,#ff6b6b)}
+.timer{margin-left:auto}
+.name{margin-left:6px;opacity:.85}
+.overhead{position:absolute;left:50%;transform:translateX(-50%);display:none;gap:6px;align-items:center;pointer-events:none}
+.gauge{width:96px;height:6px;border-radius:999px;outline:1px solid #1a263d;background:#0a1220;overflow:hidden}
+.gauge>i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#69d0ff,#a0ffe6)}
+@media (max-height: 720px){ :root{ --stage-h: 650px; } }
+
+/* ===== Title / Select Overlay ===== */
+#title{position:absolute;inset:0;background:linear-gradient(180deg,#0a0f18 0%, #080c12 100%);display:flex;flex-direction:column;z-index:20}
+#title header{padding:16px 16px 8px;font-weight:800;letter-spacing:.06em}
+#title h1{margin:0;font-size:22px}
+#title .panel{flex:1;overflow:auto;padding:10px 14px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.card{background:#0b0f17cc;border:1px solid #152033;border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.card h2{margin:0 0 4px 0;font-size:14px;opacity:.9}
+.row{display:grid;grid-template-columns:1fr 70px;gap:8px;align-items:center}
+.row label{display:flex;align-items:center;gap:8px}
+.row input[type="number"]{width:100%;background:#07101b;border:1px solid #1a263d;color:#dfe7ff;border-radius:8px;padding:4px 6px}
+.chk{accent-color:#7dd3fc}
+.tags{display:flex;flex-wrap:wrap;gap:6px}
+.tag{font-size:11px;padding:4px 6px;border:1px solid #22324d;border-radius:999px;background:#0d1828}
+#startBar{padding:10px;display:flex;gap:10px;align-items:center;justify-content:flex-end;border-top:1px solid #0e1522;background:#0b0f17cc}
+.big{font-size:16px;font-weight:700;border-radius:10px;border:1px solid #2b3e5d;background:#162236;color:#e9eef7;padding:10px 14px;cursor:pointer}
+.big:active{transform:translateY(1px)}
+.small{font-size:12px;opacity:.85}
+</style>
 </head>
 <body>
 <div id="root">
   <div id="phone">
+    <!-- ====== Title / Select ====== -->
+    <div id="title" aria-label="Title / Team Select">
+      <header>
+        <h1>MOB Side Action – TEAM SELECT</h1>
+        <div class="small">プレイヤーは<strong>MOBYOKI</strong>固定。敵/味方に出すキャラと数を選んでください。</div>
+      </header>
+      <div class="panel">
+        <div class="card">
+          <h2>敵（Enemy）</h2>
+          <div class="row"><label><input class="chk enemy" data-key="IceRoboMini" type="checkbox" checked>Ice Robo Mini</label><input type="number" min="0" max="20" value="5" data-count="IceRoboMini"></div>
+          <div class="row"><label><input class="chk enemy" data-key="Kozou" type="checkbox" checked>Kozou</label><input type="number" min="0" max="20" value="5" data-count="Kozou"></div>
+          <div class="row"><label><input class="chk enemy" data-key="WaruMOB" type="checkbox" checked>WaruMOB</label><input type="number" min="0" max="20" value="5" data-count="WaruMOB"></div>
+          <div class="row"><label><input class="chk enemy" data-key="GabuKing" type="checkbox">GabuKing</label><input type="number" min="0" max="5" value="1" data-count="GabuKing"></div>
+          <div class="row"><label><input class="chk enemy" data-key="Screw" type="checkbox">Screw</label><input type="number" min="0" max="5" value="1" data-count="Screw"></div>
+          <div class="row"><label><input class="chk enemy" data-key="IceRobo" type="checkbox">IceRobo</label><input type="number" min="0" max="3" value="1" data-count="IceRobo"></div>
+          <div class="row"><label><input class="chk enemy" data-key="MOBGiant" type="checkbox">MOBGiant</label><input type="number" min="0" max="2" value="1" data-count="MOBGiant"></div>
+          <div class="row"><label><input class="chk enemy" data-key="MobyCPU" type="checkbox">MOBYOKI（CPU敵）</label><input type="number" min="0" max="3" value="1" data-count="MobyCPU"></div>
+          <div class="tags">
+            <span class="tag">4体（Gabu/Screw/Giant/IceRobo）はスキル・ULTで特に強く吹っ飛ぶ</span>
+            <span class="tag">弱キャラは通常でもよく飛ぶ</span>
+          </div>
+        </div>
+        <div class="card">
+          <h2>味方（Allies / 自動で敵を狙います）</h2>
+          <div class="row"><label><input class="chk ally" data-key="IceRoboMini" type="checkbox">Ice Robo Mini</label><input type="number" min="0" max="10" value="2" data-count="Allies_IceRoboMini"></div>
+          <div class="row"><label><input class="chk ally" data-key="Kozou" type="checkbox">Kozou</label><input type="number" min="0" max="10" value="2" data-count="Allies_Kozou"></div>
+          <div class="row"><label><input class="chk ally" data-key="WaruMOB" type="checkbox">WaruMOB</label><input type="number" min="0" max="10" value="2" data-count="Allies_WaruMOB"></div>
+          <div class="row"><label><input class="chk ally" data-key="GabuKing" type="checkbox">GabuKing</label><input type="number" min="0" max="4" value="1" data-count="Allies_GabuKing"></div>
+          <div class="row"><label><input class="chk ally" data-key="Screw" type="checkbox">Screw</label><input type="number" min="0" max="4" value="1" data-count="Allies_Screw"></div>
+          <div class="row"><label><input class="chk ally" data-key="IceRobo" type="checkbox">IceRobo</label><input type="number" min="0" max="3" value="1" data-count="Allies_IceRobo"></div>
+          <div class="row"><label><input class="chk ally" data-key="MOBGiant" type="checkbox">MOBGiant</label><input type="number" min="0" max="2" value="1" data-count="Allies_MOBGiant"></div>
+          <div class="row"><label><input class="chk ally" data-key="MobyCPU" type="checkbox">MOBYOKI（CPU味方）</label><input type="number" min="0" max="3" value="1" data-count="Allies_MobyCPU"></div>
+          <div class="tags">
+            <span class="tag">味方AIは最も近い敵を自動追尾</span>
+            <span class="tag">同士討ちはしません</span>
+          </div>
+        </div>
+      </div>
+      <div id="startBar">
+        <button id="startBtn" class="big">ゲーム開始</button>
+      </div>
+    </div>
+
+    <!-- ===== Game ===== -->
     <div class="grid">
       <div class="gamewrap">
         <header class="hud">
@@ -37,6 +132,33 @@
   </div>
 </div>
 
-<script src="script.js"></script>
+<!-- 外部スクリプト -->
+<script src="./script.js"></script>
+<script>
+  // タイトルの設定をscript.jsに渡す
+  document.getElementById('startBtn').addEventListener('click', ()=>{
+    const pick = (cls, prefix='')=>{
+      const checks=[...document.querySelectorAll(`.chk.${cls}`)];
+      const out={};
+      for(const c of checks){
+        if(c.checked){
+          const key=c.dataset.key;
+          const countEl = document.querySelector(`[data-count="${prefix?prefix+'_':''}${key}"]`);
+          const n = Math.max(0, Math.min(50, parseInt(countEl?.value||'0',10)||0));
+          out[key]=n;
+        }
+      }
+      return out;
+    };
+    const enemies = pick('enemy');
+    const allies  = Object.fromEntries(Object.entries(pick('ally','Allies')).map(([k,v])=>[k,v]));
+
+    // タイトルを閉じてゲーム開始
+    document.getElementById('title').style.display='none';
+    if(window.__startGameWithConfig){
+      window.__startGameWithConfig({enemies, allies});
+    }
+  });
+</script>
 </body>
 </html>
