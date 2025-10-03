@@ -1,9 +1,10 @@
-<!DOCTYPE html>
+# Write the full single-file build to /mnt/data and provide a download link
+html = r"""<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Rev31 (Select: Enemy Registry + Count)</title>
+<title>MOB Side Action – Rev32 (Multi-Enemy Registry + Per-Character Counts)</title>
 <meta name="theme-color" content="#0b0c10" />
 <style>
 :root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
@@ -44,14 +45,23 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
 
 /* ===== 選択UI ===== */
 #selectModal{position:absolute;inset:0;background:rgba(5,7,12,.85);backdrop-filter: blur(6px);display:flex;align-items:center;justify-content:center;z-index:50}
-.selCard{width:86%;max-width:380px;background:#0b0f17;border:1px solid #162033;border-radius:14px;padding:16px;box-shadow:0 8px 32px rgba(0,0,0,.45);max-height:78vh;display:flex;flex-direction:column}
+.selCard{width:92%;max-width:420px;background:#0b0f17;border:1px solid #162033;border-radius:14px;padding:16px;box-shadow:0 8px 32px rgba(0,0,0,.45);max-height:84vh;display:flex;flex-direction:column}
 .selCard h2{margin:0 0 12px;font-size:18px}
 .selBody{overflow:auto;padding-right:4px;display:flex;flex-direction:column;gap:12px}
 .selRow{display:flex;flex-direction:column;gap:6px}
 .selRow label{font-size:13px;opacity:.85}
-.selRow select,.selRow input[type="number"]{appearance:none;background:#0f1624;color:#e9eef7;border:1px solid #1b2942;border-radius:10px;padding:10px 12px}
+.selRow select,.selRow input[type="number"],.selRow input[type="checkbox"],.countInput{appearance:none;background:#0f1624;color:#e9eef7;border:1px solid #1b2942;border-radius:10px;padding:10px 12px}
 .selStart{width:100%;margin-top:12px;border:none;border-radius:12px;padding:12px;background:#224a9a;color:#fff;font-weight:700;box-shadow:inset 0 -3px 0 rgba(0,0,0,.2)}
 .small{font-size:12px;opacity:.7}
+.enemyList{display:flex;flex-direction:column;gap:8px}
+.enemyRow{display:grid;grid-template-columns: 1fr auto;gap:8px;align-items:center;background:#0f1624;border:1px solid #1b2942;border-radius:10px;padding:8px 10px}
+.enemyName{font-weight:700}
+.countInput{width:86px;text-align:center}
+.rowRight{display:flex;gap:8px;align-items:center}
+.badge{background:#13213a;border:1px solid #1c2d4f;border-radius:999px;padding:4px 8px;font-size:11px;opacity:.85}
+.totals{display:flex;justify-content:space-between;align-items:center;background:#0f1624;border:1px solid #1b2942;border-radius:10px;padding:8px 10px}
+.presetBtns{display:flex;gap:8px;flex-wrap:wrap}
+.preset{border:none;border-radius:10px;padding:8px 10px;background:#22365e;color:#fff;font-weight:700}
 </style>
 </head>
 <body>
@@ -73,21 +83,22 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
             <h2>バトル設定</h2>
             <div class="selBody">
               <div class="selRow">
-                <label for="allySel">味方（プレイヤー）</label>
-                <select id="allySel">
-                  <option value="player" selected>MOBYOKI（標準）</option>
-                </select>
-                <div class="small">※いまは味方固定。敵のみ拡張中。</div>
+                <label>味方（プレイヤー）</label>
+                <div class="badge">MOBYOKI 固定（※敵のみマルチ選択対応）</div>
               </div>
 
               <div class="selRow">
-                <label for="enemySel">敵タイプ（登録キャラから）</label>
-                <select id="enemySel"></select>
-              </div>
-
-              <div class="selRow">
-                <label for="enemyCount">敵の数（1〜10）</label>
-                <input id="enemyCount" type="number" min="1" max="10" value="1" />
+                <label>敵キャラ（登録済み一覧）— 各行の数を指定</label>
+                <div id="enemyList" class="enemyList"></div>
+                <div class="totals">
+                  <div><strong>合計</strong>：<span id="totalCount">0</span> 体</div>
+                  <div class="presetBtns">
+                    <button class="preset" id="btnClear">クリア</button>
+                    <button class="preset" id="btnOneEach">各1体</button>
+                    <button class="preset" id="btnLoadPrev">前回の設定</button>
+                  </div>
+                </div>
+                <div class="small">※ 合計は最大 <strong id="maxTotalLabel">20</strong> 体まで。超えると自動で上限に丸めます。</div>
               </div>
             </div>
 
@@ -330,17 +341,6 @@ class Projectile{
     ctx.restore();
   }
 }
-class EnergyBall extends Projectile{
-  constructor(world,x,y,dir,img,basePower=20,chargeSec=0, incrementPerTenth=1){
-    super(world,x,y,dir,img,basePower);
-    this.chargeSec = clamp(chargeSec,0,2.0);
-    this.power = basePower + Math.floor(this.chargeSec / 0.1) * incrementPerTenth;
-    const sizeMul = 1 + 0.55*(this.chargeSec/2);
-    this.w = Math.round(48*sizeMul); this.h = Math.round(36*sizeMul);
-    this.vx = (210 + 70*(this.chargeSec/2)) * dir;
-    this.life = 3.6;
-  }
-}
 class UltBlast extends Projectile{
   constructor(world,x,y,dir,img,chargeSec){
     const t = clamp(chargeSec,0,3.0);
@@ -457,6 +457,7 @@ class Player extends CharacterBase{
   }
   _respawn(world){ this.dead=false; this.fade=1; this.spinAngle=0; this.spinSpeed=0; this.state='idle'; this.comboStep=0; this.comboGraceT=0; this.bufferA1=false; this.invulnT=0.6; this.hp=this.maxhp; document.getElementById('hpfill').style.width='100%'; document.getElementById('hpnum').textContent=this.hp; this.x=clamp(world.camX+80, this.w/2, world.stageW-this.w/2); this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.vx=0; this.vy=0; this.jumpsLeft=this.maxJumps; this.saT=0; this._activeSpikes=null; this.isUltCharging=false; }
   draw(ctx,world){
+    const drawFrame=(img,ox=0)=>{ if(!img) return; const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2+ox), Math.round(-h/2), Math.round(w), Math.round(h)); };
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
     if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
     if(this.face<0 && !this.dead) ctx.scale(-1,1);
@@ -464,19 +465,17 @@ class Player extends CharacterBase{
     if(this.state==='idle'){ img=this._imgByKey('idle',0); }
     else if(this.state==='run'){ const speed=Math.abs(this.vx); const rate = lerp(6, 11, clamp(speed/MOVE, 0, 1)); const i=Math.floor(this.animT*rate)%this.frames.run.length; img=this._imgByKey('run',i); }
     else if(this.state==='jump'){ img=this._imgByKey('run',0); }
-    else if((this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='ult') && this._actionSeq){ const cur=this._actionSeq[this._actionIndex]; const key=cur.frame; img=this.world.assets.img(this.frames[key]?this._getFramePath(key,0):key); } else img=this._imgByKey('idle',0);
-    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2+ox), Math.round(-h/2), Math.round(w), Math.round(h)); }
+    else if((this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='ult') && this._actionSeq){ const cur=this._actionSeq[this._actionIndex]; const key=cur.frame; img=this.world.assets.img(this.frames[key]?this._getFramePath(key,0):key); }
+    drawFrame(img,ox);
     if(this.isUltCharging){
-      const holder=this.world.assets.img(this.frames.ul1);
-      if(holder){ const scale=this.h/holder.height, w=holder.width*scale, h=this.h; ctx.save(); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.95; ctx.drawImage(holder, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); ctx.restore(); }
-      const ul3=this.world.assets.img(this.frames.ul3);
-      if(ul3){ const t=Math.min(3, (window._inputUltT||0)); const mul = lerp(0.35, 1.7, clamp(t/3.0,0,1)); const hh=62*mul, ww=62*mul; const oxh = this.face*26, oyh=-14; ctx.save(); ctx.translate(oxh, oyh); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.95; ctx.drawImage(ul3, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh)); ctx.restore(); }
+      const holder=this.world.assets.img(this.frames.ul1); if(holder){ const scale=this.h/holder.height, w=holder.width*scale, h=this.h; ctx.save(); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.95; ctx.drawImage(holder, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); ctx.restore(); }
+      const ul3=this.world.assets.img(this.frames.ul3); if(ul3){ const t=Math.min(3, (window._inputUltT||0)); const mul = lerp(0.35, 1.7, clamp(t/3.0,0,1)); const hh=62*mul, ww=62*mul; const oxh = this.face*26, oyh=-14; ctx.save(); ctx.translate(oxh, oyh); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.95; ctx.drawImage(ul3, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh)); ctx.restore(); }
     }
     ctx.restore();
   }
 }
 
-/* ===== ガブキング（敵） ===== */
+/* ===== ガブキング ===== */
 class GabBlast extends Projectile{
   constructor(world,x,y,dir,img){
     super(world,x,y,dir,img,130);
@@ -513,6 +512,7 @@ class GabKing extends CharacterBase{
     const baseKb = 140 + amount*12;
     const baseKbu = (opts.lift?360:(amount>=15?300:210));
 
+    // ULTなら更に強制で跳ばす
     const finalKbMul  = forceBreak ? Math.max(kbMul, 2.2) : kbMul;
     const finalKbuMul = forceBreak ? Math.max(kbuMul,2.2) : kbuMul;
 
@@ -634,10 +634,10 @@ class GabKing extends CharacterBase{
   }
 }
 
-/* ===== MOBスクリュー（敵 / プレイアブル想定のAI） ===== */
+/* ===== MOBスクリュー ===== */
 class Screw extends CharacterBase{
   constructor(world,effects,assets,x=600){
-    super(70,78);
+    super(70,78);  // 画像サイズ感を少し大きめに調整
     this.world=world; this.effects=effects; this.assets=assets;
     this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
     this.maxhp=1800; this.hp=1800;
@@ -715,7 +715,7 @@ class Screw extends CharacterBase{
     if(adx>120){ this.vx = (dx>0? walk : -walk); }
     else this.vx=0;
 
-    if(this.onGround && Math.random()<0.02){ this.vy = -JUMP_V*0.85; }
+    if(this.onGround && Math.random()<0.02){ this.vy = -JUMP_V*0.85; } // たまにジャンプ
     this.updatePhysics(dt);
     if(!this.onGround) this.state='jump';
     else this.state = Math.abs(this.vx)>1? 'run':'idle';
@@ -733,7 +733,7 @@ class Screw extends CharacterBase{
   _startSkill1(){
     this.state='skill'; this._t=0; this._idx=0; this.s1CD=5.0;
     this._seq=[
-      {dur:0.50,key:'s1prep',fx:0,hit:false},
+      {dur:0.50,key:'s1prep',fx:0,hit:false}, // 震え
       {dur:0.20,key:'s1a',fx:540,hit:true,power:50,kbMul:1.0,kbuMul:1.0,lift:0.4},
       {dur:0.16,key:'s1b',fx:360,hit:true,power:20,kbMul:0.9,kbuMul:0.9,lift:0.2},
       {dur:0.22,key:'s1c',fx:380,hit:true,power:50,kbMul:1.3,kbuMul:1.3,lift:0.9},
@@ -768,7 +768,7 @@ class Screw extends CharacterBase{
   }
 }
 
-/* ===== World ===== */
+/* ===== World（MOBAステージ） ===== */
 class World{
   constructor(assets, canvas, effects){
     this.assets=assets; this.effects=effects; this.canvas=canvas;
@@ -799,13 +799,16 @@ class World{
   }
   draw(player, enemies){
     const ctx=this.ctx; ctx.clearRect(0,0,this.gameW,this.gameH);
+
     if(this.bgImg){
       ctx.drawImage(this.bgImg, 0,0,this.bgImg.width,this.bgImg.height,
         Math.round(-this.camX*this.bgSpeed), 0, this.bgDW, this.bgDH);
     } else {
       const g=ctx.createLinearGradient(0,0,0,this.gameH); g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18'); ctx.fillStyle=g; ctx.fillRect(0,0,this.gameH,this.gameH);
     }
+    // 地面ライン
     ctx.fillStyle='#0b0f17'; const yTop=Math.floor(GROUND_TOP_Y); ctx.fillRect(0,yTop-1,this.gameW,1);
+
     if(this._skillBullets){ for(const p of this._skillBullets) p.draw(ctx); }
     for(const e of enemies) e.draw(ctx,this); player.draw(ctx,this); this.effects.draw(ctx,this);
   }
@@ -814,89 +817,113 @@ class World{
 /* ===== UI HP ===== */
 const updateHPUI=(hp,maxhp)=>{ const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=hp; fill.style.width=Math.max(0,Math.min(100,(hp/maxhp)*100))+'%'; };
 
-/* ===== キャラクター登録（敵レジストリ） =====
-   ここに新しい敵を追加すれば、選択UIに自動で反映されます。 */
-const EnemyRegistry = [
-  {
-    id:'gabking',
-    name:'ガブキング',
-    factory:(world,effects,assets,x)=>new GabKing(world,effects,assets,x),
-    /* この敵に必要な画像（追加登録の参考用） */
-    assets:['t1.png','t2.png','t3.png','t4.png','t5.png','t6.png','t7.png','t8.png','t9.png','t10.png','t11.png']
-  },
-  {
-    id:'screw',
-    name:'MOBスクリュー',
-    factory:(world,effects,assets,x)=>new Screw(world,effects,assets,x),
-    assets:['B1.png','B2.png','B3.png','B4.png','B5.png','B6.png','B7.png','B8.png','B9.png','B10.png','B11.png','B12.png','B13.png','B14.png']
-  }
-];
+/* ===== 敵レジストリ ===== */
+window.EnemyRegistry = (function(prev){
+  if (Array.isArray(prev) && prev.length) return prev; // 既存を優先
+  return [
+    { id:'gabking', name:'ガブキング', factory:(w,e,a,x)=>new GabKing(w,e,a,x), assets:['t1.png','t2.png','t3.png','t4.png','t5.png','t6.png','t7.png','t8.png','t9.png','t10.png','t11.png'] },
+    { id:'screw',   name:'MOBスクリュー', factory:(w,e,a,x)=>new Screw(w,e,a,x), assets:['B1.png','B2.png','B3.png','B4.png','B5.png','B6.png','B7.png','B8.png','B9.png','B10.png','B11.png','B12.png','B13.png','B14.png'] }
+  ];
+})(window.EnemyRegistry);
 
 /* ===== Game ===== */
 class Game{
   constructor(){
     this.assets=new Assets(); this.canvas=document.getElementById('game'); this.input=new Input(); this.effects=new Effects();
     this.player=null; this.enemies=[]; this.world=null; this.lastT=0;
-    this._selectedEnemyId='gabking'; this._enemyCount=1; this._selectedAlly='player';
+    this._selectedAlly='player';
+    this.MAX_TOTAL = 20; // 合計上限（必要なら上げてOK）
     addEventListener('resize',()=>this.world?.resize());
   }
   async start(){
-    const imgs=[
-      'MOBA.png','back1.png',
-      'M1-1.png','M1-2.png','M1-3.png','M1-4.png',
-      'K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png',
-      'h1.png','h2.png','h3.png','h4.png','J.png',
-      'UL1.PNG','UL2.PNG','UL3.png',
-      'Y1.png','Y2.png','Y3.png','Y4.png',
-      'kem.png',
-      /* GabKing */
-      't1.png','t2.png','t3.png','t4.png','t5.png','t6.png','t7.png','t8.png','t9.png','t10.png','t11.png',
-      /* Screw */
-      'B1.png','B2.png','B3.png','B4.png','B5.png','B6.png','B7.png','B8.png','B9.png','B10.png','B11.png','B12.png','B13.png','B14.png'
-    ];
+    // 画像一覧はレジストリから自動で収集（足りない分だけ追加）
+    const baseImgs=[ 'MOBA.png','back1.png', 'M1-1.png','M1-2.png','M1-3.png','M1-4.png', 'K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png', 'h1.png','h2.png','h3.png','h4.png','J.png', 'UL1.PNG','UL2.PNG','UL3.png', 'Y1.png','Y2.png','Y3.png','Y4.png', 'kem.png' ];
+    const enemyImgs = window.EnemyRegistry.flatMap(e=>e.assets||[]);
+    const imgs = Array.from(new Set([...baseImgs, ...enemyImgs]));
     await this.assets.load(imgs);
+
     this.world=new World(this.assets,this.canvas,this.effects);
     this.player=new Player(this.assets,this.world,this.effects);
 
     // 選択UI構築
     const modal=document.getElementById('selectModal');
-    const allySel=document.getElementById('allySel');
-    const enemySel=document.getElementById('enemySel');
-    const enemyCount=document.getElementById('enemyCount');
+    const enemyList=document.getElementById('enemyList');
+    const totalCountEl=document.getElementById('totalCount');
+    const maxTotalLabel=document.getElementById('maxTotalLabel');
+    maxTotalLabel.textContent = this.MAX_TOTAL;
+
+    const fromStorage=()=>{ try{return JSON.parse(localStorage.getItem('mb_select_counts')||'{}');}catch{return{}} };
+    const toStorage=(obj)=>{ try{localStorage.setItem('mb_select_counts', JSON.stringify(obj));}catch{} };
+
+    const rows=[]; // {id, input}
+    const saved=fromStorage();
+    window.EnemyRegistry.forEach((reg)=>{
+      const row=document.createElement('div'); row.className='enemyRow';
+      const name=document.createElement('div'); name.className='enemyName'; name.textContent=reg.name||reg.id; row.appendChild(name);
+      const right=document.createElement('div'); right.className='rowRight';
+      const badge=document.createElement('div'); badge.className='badge'; badge.textContent=reg.id; right.appendChild(badge);
+      const input=document.createElement('input'); input.type='number'; input.min='0'; input.max='10'; input.value = clamp(parseInt(saved[reg.id]??'0',10)||0,0,10); input.className='countInput'; right.appendChild(input);
+      row.appendChild(right);
+      enemyList.appendChild(row);
+      rows.push({id:reg.id, input});
+    });
+
+    const readCounts=()=>{
+      const counts={}; let total=0;
+      for(const r of rows){ const n=clamp(parseInt(r.input.value||'0',10)||0,0,99); counts[r.id]=n; total+=n; }
+      // 上限超えたら丸め（先頭から減らす簡易）
+      if(total>this.MAX_TOTAL){
+        let over = total - this.MAX_TOTAL;
+        for(const r of rows){
+          if(over<=0) break; const cur=counts[r.id]; if(cur<=0) continue; const dec=Math.min(cur, over); counts[r.id]-=dec; r.input.value=counts[r.id]; over-=dec;
+        }
+        total=this.MAX_TOTAL;
+      }
+      totalCountEl.textContent = total;
+      return counts;
+    };
+
+    enemyList.addEventListener('input', ()=>{ const c=readCounts(); toStorage(c); });
+
+    // プリセット
+    document.getElementById('btnClear').addEventListener('click',()=>{ rows.forEach(r=>r.input.value=0); const c=readCounts(); toStorage(c); });
+    document.getElementById('btnOneEach').addEventListener('click',()=>{ rows.forEach(r=>r.input.value=1); const c=readCounts(); toStorage(c); });
+    document.getElementById('btnLoadPrev').addEventListener('click',()=>{ const s=fromStorage(); rows.forEach(r=>{ r.input.value = clamp(parseInt(s[r.id]||'0',10)||0,0,10); }); const c=readCounts(); toStorage(c); });
+
+    // 初期合計反映
+    readCounts();
+
     const startBtn=document.getElementById('startBtn');
-
-    // レジストリから敵の選択肢を生成
-    enemySel.innerHTML = '';
-    for(const e of EnemyRegistry){
-      const opt=document.createElement('option');
-      opt.value=e.id; opt.textContent=e.name;
-      enemySel.appendChild(opt);
-    }
-    enemySel.value=this._selectedEnemyId;
-
     startBtn.addEventListener('click',()=>{
-      this._selectedAlly = allySel.value;
-      this._selectedEnemyId = enemySel.value;
-      this._enemyCount = clamp(parseInt(enemyCount.value||'1',10), 1, 10);
-
-      // 敵生成：間隔を自動配置
-      const type = EnemyRegistry.find(e=>e.id===this._selectedEnemyId) || EnemyRegistry[0];
-      const count = this._enemyCount;
-      const marginL = Math.min(640, this.world.stageW - 600);
-      const marginR = Math.min(this.world.stageW - 60, this.world.stageW - 80);
-      const span = Math.max(180, Math.floor((marginR - marginL) / Math.max(1,(count-1))));
-      const startX = Math.min(marginL + 200, this.world.stageW - 200);
-
+      const counts=readCounts(); toStorage(counts);
+      // 敵生成：キャラごとに count 分スポーン
       this.enemies = [];
-      for(let i=0;i<count;i++){
-        const x = Math.min(startX + span*i, this.world.stageW - 150);
-        this.enemies.push(type.factory(this.world,this.effects,this.assets,x));
+      const spawnPositions = this._computeSpawnPositions(Object.values(counts).reduce((a,b)=>a+b,0));
+
+      let idx=0;
+      for(const reg of window.EnemyRegistry){
+        const n = counts[reg.id]||0; if(n<=0) continue;
+        for(let i=0;i<n;i++){
+          const x = spawnPositions[idx++] || Math.min(640, this.world.stageW - 200);
+          const ctor = reg.factory || ((w,e,a,xx)=>{ console.warn('Factory missing for',reg.id); return new GabKing(w,e,a,xx);});
+          this.enemies.push(ctor(this.world,this.effects,this.assets,x));
+        }
       }
 
       modal.style.display='none';
       updateHPUI(this.player.hp,this.player.maxhp);
-      this._run(); // ループ開始
+      this._run();
     },{once:true});
+  }
+
+  _computeSpawnPositions(total){
+    total = Math.max(1,total|0);
+    const left = Math.min(640, this.world.stageW - 600);
+    const right = Math.min(this.world.stageW - 60, this.world.stageW - 80);
+    const span = Math.max(140, Math.floor((right - left) / Math.max(1,(total-1))));
+    const startX = Math.min(left + 200, this.world.stageW - 200);
+    const xs=[]; for(let i=0;i<total;i++){ xs.push(Math.min(startX + span*i, this.world.stageW - 150)); }
+    return xs;
   }
 
   _run(){
@@ -927,8 +954,9 @@ class Game{
             if(!p.dead && !e.dead && rectsOverlap(p.aabb(), e.aabb())){
               p.dead=true;
               const dir = (e.x>=p.x)? 1 : -1;
+              // ULT の場合は SA貫通・超ノックバック
               const opts = p.isUlt
-                ? { lift:(p.lift??1.0), kbMul:(p.kbMul??2.2), kbuMul:(p.kbuMul??2.2), forceBreakSA:true }
+                ? { lift:(p.lift??1.0), kbMul: (p.kbMul??2.2), kbuMul:(p.kbuMul??2.2), forceBreakSA:true }
                 : { lift:(p.lift??0.3), kbMul:(p.kbMul??0.9), kbuMul:(p.kbuMul??0.9) };
               const hit = e.hurt(p.power, dir, opts, this.effects);
               if(hit) this.effects.addSpark(e.x, e.y-10, p.power>=40);
@@ -938,7 +966,7 @@ class Game{
         this.world._skillBullets = this.world._skillBullets.filter(p=>!p.dead && p.life>0);
       }
 
-      // のめり込み解消（プレイヤー vs 各敵）
+      // のめり込み解消
       for(const e of this.enemies){
         if(e.dead || this.player.dead) continue;
         const a=this.player.aabb(), b=e.aabb();
@@ -962,19 +990,18 @@ class Game{
         clampActorToWalls(this.player); clampActorToWalls(e);
       }
 
-      // 敵同士の簡易のめり込み解消（密集時の重なり軽減）
+      // 敵同士の重なり軽減
       for(let i=0;i<this.enemies.length;i++){
         for(let j=i+1;j<this.enemies.length;j++){
           const ei=this.enemies[i], ej=this.enemies[j];
           if(ei.dead || ej.dead) continue;
           const a=ei.aabb(), b=ej.aabb();
           if(!rectsOverlap(a,b)) continue;
-          const dx = (ei.x - ej.x);
-          const overlapX = (a.w + b.w)/2 - Math.abs(dx);
-          const dirX = dx>=0? 1 : -1;
-          const push = overlapX*0.5;
-          ei.x += dirX * push;
-          ej.x -= dirX * push;
+          const dx=(ei.x-ej.x);
+          const overlapX=(a.w+b.w)/2-Math.abs(dx);
+          const dirX=dx>=0?1:-1;
+          const push=overlapX*0.5;
+          ei.x += dirX*push; ej.x -= dirX*push;
           clampActorToWalls(ei); clampActorToWalls(ej);
         }
       }
@@ -1014,4 +1041,8 @@ game.start();
 })();
 </script>
 </body>
-</html>
+</html>"""
+path = "/mnt/data/mob_breaker_rev32.html"
+with open(path, "w", encoding="utf-8") as f:
+    f.write(html)
+path
