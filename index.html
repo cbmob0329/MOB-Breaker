@@ -18,18 +18,17 @@
           <div class="chip name">MOBYOKI</div>
           <div class="chip timer">Time <strong id="time">00:00</strong></div>
         </header>
-
-        <!-- タイトル -->
-        <div id="title">
-          <h1>MOB Side Action</h1>
-          <button id="btnStart" class="bigbtn">START</button>
-          <p class="help">移動：←→ / ジャンプ：W or ↑ or Space / 攻撃：J / 強攻撃：K / スキル①：L 長押し / スキル②：O / ULT：U 長押し</p>
-        </div>
-
-        <!-- バナー（登場・クリア） -->
-        <div id="banner" aria-hidden="true"></div>
-
         <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
+
+        <!-- タイトル／バナー -->
+        <div id="titleOverlay" class="overlay show">
+          <div class="ovl-inner">
+            <h1>STAGE 1</h1>
+            <button id="btnStart" class="start">START</button>
+            <div class="help">操作: ←→ / W(↑)/Space でジャンプ / J,K,L,O,U</div>
+          </div>
+        </div>
+        <div id="banner" class="banner" aria-live="polite"></div>
       </div>
 
       <div class="controls">
@@ -50,18 +49,5 @@
 </div>
 
 <script src="script.js"></script>
-<script>
-  // START押下で確実に起動
-  (function(){
-    let started = false;
-    const btn = document.getElementById('btnStart');
-    btn.addEventListener('click', ()=>{
-      if(started) return;
-      started = true;
-      document.getElementById('title').style.display = 'none';
-      window.__BOOT_GAME__ && window.__BOOT_GAME__();
-    });
-  })();
-</script>
 </body>
 </html>
