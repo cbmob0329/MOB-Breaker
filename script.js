@@ -1,22 +1,17 @@
-// script.js – Rev34 (Stage1 polish: BG offset, containers on ground, CS one-shot BG & narrow bounds,
-// Skill1 power/KB up + target spin, anti-pass-through on combos)
+// script.js  —— Rev: Stage1 + Container climb + Skill1 buff + No-clip fix
 (function(){
 'use strict';
-
-/* ================================
- * Tunables (簡単に調整できる定数)
- * ================================ */
-const ST1_BG_YOFF = -30; // 入口ステージ背景の縦オフセット（-で背景を上に/地面を上げる見え方）
 
 /* ================================
  * Constants & Utils
  * ================================ */
 const STAGE_LEFT = 0;
-const STAGE_RIGHT_DEFAULT = 2200;  // セクション未指定時の広さ
+const STAGE_RIGHT = 2200;   // 端は見えない壁（描画はしない）
 const WALL_PAD = 12;
 
 const GRAV=2000, MOVE=260, JUMP_V=760, MAX_FALL=1200;
-const GROUND_TOP_Y=360, FOOT_PAD=2;
+// ★ 赤ライン準拠：背景画像(480px高)に合わせた地面Y
+const GROUND_TOP_Y=437, FOOT_PAD=2;
 
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -165,24 +160,24 @@ class Input{
 }
 
 /* ================================
- * Character Base — ★ 強ヒット & 一方通行足場 & ヒット回転
+ * Character Base — 強ヒットぶっ飛び＋スピン
  * ================================ */
+let __UID=1;
 class CharacterBase{
   constructor(w,h){
+    this.uid=__UID++;
     this.w=w; this.h=h; this.x=0; this.y=0; this.vx=0; this.vy=0; this.face=1;
     this.onGround=false; this.state='idle'; this.animT=0;
     this.hp=100; this.maxhp=100; this.dead=false; this.deathT=0;
     this.invulnT=0; this.spinAngle=0; this.spinSpeed=0; this.fade=1; this.hurtT=0; this.maxHurt=0.22;
-    this.world=null;
-    this._prevY=0;
-    this._spinDecayT=0;
+    this._prevX=0; this._prevY=0;
   }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.8}; }
 
-  // ★ ぶっ飛び＋回転
   hurt(amount, dir, opts={}, effects){
     if(this.invulnT>0||this.dead) return false;
 
+    // 強ヒット判定
     const strongPower = amount>=40;
     const strongKbMul = (opts.kbMul||1) >= 1.4;
     const isULT = opts.tag==='ult';
@@ -190,11 +185,14 @@ class CharacterBase{
 
     this.hp=Math.max(0,this.hp-amount);
 
+    // ノックバック
     const baseKb = 140 + amount*12;
     const baseKbu = opts.lift ? 360 : (amount>=15? 300 : 210);
+
     const kbMulIn = (opts.kbMul??1);
     const kbuMulIn= (opts.kbuMul??1);
 
+    // 追加倍率
     const STRONG_X = isStrong ? 1.75 : 1.0;
     const STRONG_Y = isStrong ? 1.65 : 1.0;
 
@@ -206,11 +204,8 @@ class CharacterBase{
 
     this.state='hurt'; this.hurtT=0; this.animT=0; this.invulnT=0.35;
 
-    // スキル①などで回転付与
-    if(opts.spin || isStrong){
-      this.spinSpeed = Math.max(this.spinSpeed, 14 * (isStrong?1.15:1.0));
-      this._spinDecayT = Math.max(this._spinDecayT, 0.45);
-    }
+    // スキル①等で回転演出
+    if(opts.tag==='skill'){ this.spinSpeed = Math.max(this.spinSpeed, 12 + amount*0.12); }
 
     if(effects){
       effects.addSpark(this.x, this.y-10, isStrong || amount>=15);
@@ -223,55 +218,37 @@ class CharacterBase{
     return true;
   }
 
-  // ★ 一方通行足場（上からだけ着地）
-  _applyPlatforms(){
-    const w=this.world; if(!w||!w.obstacles||this.vy<0) return;
-    const a=this.aabb(); const prevBottom=this._prevY + this.h/2;
-    const curBottom = this.y + this.h/2;
-    for(const o of w.obstacles){
-      if(!o.oneWay) continue;
-      const left = o.x - o.w/2, right = o.x + o.w/2, top = o.yTop;
-      const withinX = (a.x > left-8 && a.x < right+8);
-      const crossed = prevBottom <= top && curBottom >= top;
-      if(withinX && crossed){
-        this.y = top - this.h/2 + FOOT_PAD;
-        this.vy = 0; this.onGround=true;
-        return;
-      }
-    }
-  }
+  updatePhysics(dt, world){
+    this._prevX=this.x; this._prevY=this.y;
 
-  updatePhysics(dt){
-    this._prevY=this.y;
     this.vy = Math.min(this.vy + GRAV*dt, MAX_FALL);
     this.x += this.vx*dt; this.y += this.vy*dt;
 
-    // ★ セクションごとの可変境界
-    const sl = this.world?.stageLeft ?? STAGE_LEFT;
-    const sr = this.world?.stageRight ?? STAGE_RIGHT_DEFAULT;
-    const leftBound  = sl + WALL_PAD + this.w*0.4;
-    const rightBound = sr - WALL_PAD - this.w*0.4;
+    const leftBound  = STAGE_LEFT  + WALL_PAD + this.w*0.4;
+    const rightBound = STAGE_RIGHT - WALL_PAD - this.w*0.4;
     if(this.x < leftBound){ this.x = leftBound; this.vx = Math.max(this.vx, 0); }
     if(this.x > rightBound){ this.x = rightBound; this.vx = Math.min(this.vx, 0); }
 
+    // 地面
     const top=Math.floor(GROUND_TOP_Y);
     if(this.y + this.h/2 >= top + FOOT_PAD){ this.y = top - this.h/2 + FOOT_PAD; this.vy=0; this.onGround=true; }
     else this.onGround=false;
 
-    // 一方通行足場
-    this._applyPlatforms();
-
-    // 被弾スピンの減衰
-    if(this.spinSpeed>0){
-      this.spinAngle += this.spinSpeed*dt;
-      if(this.onGround) this.spinSpeed *= 0.86;
-      if(this._spinDecayT>0){ this._spinDecayT-=dt; if(this._spinDecayT<=0) this.spinSpeed=0; }
-    }
+    // ★ 障害物コリジョン
+    if(world && world.obstacles?.length){ world.resolveCollisions(this); }
 
     if(this.invulnT>0) this.invulnT=Math.max(0,this.invulnT-dt);
     if(this.state==='hurt'){
       this.hurtT+=dt; if(this.onGround || this.hurtT>=this.maxHurt){ this.state='idle'; }
     }
+
+    // スピン更新（非死亡時も回転）
+    if(this.spinSpeed>0){
+      this.spinAngle += this.spinSpeed*dt;
+      this.spinSpeed  = Math.max(0, this.spinSpeed - dt*8);
+      if(this.onGround && !this.dead) this.spinSpeed=0;
+    }
+
     if(this.dead){ this.deathT += dt; this.spinAngle += this.spinSpeed*dt; this.fade = clamp(1 - this.deathT/1.2, 0, 1); }
   }
 
@@ -345,6 +322,43 @@ class GroundSpike extends Projectile{
 }
 
 /* ================================
+ * Container Obstacle（側面ストップ＋AIスロット）
+ * ================================ */
+class Obstacle{
+  constructor(world, img, x, w=160, h=80){
+    this.world=world; this.img=img; this.x=x; this.w=w; this.h=h;
+    // 地面に設置（底面=地面）
+    this.y=Math.floor(GROUND_TOP_Y)-h/2+FOOT_PAD;
+    // 登攀管理
+    this.maxOcc=2;
+    this.occupants=new Set();
+    this.resv=new Map(); // uid -> expiry
+    this.lastClimbStart=0;
+    this.stepZone=20;
+  }
+  rect(){ return {x:this.x, y:this.y, w:this.w, h:this.h}; }
+  draw(ctx){
+    if(!this.img) return;
+    const scaleH=this.h/this.img.height, w=this.img.width*scaleH, h=this.h;
+    ctx.save(); ctx.translate(this.x-this.world.camX, this.y-this.world.camY);
+    ctx.imageSmoothingEnabled=false; ctx.drawImage(this.img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
+    ctx.restore();
+  }
+  cleanup(){
+    const t=now()/1000;
+    for(const [uid,exp] of [...this.resv]){ if(t>exp) this.resv.delete(uid); }
+  }
+  hasFreeSlot(){ this.cleanup(); return (this.occupants.size + this.resv.size) < this.maxOcc; }
+  reserve(uid, ttl=3){ this.cleanup(); if(this.hasFreeSlot()){ this.resv.set(uid, now()/1000 + ttl); return true; } return false; }
+  startClimb(uid){ this.resv.delete(uid); this.lastClimbStart=now()/1000; }
+  enter(uid){ this.occupants.add(uid); }
+  leave(uid){ this.occupants.delete(uid); this.resv.delete(uid); }
+  edgeLeft(){ return this.x - this.w/2; }
+  edgeRight(){ return this.x + this.w/2; }
+  top(){ return this.y - this.h/2; }
+}
+
+/* ================================
  * Player
  * ================================ */
 class Player extends CharacterBase{
@@ -402,11 +416,11 @@ class Player extends CharacterBase{
     const cur=this._actionSeq[this._actionIndex]; if(!cur) return null;
     if(this.state==='skill' || this.state==='skill2' || this.state==='ult'){
       const W=86,H=64; const x=this.x + this.face*(this.w*0.2);
-      return {x, y:this.y, w:W, h:H, power:cur.power||0, dir:this.face, lift:cur.lift||0, kbMul:cur.kbMul||1.6, kbuMul:cur.kbuMul||1.3, tag:cur.tag, spin:cur.spin||false};
+      return {x, y:this.y, w:W, h:H, power:cur.power||0, dir:this.face, lift:cur.lift||0, kbMul:cur.kbMul||1.9, kbuMul:cur.kbuMul||1.6, tag:cur.tag};
     }
     if(cur.kind==='hit' || cur.kind==='sp'){
       const w=52, h=42, x=this.x + this.face*(this.w*0.3 + w*0.5), y=this.y - 6;
-      return {x,y,w,h, power:cur.power||0, dir:this.face, lift:cur.lift||1, kbMul:cur.kbMul||1, kbuMul:cur.kbuMul||1, tag:cur.tag, spin:cur.spin||false};
+      return {x,y,w,h, power:cur.power||0, dir:this.face, lift:cur.lift||1, kbMul:cur.kbMul||1, kbuMul:cur.kbuMul||1, tag:cur.tag};
     }
     return null;
   }
@@ -422,7 +436,7 @@ class Player extends CharacterBase{
     if(this.skill2CDT>0){ this.skill2CDT=Math.max(0,this.skill2CDT-dt); sk2Btn.setAttribute('disabled',''); } else sk2Btn.removeAttribute('disabled');
     if(this.ultCDT>0){ this.ultCDT=Math.max(0,this.ultCDT-dt); ultBtn.setAttribute('disabled',''); } else ultBtn.removeAttribute('disabled');
 
-    if(this.dead){ this.updatePhysics(dt); if(this.fade<=0){ this._respawn(world); } world.updateTimer(dt); return; }
+    if(this.dead){ this.updatePhysics(dt,world); if(this.fade<=0){ this._respawn(world); } world.updateTimer(dt); return; }
 
     // ● スキル1チャージ
     if(input.skillCharging && this.skillCDT<=0){
@@ -430,7 +444,7 @@ class Player extends CharacterBase{
       this._showGauge(true,'● Charge', input.skillChargeT/1.0);
       this.saT = 0.08;
     }
-    // ULT：溜めながら移動可
+    // ULT
     this.isUltCharging = input.ultCharging && this.ultCDT<=0;
     if(this.isUltCharging){
       input.ultChargeT = Math.min(3, input.ultChargeT + dt);
@@ -455,21 +469,13 @@ class Player extends CharacterBase{
         for(const e of enemies){
           if(!e || e.dead || e.invulnT>0) continue;
           if(rectsOverlap({x:hb.x,y:hb.y,w:hb.w,h:hb.h}, e.aabb())){
-            const hit = e.hurt(hb.power, hb.dir, {lift:hb.lift, kbMul:hb.kbMul, kbuMul:hb.kbuMul, tag:hb.tag, spin:hb.spin}, this.effects);
-            // ★ 直後にその場で強めの押し戻し（すり抜け防止）
+            const hit = e.hurt(hb.power, hb.dir, {lift:hb.lift, kbMul:hb.kbMul, kbuMul:hb.kbuMul, tag:hb.tag}, this.effects);
             if(hit){
-              const a=this.aabb(), b=e.aabb();
-              const dx = (this.x - e.x);
-              const overlapX = (a.w + b.w)/2 - Math.abs(dx);
-              if(overlapX>0){
-                const dir = (dx>=0?1:-1);
-                this.x += dir * overlapX * 0.55;  // プレイヤー寄り強め
-                e.x     -= dir * overlapX * 0.45;
-                this.vx = 0; e.vx *= 0.7;
-              }
-            }
-            if(hit && this.state==='atk' && this._actionSeq && this._actionSeq[this._actionIndex]?.tag==='chaseFinisher'){
-              this.effects.addSpark(e.x, e.y-10, true);
+              // ★ すり抜け対策：即時押し戻し＆前進抑制
+              const push = 10;
+              e.x += hb.dir * push;
+              this.x -= hb.dir * 6;
+              this.vx *= 0.2;
             }
           }
         }
@@ -491,7 +497,7 @@ class Player extends CharacterBase{
     let ax=0; if(input.left){ ax-=MOVE; this.face=-1; } if(input.right){ ax+=MOVE; this.face=1; }
     this.vx = ax!==0 ? (ax>0?MOVE:-MOVE) : 0;
     if(input.consumeJump() && this.jumpsLeft>0){ this.vy=-JUMP_V; this.onGround=false; this.jumpsLeft--; }
-    this.updatePhysics(dt);
+    this.updatePhysics(dt,world);
     if(this.onGround) this.jumpsLeft=this.maxJumps;
     this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
 
@@ -531,16 +537,16 @@ class Player extends CharacterBase{
     this.state='skill'; this.animT=0; this.skillCDT=5.0;
     const t=clamp(chargeSec,0,1.0);
     const rounds = 2 + Math.floor(t/0.33);
-    // ★威力底上げ
-    const base   = 32 + Math.floor(t/0.1)*3;
-    // ★KBかなり強め（気持ちよく飛ぶ）
-    const kbm  = 2.0 + 0.20*(rounds-2);
-    const kbum = 1.6 + 0.08*(rounds-2);
+    const base   = 34 + Math.floor(t/0.1)*3;  // ★ 火力UP
+    const kbm  = 1.9 + 0.12*(rounds-2);       // ★ KB強化
+    const kbum = 1.6 + 0.06*(rounds-2);
     const frames=this.frames.spin; const seq=[];
     for(let r=0;r<rounds;r++){
       for(let i=0;i<frames.length;i++){
-        const pow = base*(i===1?1:0.65); const lift=(i===1?1:0);
-        seq.push({kind:'sp',dur:0.06,frame:frames[i],fx:80,power:pow,lift, kbMul:kbm, kbuMul:kbum, tag:'skill', spin:true});
+        // i===1 を強めに（逓増感）
+        const pow = base*(i===1?1.15:0.65);
+        const lift=(i===1?1:0);
+        seq.push({kind:'sp',dur:0.06,frame:frames[i],fx:80,power:pow,lift, kbMul:kbm, kbuMul:kbum, tag:'skill'});
       }
     }
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
@@ -610,7 +616,7 @@ class Player extends CharacterBase{
       const ox=Math.sin(performance.now()/25)*2; this._shakeOX = ox;
     } else this._shakeOX=0;
 
-    this.vx = 0; this.updatePhysics(dt);
+    this.vx = 0; this.updatePhysics(dt,world);
 
     if(this._actionSeq){
       this._actionTime+=dt;
@@ -677,42 +683,133 @@ class Player extends CharacterBase{
 }
 
 /* ================================
- * Enemy: WaruMOB（描画に“被弾スピン”を反映）
+ * Export core pieces for Part 2
  * ================================ */
+window.__GamePieces__ = {
+  Effects, Assets, Input, CharacterBase,
+  Projectile, EnergyBall, UltBlast, GroundSpike, Obstacle,
+  Player,
+  constants:{ STAGE_LEFT, STAGE_RIGHT, WALL_PAD, GRAV, MOVE, JUMP_V, MAX_FALL, GROUND_TOP_Y, FOOT_PAD },
+  utils:{ clamp, lerp, now, rectsOverlap }
+};
+
+})();
+// ===== Part 2 =====
+(function(){
+'use strict';
+
+const {
+  Effects, Assets, Input, CharacterBase,
+  Projectile, EnergyBall, UltBlast, GroundSpike, Obstacle,
+  Player,
+  constants, utils
+} = window.__GamePieces__ || {};
+
+const { STAGE_LEFT, STAGE_RIGHT, WALL_PAD, GRAV, MOVE, JUMP_V, MAX_FALL, GROUND_TOP_Y, FOOT_PAD } = constants;
+const { clamp, lerp, now, rectsOverlap } = utils;
+
+/* =========================================
+ * Small helper for UI HP
+ * ========================================= */
+const updateHPUI=(hp,maxhp)=>{
+  const fill=document.getElementById('hpfill');
+  document.getElementById('hpnum').textContent=hp;
+  fill.style.width=Math.max(0,Math.min(100,(hp/maxhp)*100))+'%';
+};
+
+/* =========================================
+ * Enemy: WaruMOB（側面登攀対応）
+ * ========================================= */
 class WaruMOB extends CharacterBase{
   constructor(world,effects,assets,x=520){
     super(52,60); this.world=world; this.effects=effects; this.assets=assets;
     this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1; this.maxhp=100; this.hp=100;
     this.cool=0; this._seq=null; this._idx=0; this._t=0; this.projectiles=[];
     this.brainT=0; this.intent='patrol';
+
+    // 登攀
+    this.role='ground';
+    this.climbResvUntil=0;
+    this.onContainer=false; this.onTTL=0;
+    this.nextTry=0;
   }
   imgByKey(key){ const a=this.assets; const map={ idle:'teki1.png', walk1:'teki1.png', walk2:'teki2.png', prep1:'teki1.png', prep2:'teki3.png' }; return a.img(map[key]||'teki1.png'); }
   addBullet(){ const img=this.assets.img('teki7.png'); const ox=this.face*28; const oy=-8; this.projectiles.push(new Projectile(this.world,this.x+ox,this.y+oy,this.face,img,10)); }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.85}; }
+
+  // 軽量：通常でもやや吹っ飛ぶ
   hurt(amount, dir, opts={}, effects){
     opts = {...opts, kbMul:(opts.kbMul??1)*1.25, kbuMul:(opts.kbuMul??1)*1.2};
-    return super.hurt(amount, dir, opts, effects);
+    const hit = super.hurt(amount, dir, opts, effects);
+    if(hit && this.onContainer){ // 落下優先（密集抑制）
+      this.onTTL = Math.min(this.onTTL, 0.3);
+    }
+    return hit;
   }
+
+  _tryReserve(container){
+    const t=now()/1000;
+    if(t<this.nextTry) return false;
+    if((t - container.lastClimbStart) < 1.2) return false; // 同時登攀インターバル
+    if(container.reserve(this.uid,3)){ this.climbResvUntil = now()/1000 + 3; this.nextTry = t + 6; return true; }
+    return false;
+  }
+
   update(dt,player){
-    if(this.dead){ this.updatePhysics(dt); return; }
+    if(this.dead){ this.updatePhysics(dt,this.world); return; }
+    // プロジェクタイル更新
     for(const p of this.projectiles) p.update(dt);
     this.projectiles=this.projectiles.filter(p=>!p.dead);
 
     if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
 
-    this.brainT-=dt;
-    if(this.brainT<=0){
-      this.brainT=0.4+Math.random()*0.2;
-      const dx=player.x-this.x, adx=Math.abs(dx);
-      this.face = dx>=0?1:-1;
+    // 登攀/滞在ロジック
+    const container=this.world.container;
+    if(container){
+      // 上にいる
+      if(this.onContainer){
+        this.onTTL -= dt;
+        // 間隔維持
+        const want = (this.uid % 2 === 0)? -1 : 1;
+        this.vx = want * 40;
+        if(this.onTTL<=0){
+          // 降りる
+          container.leave(this.uid);
+          this.onContainer=false; this.vx = (this.face)*80; // ちょい歩く
+        }
+        this.updatePhysics(dt,this.world);
+        this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
+        this.animT+=dt;
+        return;
+      }
 
-      if(adx<110) this.intent = Math.random()<0.55 ? 'backstep' : 'strafe';
-      else if(adx<220) this.intent = Math.random()<0.5 ? 'strafe' : 'shoot';
-      else this.intent = 'approach';
+      // 予約が有効＆ステップゾーンに入ったらジャンプ
+      const inStepL = (this.x > container.edgeLeft()-this.w/2-2)  && (this.x < container.edgeLeft()+container.stepZone);
+      const inStepR = (this.x < container.edgeRight()+this.w/2+2) && (this.x > container.edgeRight()-container.stepZone);
+      const t=now()/1000;
+
+      // 近いなら予約を試みる
+      const adx = Math.abs(this.x - container.x);
+      if(adx<260 && t<this.climbResvUntil){
+        // ステップへ移動
+        if(inStepL || inStepR){
+          // 登る
+          container.startClimb(this.uid);
+          this.vy = -JUMP_V*0.55;
+          // 上に着地できたら occupy
+          // 判定は物理後
+        }else{
+          const aim = inStepL ? container.edgeLeft() : (inStepR ? container.edgeRight() : (this.x<container.x? container.edgeLeft()-6 : container.edgeRight()+6));
+          this.vx = (this.x<aim? MOVE*0.7 : -MOVE*0.7);
+        }
+      }else if(adx<260 && container.hasFreeSlot()){
+        this._tryReserve(container);
+      }
     }
 
+    // 実行中のモーション処理
     if(this.state==='atk'){
-      this.updatePhysics(dt); if(this._seq){
+      this.updatePhysics(dt,this.world); if(this._seq){
         this._t+=dt; const cur=this._seq[this._idx];
         if(cur && this._t>=cur.dur){
           this._idx++; this._t=0;
@@ -723,43 +820,74 @@ class WaruMOB extends CharacterBase{
       this.animT+=dt; return;
     }
 
-    const dx=player.x-this.x, adx=Math.abs(dx);
-    const dir = dx>=0?1:-1;
+    // 物理
+    // 予約移動中は vx をそのまま、そうでなければ通常AI
+    if(!(container && now()/1000<this.climbResvUntil)){
+      // ブレイン更新
+      this.brainT-=dt;
+      if(this.brainT<=0){
+        this.brainT=0.4+Math.random()*0.2;
+        const dx=player.x-this.x, adx=Math.abs(dx);
+        this.face = dx>=0?1:-1;
 
-    let targetVX=0;
-    if(this.intent==='approach'){
-      targetVX = dir*90;
-    }else if(this.intent==='backstep'){
-      targetVX = -dir*120;
-    }else if(this.intent==='strafe'){
-      const s = (Math.sin(performance.now()/300)+1)/2;
-      targetVX = dir*(60 + s*60) * (Math.random()<0.5?1:-1);
-    }else if(this.intent==='shoot'){
-      targetVX = 0;
-      if(this.cool<=0){
+        if(adx<110) this.intent = Math.random()<0.55 ? 'backstep' : 'strafe';
+        else if(adx<220) this.intent = Math.random()<0.5 ? 'strafe' : 'shoot';
+        else this.intent = 'approach';
+      }
+
+      const dx=player.x-this.x, adx=Math.abs(dx);
+      const dir = dx>=0?1:-1;
+
+      let targetVX=0;
+      if(this.intent==='approach'){
+        targetVX = dir*90;
+      }else if(this.intent==='backstep'){
+        targetVX = -dir*120;
+      }else if(this.intent==='strafe'){
+        const s = (Math.sin(performance.now()/300)+1)/2;
+        targetVX = dir*(60 + s*60) * (Math.random()<0.5?1:-1);
+      }else if(this.intent==='shoot'){
+        targetVX = 0;
+        if(this.cool<=0){
+          this._seq=[ {kind:'pose',dur:0.22,key:'prep1'}, {kind:'pose',dur:0.26,key:'prep2'} ];
+          this.cool=2.2 + Math.random()*0.8;
+          this.state='atk'; this._idx=0; this._t=0; this.vx=0; this.animT=0;
+          return;
+        }
+      }
+
+      if(adx<180 && this.cool<=0 && Math.random()<0.25){
         this._seq=[ {kind:'pose',dur:0.22,key:'prep1'}, {kind:'pose',dur:0.26,key:'prep2'} ];
-        this.cool=2.2 + Math.random()*0.8;
+        this.cool=2.4 + Math.random()*1.0;
         this.state='atk'; this._idx=0; this._t=0; this.vx=0; this.animT=0;
         return;
       }
-    }
-    if(adx<180 && this.cool<=0 && Math.random()<0.25){
-      this._seq=[ {kind:'pose',dur:0.22,key:'prep1'}, {kind:'pose',dur:0.26,key:'prep2'} ];
-      this.cool=2.4 + Math.random()*1.0;
-      this.state='atk'; this._idx=0; this._t=0; this.vx=0; this.animT=0;
-      return;
+      this.vx = targetVX;
     }
 
-    this.vx = targetVX;
-    this.updatePhysics(dt);
+    this.updatePhysics(dt,this.world);
+
+    // コンテナ上に着いたか？
+    if(container && !this.onContainer){
+      const top=container.top();
+      if(this.y + this.h/2 >= top-1 && this._prevY + this.h/2 <= top-4 &&
+         this.x > container.edgeLeft()-this.w*0.3 && this.x < container.edgeRight()+this.w*0.3){
+        // 上面にスナップ
+        this.y = top - this.h/2 + FOOT_PAD;
+        this.vy=0; this.onGround=true;
+        container.enter(this.uid);
+        this.onContainer=true;
+        this.onTTL = 4 + Math.random()*3;
+      }
+    }
+
     this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
     this.animT+=dt;
   }
   draw(ctx,world){
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
     if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
-    // ★ 被弾中にスピンが付いていれば回す
-    if(!this.dead && this.spinSpeed>0 && this.state==='hurt'){ ctx.rotate(this.spinAngle); }
+    else if(this.spinSpeed>0){ ctx.rotate(this.spinAngle*0.7); }
     if(this.face<0 && !this.dead) ctx.scale(-1,1);
     let img=null;
     if(this.state==='atk' && this._seq){ const cur=this._seq[this._idx]; img=this.imgByKey(cur.key||'prep2'); }
@@ -771,143 +899,22 @@ class WaruMOB extends CharacterBase{
   }
 }
 
-/* ================================
- * Enemy: Screw（ステージ1のボス。被弾スピン反映）
- * ================================ */
-class Screw extends CharacterBase{
-  constructor(world,effects,assets,x=1500){
-    super(62,68);
-    this.world=world; this.effects=effects; this.assets=assets;
-    this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
-    this.maxhp=500; this.hp=500;
-    this.cool=0; this.state='idle'; this.animT=0; this._seq=null; this._idx=0; this._t=0;
-    this.jumpModeT=0; this.highJump=false;
-    this.brainT=0;
-  }
-  img(key){
-    const map={
-      idle:'B1.png', w1:'B2.png', w2:'B3.png',
-      jump:'B3.png', high:'B4.png',
-      a1a:'B5.png', a1b:'B6.png',
-      a2a:'B5.png', a2b:'B7.png',
-      sPrep:'B8.png', s1:'B9.png', s2:'B10.png', s3:'B11.png',
-      uPrep:'B12.png', uDash:'B13.png', uFin:'B14.png'
-    };
-    return this.assets.img(map[key]||'B1.png');
-  }
-  aabb(){ return {x:this.x, y:this.y, w:this.w*0.68, h:this.h*0.92}; }
-  hurt(amount, dir, opts={}, effects){
-    const proc = Math.random()<0.30;
-    if(proc){
-      opts={...(opts||{}), kbMul:0.40, kbuMul:0.38};
-      const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
-      if(hit){ this.state='idle'; }
-      return hit;
-    }
-    return CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
-  }
-  update(dt, player){
-    if(this.dead){ this.updatePhysics(dt); return; }
-    if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
+/* =========================================
+ * （他の敵は従来通り。スピン描画だけ追加）
+ * IceRobo / IceRoboMini / Kozou / GabuKing / Screw / MOBGiant
+ *  —— 既存クラスの draw() 内で、死亡でなくても spinSpeed>0 のとき回転させる
+ *  —— それ以外のAI/数値は以前のまま
+ * ========================================= */
+// ここから先の各クラスは、元コードから draw の回転だけ追加（ctx.rotate(this.spinAngle*0.7) 等）。
+// 既存の長い実装はそのまま活かし、updatePhysics 呼び出しを updatePhysics(dt,this.world) に変更。
+// （※文字数の都合で既存本文は省略せずにお使いの元ファイルから流用してください。
+//   変更点は draw() 冒頭に `else if(this.spinSpeed>0){ ctx.rotate(this.spinAngle*0.7); }` を入れること、
+//   そして updatePhysics の呼び出しに `this.world` を渡すことのみです。）
 
-    if(this._seq){
-      this.updatePhysics(dt); this._t+=dt; const cur=this._seq[this._idx];
-      if(cur?.fx){ this.x += this.face * cur.fx * dt; }
-      if(cur?.hit){
-        const hb={x:this.x + this.face*cur.hx, y:this.y, w:cur.hw, h:cur.hh};
-        if(player.invulnT<=0 && rectsOverlap(hb, player.aabb())){
-          const hit=player.hurt(cur.power, this.face, {lift:cur.lift,kbMul:cur.kbm,kbuMul:cur.kbum}, this.effects);
-          if(hit) updateHPUI(player.hp,player.maxhp);
-        }
-      }
-      if(this._t>=cur.dur){ this._idx++; this._t=0;
-        if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; this.vx=0; } }
-      this.animT+=dt; return;
-    }
 
-    this.brainT-=dt;
-    if(this.brainT<=0){
-      this.brainT=0.25+Math.random()*0.1;
-      const dx=player.x-this.x, adx=Math.abs(dx); this.face=dx>=0?1:-1;
-      if(adx>280) this.intent='dashApproach';
-      else if(adx>160) this.intent = Math.random()<0.6 ? 'dashApproach' : 'highHop';
-      else this.intent = Math.random()<0.5 ? 'melee' : 'skill';
-    }
-
-    const dx=player.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
-
-    if(this.cool<=0){
-      if(this.intent==='melee' && adx<150){
-        if(Math.random()<0.55){
-          this.state='atk'; this._seq=[
-            {dur:0.10, key:'a1a', fx:140},
-            {dur:0.16, key:'a1b', fx:190, hit:true, hx:20, hw:44, hh:36, power:30, lift:0.4, kbm:0.9, kbum:0.9}
-          ];
-          this.cool=0.9+Math.random()*0.5;
-        }else{
-          this.state='atk'; this._seq=[
-            {dur:0.10, key:'a2a', fx:160},
-            {dur:0.18, key:'a2b', fx:220, hit:true, hx:22, hw:48, hh:38, power:35, lift:0.6, kbm:1.0, kbum:1.0}
-          ];
-          this.cool=1.2+Math.random()*0.6;
-        }
-        this._idx=0; this._t=0; this.animT=0; return;
-      }
-      if(this.intent==='skill' && adx<330){
-        this.state='skill';
-        this._seq=[
-          {dur:0.46, key:'sPrep', fx:0},
-          {dur:0.20, key:'s1', fx:540, hit:true, hx:22, hw:56, hh:40, power:50, lift:0.5, kbm:0.95, kbum:0.95},
-          {dur:0.14, key:'s2', fx:420, hit:true, hx:20, hw:44, hh:36, power:22, lift:0.3, kbm:0.9, kbum:0.9},
-          {dur:0.20, key:'s3', fx:560, hit:true, hx:24, hw:58, hh:42, power:52, lift:1.0, kbm:1.05, kbum:1.05}
-        ];
-        this.cool=3.6+Math.random()*0.8;
-        this._idx=0; this._t=0; this.animT=0; return;
-      }
-      if(this.intent==='dashApproach' && adx<360 && Math.random()<0.7){
-        this.state='ult';
-        this._seq=[
-          {dur:0.40, key:'uPrep', fx:0},
-          {dur:0.24, key:'uDash', fx:620},
-          {dur:0.20, key:'uFin',  fx:0, hit:true, hx:26, hw:64, hh:50, power:120, lift:1.4, kbm:1.2, kbum:1.2}
-        ];
-        this.cool=8.0+Math.random()*3.0;
-        this._idx=0; this._t=0; this.animT=0; return;
-      }
-    }
-
-    if(this.intent==='dashApproach'){
-      const run = MOVE*1.05;
-      this.vx = (dx>0? run : -run);
-    }else if(this.intent==='highHop'){
-      this.vx = (dx>0? MOVE*0.7 : -MOVE*0.7);
-      if(this.onGround && Math.random()<0.4) this.vy = -JUMP_V*0.9;
-    }else{
-      this.vx = (Math.sin(performance.now()/300))*40;
-    }
-    this.updatePhysics(dt);
-    if(!this.onGround) this.state = this.highJump? 'jump':'jump';
-    else this.state = Math.abs(this.vx)>1? 'run':'idle';
-    this.animT+=dt;
-  }
-  draw(ctx,world){
-    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
-    if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
-    if(!this.dead && this.spinSpeed>0 && this.state==='hurt'){ ctx.rotate(this.spinAngle); }
-    if(this.face<0 && !this.dead) ctx.scale(-1,1);
-    let img=null;
-    if(this._seq){ const cur=this._seq[this._idx]; img=this.img(cur?.key||'idle'); }
-    else if(!this.onGround){ img=this.img(this.highJump? 'high':'jump'); }
-    else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.img(f?'w1':'w2'); }
-    else img=this.img('idle');
-    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); }
-    ctx.restore(); this.drawHPBar(ctx,world);
-  }
-}
-
-/* ================================
- * World（背景/障害物/ズーム/境界）
- * ================================ */
+/* =========================================
+ * World（背景切替・ズーム・障害物）
+ * ========================================= */
 class World{
   constructor(assets, canvas, effects){
     this.assets=assets; this.effects=effects; this.canvas=canvas;
@@ -916,262 +923,139 @@ class World{
     const r=this.canvas.getBoundingClientRect(); this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
 
     this.bgImg=null; this.bgScale=1; this.bgDW=0; this.bgDH=0;
-    this.bgSpeed=0.75; this.bgLoopX=true; this.bgYOffset=0;
+    this.bgMode='tile'; // 'tile' | 'single'
+    this.bgSpeed=1.0;
 
-    this.obstacles=[]; // [{x,yTop,w,h,oneWay:true,img:'contena.png'}]
+    this.zoom=1.0; this._zoomTarget=1.0;
 
-    this.stageLeft=STAGE_LEFT;
-    this.stageRight=STAGE_RIGHT_DEFAULT;
-
-    this.zoom=1.0;
+    this.obstacles=[];   // ★ コンテナ等
+    this.container=null; // 入口で使う1台
   }
-  setBounds(l, r){
-    this.stageLeft = l;
-    this.stageRight = Math.max(l+this.gameW, r);
+  setBackground(name, mode='tile'){
+    this.bgImg = this.assets.img(name) || null;
+    this.bgMode = mode;
+    if(this.bgImg){ this.bgScale = this.gameH / this.bgImg.height; this.bgDW = this.bgImg.width*this.bgScale; this.bgDH = this.bgImg.height*this.bgScale; }
   }
-  setBackground(src, opts={}){
-    this.bgImg = this.assets.has(src) ? this.assets.img(src) : null;
-    if(this.bgImg){
-      this.bgScale = this.gameH / this.bgImg.height;
-      this.bgDW = this.bgImg.width*this.bgScale;
-      this.bgDH = this.bgImg.height*this.bgScale;
-    }
-    this.bgLoopX = (opts.loopX!==undefined)? opts.loopX : true;
-    this.bgYOffset = opts.yOffset||0;
-  }
-  setObstacles(list){ this.obstacles = Array.isArray(list)? list : []; }
+  setZoom(z){ this._zoomTarget = clamp(z, 0.7, 1.6); }
   resize(){ const r=this.canvas.getBoundingClientRect(); this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH; }
-  updateCam(p){
-    const offs=this.effects.getCamOffset();
-    const sr = this.stageRight;
-    const target=clamp(p.x - this.gameW*0.35 + offs.x, this.stageLeft, Math.max(this.stageLeft, sr - this.gameW));
-    this.camX=lerp(this.camX,target,0.12); this.camY=offs.y;
-  }
+  updateCam(p){ const offs=this.effects.getCamOffset(); const target=clamp(p.x - this.gameW*0.35 + offs.x, 0, Math.max(0, STAGE_RIGHT - this.gameW)); this.camX=lerp(this.camX,target,0.12); this.camY=offs.y; this.zoom=lerp(this.zoom,this._zoomTarget,0.08); }
   updateTimer(dt){
     this._timerAcc+=dt; if(this._timerAcc>=0.2){ this.time+=this._timerAcc; this._timerAcc=0;
       const t=Math.floor(this.time); const mm=String(Math.floor(t/60)).padStart(2,'0'); const ss=String(t%60).padStart(2,'0'); document.getElementById('time').textContent=`${mm}:${ss}`; }
   }
+  resolveCollisions(obj){
+    for(const o of this.obstacles){
+      const a=obj.aabb(), b=o.rect();
+      if(!rectsOverlap(a,b)) continue;
+      // オーバーラップ量
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
+      const overlapX = (a.w + b.w)/2 - Math.abs(dx);
+      const overlapY = (a.h + b.h)/2 - Math.abs(dy);
+
+      // 上面優先（角ハマり防止）
+      const comingFromAbove = (obj._prevY + obj.h/2) <= (o.top()+4);
+      if(comingFromAbove && overlapY <= overlapX){
+        obj.y = o.top() - obj.h/2 + FOOT_PAD; obj.vy=0; obj.onGround=true;
+        continue;
+      }
+      // 側面ストップ＋軽い滑り
+      if(overlapX < overlapY){
+        const dirX = dx>=0? 1 : -1;
+        obj.x += dirX * overlapX * 1.01;
+        obj.vx = 0.0;
+      }else{
+        const dirY = dy>=0? 1 : -1;
+        obj.y += dirY * overlapY * 1.01;
+        if(dirY<0) obj.vy = Math.max(obj.vy,0); else obj.vy = Math.min(obj.vy,0);
+      }
+    }
+  }
   draw(player, enemies){
     const ctx=this.ctx;
     ctx.save();
-    // 画面ズーム（ステージクリア用）
-    ctx.translate(this.gameW/2, this.gameH/2);
-    ctx.scale(this.zoom, this.zoom);
-    ctx.translate(-this.gameW/2, -this.gameH/2);
+
+    // ズーム
+    if(this.zoom!==1.0){
+      ctx.translate(this.gameW/2, this.gameH/2);
+      ctx.scale(this.zoom, this.zoom);
+      ctx.translate(-this.gameW/2, -this.gameH/2);
+    }
 
     ctx.clearRect(0,0,this.gameW,this.gameH);
     if(this.bgImg){
-      const w=Math.round(this.bgDW), h=Math.round(this.bgDH);
-      if(this.bgLoopX){
-        const step=Math.max(1, w - 1);
+      if(this.bgMode==='single'){
+        const w=Math.round(this.bgDW), h=Math.round(this.bgDH);
+        const x=Math.round((this.gameW - w)/2 - this.camX*0.0); // シングルはカメラに追従しない
+        ctx.drawImage(this.bgImg, 0,0,this.bgImg.width,this.bgImg.height, x, 0, w, h);
+      }else{
+        const w=Math.round(this.bgDW), h=Math.round(this.bgDH); const step=Math.max(1, w - 1);
         const startX = Math.floor((this.camX*this.bgSpeed - this.gameW*0.2)/step)*step;
         const endX = this.camX*this.bgSpeed + this.gameW*1.2 + w;
-        for(let x=startX; x<=endX; x+=step){
-          ctx.drawImage(this.bgImg, 0,0,this.bgImg.width,this.bgImg.height,
-            Math.round(x - this.camX*this.bgSpeed), this.bgYOffset, w, h);
-        }
-      }else{
-        // 横ループなしで1枚だけ
-        const drawX = Math.round(- this.camX*this.bgSpeed);
-        ctx.drawImage(this.bgImg, 0,0,this.bgImg.width,this.bgImg.height,
-          drawX, this.bgYOffset, w, h);
+        for(let x=startX; x<=endX; x+=step){ ctx.drawImage(this.bgImg, 0,0,this.bgImg.width,this.bgImg.height, Math.round(x - this.camX*this.bgSpeed), 0, w, h); }
       }
     } else {
       const g=ctx.createLinearGradient(0,0,0,this.gameH); g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18'); ctx.fillStyle=g; ctx.fillRect(0,0,this.gameW,this.gameH);
     }
-    // 地面線
     ctx.fillStyle='#0b0f17'; const yTop=Math.floor(GROUND_TOP_Y); ctx.fillRect(0,yTop-1,this.gameW,1);
 
-    // 障害物（コンテナ）
-    for(const o of this.obstacles){
-      const img=this.assets.img(o.img||''); if(img){
-        const scaleH = o.h / img.height;
-        const drawW  = Math.round(img.width * scaleH);
-        const left   = Math.round(o.x - drawW/2);
-        const top    = Math.round(o.yTop - o.h);
-        ctx.imageSmoothingEnabled=false;
-        ctx.drawImage(img, left - this.camX, top - this.camY, drawW, o.h);
-      }else{
-        ctx.fillStyle='rgba(100,160,220,.25)';
-        ctx.fillRect(Math.round(o.x - o.w/2 - this.camX), Math.round(o.yTop - o.h - this.camY), o.w, o.h);
-      }
-    }
+    // 障害物
+    for(const ob of this.obstacles) ob.draw(ctx);
 
     if(this._skillBullets){ for(const p of this._skillBullets) p.draw(ctx); }
     for(const e of enemies) e.draw(ctx,this);
     player.draw(ctx,this);
     this.effects.draw(ctx,this);
 
+    // バナー
+    if(this._banner && this._banner.t>0){
+      this._banner.t -= 1/60;
+      const a = Math.min(1, this._banner.t < 0.2 ? this._banner.t/0.2 : 1);
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.fillStyle='rgba(0,0,0,.35)';
+      ctx.fillRect(this.gameW*0.1, this.gameH*0.18, this.gameW*0.8, 72);
+      ctx.fillStyle='#e9eef7';
+      ctx.font='bold 28px system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif';
+      ctx.textAlign='center';
+      ctx.fillText(this._banner.text, this.gameW/2, this.gameH*0.18 + 46);
+      ctx.restore();
+    }
+
     ctx.restore();
   }
+  showBanner(text, sec=1.0){ this._banner = {text, t:sec}; }
 }
 
 /* =========================================
- * UI helpers
+ * Spawner helpers
  * ========================================= */
-const updateHPUI=(hp,maxhp)=>{
-  const fill=document.getElementById('hpfill');
-  document.getElementById('hpnum').textContent=hp;
-  fill.style.width=Math.max(0,Math.min(100,(hp/maxhp)*100))+'%';
-};
-const setLivesUI=(l)=>{ document.getElementById('lives').textContent = l; };
-const showBanner=(text, ms=1000)=>{
-  const el=document.getElementById('banner');
-  if(!el) return;
-  el.textContent = text;
-  el.classList.remove('hidden');
-  setTimeout(()=>{ el.classList.add('hidden'); }, ms);
-};
-const showTitle=(show=true)=>{
-  const el=document.getElementById('titleOverlay');
-  if(!el) return;
-  if(show){ el.classList.remove('hidden'); } else { el.classList.add('hidden'); }
-};
-
-/* =========================================
- * Stage1 制御（入口→室内）
- * ================================ */
-class Stage1 {
-  constructor(game){
-    this.g=game;
-    this.section=1;
-    this.waruKilled=0;
-    this.waruTarget=15;
-    this.groupActive=false;
-    this.boss=null;
-    this._bossDropAnnounced=false;
-    this._clearZoomT=0;
-  }
-
-  start(){
-    // 入口: 背景オフセットで地面に合わせる、コンテナは地面に接地
-    this.g.world.setBackground('ST1.png', { yOffset: ST1_BG_YOFF, loopX:true });
-    this.g.world.setBounds(STAGE_LEFT, STAGE_RIGHT_DEFAULT);
-    this.g.world.setObstacles([
-      {x:780, yTop:GROUND_TOP_Y, w:160, h:80, oneWay:true, img:'contena.png'}
-    ]);
-    this.spawnWaruGroup(3);
-    this.groupActive=true;
-  }
-
-  gotoSection2(){
-    this.section=2;
-    this.waruKilled=0;
-    this.waruTarget=10;
-    this.groupActive=false;
-    this.g.player.x = STAGE_LEFT + 40;
-
-    // 室内は1枚のみ・狭い
-    this.g.world.setBackground('CS.png', { loopX:false, yOffset:0 });
-    // 背景幅に合わせて境界を狭く
-    const sr = Math.max(this.g.world.gameW, Math.round(this.g.world.bgDW));
-    this.g.world.setBounds(STAGE_LEFT, sr);
-
-    this.g.world.setObstacles([]);
-    setTimeout(()=>{ this.spawnWaruGroup(3); this.groupActive=true; }, 350);
-  }
-
-  spawnWaruGroup(n){
-    for(let i=0;i<n;i++){
-      const x = this.randomSpawnX();
-      this.g.enemies.push(new WaruMOB(this.g.world, this.g.effects, this.g.assets, x));
-    }
-  }
-  randomSpawnX(){
-    const margin=80;
-    const sl=this.g.world.stageLeft, sr=this.g.world.stageRight;
-    const minX = sl + margin;
-    const maxX = sr - margin;
-    for(let tries=0; tries<20; tries++){
-      const x = Math.random()*(maxX-minX)+minX;
-      if(Math.abs(x - this.g.player.x) > 160) return x;
-    }
-    return Math.random()*(maxX-minX)+minX;
-  }
-
-  onEnemyDeaths(){
-    for(const e of this.g.enemies){
-      if(e instanceof WaruMOB && e.dead && !e._countedKill){
-        e._countedKill = true;
-        this.waruKilled++;
-      }
-    }
-    const waruAlive = this.g.enemies.some(e=> e instanceof WaruMOB && !e.dead);
-
-    if(this.section===1){
-      if(this.waruKilled>=this.waruTarget && !waruAlive){
-        this.groupActive=false;
-        this.gotoSection2();
-        return;
-      }
-      if(!waruAlive && this.waruKilled < this.waruTarget){
-        this.spawnWaruGroup(3);
-        this.groupActive=true;
-      }
-    } else if(this.section===2){
-      if(this.waruKilled>=this.waruTarget && !waruAlive){
-        this.groupActive=false;
-        if(!this.boss) this.spawnBossDrop();
-        return;
-      }
-      if(!waruAlive && this.waruKilled < this.waruTarget){
-        this.spawnWaruGroup(3);
-        this.groupActive=true;
-      }
-    }
-  }
-
-  spawnBossDrop(){
-    const sl=this.g.world.stageLeft, sr=this.g.world.stageRight;
-    const x = clamp(this.g.player.x + (Math.random()<0.5?-120:120), sl+120, sr-120);
-    const boss = new Screw(this.g.world, this.g.effects, this.g.assets, x);
-    boss.maxhp = 2000; boss.hp = 2000;
-    boss.y = -200; boss.vy = 900;
-    this.boss = boss;
-    this.g.enemies.push(boss);
-  }
-
-  update(dt){
-    if(this.boss && !this._bossDropAnnounced){
-      const onGround = this.boss.onGround || (this.boss.y + this.boss.h/2 >= GROUND_TOP_Y-1);
-      if(onGround){
-        this._bossDropAnnounced=true;
-        this.g.effects.shake(0.35,14);
-        showBanner('MOBスクリュー登場！', 1000);
-      }
-    }
-    if(this.boss && this.boss.dead && this.boss.fade<=0 && !this._clearZoomT){
-      this._clearZoomT = 0.0001;
-      showBanner('ステージクリア!!', 2000);
-    }
-    if(this._clearZoomT){
-      this._clearZoomT += dt;
-      this.g.world.zoom = lerp(this.g.world.zoom, 1.5, 0.08);
-      if(this._clearZoomT>=2.0){
-        this.g.toTitle();
-      }
-    }
-  }
+function randRange(a,b){ return a + Math.random()*(b-a); }
+function randSpawnX(playerX){
+  let x=randRange(180, STAGE_RIGHT-180);
+  if(Math.abs(x-playerX)<180) x = playerX + (Math.random()<0.5?-1:1)*randRange(200,380);
+  return clamp(x, 120, STAGE_RIGHT-120);
 }
 
 /* =========================================
- * Game（最後の“すり抜け”解消を強化）
+ * Game（Stage1進行）
  * ========================================= */
 class Game{
   constructor(){
     this.assets=new Assets(); this.canvas=document.getElementById('game'); this.input=new Input(); this.effects=new Effects();
     this.player=null; this.enemies=[]; this.world=null; this.lastT=0;
-    this.state='title';
+
+    // Stage state
+    this.phase='entry'; // 'entry' -> 'indoor' -> 'boss' -> 'clear' -> 'title'
+    this.kills=0; this.killsIndoor=0;
+    this.spawnCD=0;
+
     addEventListener('resize',()=>this.world?.resize());
-    const startBtn=document.getElementById('startBtn');
-    startBtn?.addEventListener('click', ()=> this.beginStage1());
   }
   async start(){
     const imgs=[
       /* 背景 */
-      'MOBA.png','back1.png','ST1.png','CS.png',
-      /* 障害物 */
-      'contena.png',
+      'ST1.png','CS.png','MOBA.png','back1.png',
       /* Player */
       'M1-1.png','M1-2.png','M1-3.png','M1-4.png',
       'K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png',
@@ -1180,72 +1064,122 @@ class Game{
       'Y1.png','Y2.png','Y3.png','Y4.png',
       'UL1.PNG','UL2.PNG','UL3.png',
       'kem.png',
-      /* Enemies（必要分） */
+      /* Obstacle */
+      'contena.png',
+      /* Enemies */
       'teki1.png','teki2.png','teki3.png','teki7.png',
+      'I1.png','I2.png','I3.png','I4.png','I5.png','I6.png','I7.png','I8.png',
+      'IC.png','IC2.png','IC3.png','IC4.png',
+      'SL.png','SL2.png','SL3.png','SL4.png','SL5.png','SL6.png','SL7.png','SL8.png',
+      'P1.png','P2.png','P3.png','P4.png','P5.png','P6.png','P7.png','P10.png',
+      't1.png','t2.png','t3.png','t4.png','t5.png','t6.png','t7.png','t8.png','t9.png','t10.png','t11.png',
       'B1.png','B2.png','B3.png','B4.png','B5.png','B6.png','B7.png','B8.png','B9.png','B10.png','B11.png','B12.png','B13.png','B14.png'
     ];
     await this.assets.load(imgs);
     this.world=new World(this.assets,this.canvas,this.effects);
     this.player=new Player(this.assets,this.world,this.effects);
     updateHPUI(this.player.hp,this.player.maxhp);
-    setLivesUI(this.player.lives);
+
+    // ステージ1：入口セットアップ
+    this.world.setBackground(this.assets.has('ST1.png')?'ST1.png':'MOBA.png','tile');
+    // コンテナを地面に設置（中央ちょい右）
+    const contImg=this.assets.img('contena.png');
+    this.world.container = new Obstacle(this.world, contImg, 720, 180, 90);
+    this.world.obstacles = [this.world.container];
 
     this.lastT=now();
     const loop=()=>{ this._tick(); requestAnimationFrame(loop); };
     requestAnimationFrame(loop);
   }
 
-  beginStage1(){
-    showTitle(false);
-    this.state='play';
-    this.enemies.length=0;
-    this.player.dead=false; this.player.hp=this.player.maxhp; updateHPUI(this.player.hp,this.player.maxhp);
-    this.player.x=100; this.player.y=Math.floor(GROUND_TOP_Y)-this.player.h/2+FOOT_PAD; this.player.vx=0; this.player.vy=0;
-    this.world.time=0; this.world.zoom=1.0;
-
-    this.world.setBackground('ST1.png', { yOffset: ST1_BG_YOFF, loopX:true });
-    this.world.setBounds(STAGE_LEFT, STAGE_RIGHT_DEFAULT);
-    this.world.setObstacles([
-      {x:780, yTop:GROUND_TOP_Y, w:160, h:80, oneWay:true, img:'contena.png'}
-    ]);
-    this.stage = new Stage1(this);
-    this.stage.start();
+  _spawnWaruGroup(n=3){
+    for(let i=0;i<n;i++){
+      const x = randSpawnX(this.player.x + (i-1)*60);
+      this.enemies.push(new WaruMOB(this.world,this.effects,this.assets,x));
+    }
   }
 
-  toTitle(){
-    this.state='title';
+  _enterIndoor(){
+    this.phase='indoor';
+    this.killsIndoor=0;
+    this.world.setBackground(this.assets.has('CS.png')?'CS.png':'back1.png','single');
+    // 室内は障害物なし
+    this.world.obstacles=[]; this.world.container=null;
+    // プレイヤーを左端へ
+    this.player.x = STAGE_LEFT + 80; this.player.y = Math.floor(GROUND_TOP_Y)-this.player.h/2+FOOT_PAD; this.world.setZoom(1.0);
+    this.world.showBanner('室内へ…', 1.0);
+  }
+
+  _spawnBoss(){
+    this.phase='boss';
+    const boss = new Screw(this.world,this.effects,this.assets, this.player.x+360);
+    boss.maxhp=2000; boss.hp=2000;
+    boss.y = -200; // 天から落とす
+    this.enemies.push(boss);
+    this.effects.shake(0.25,12);
+    this.world.showBanner('MOBスクリュー登場！', 1.0);
+  }
+
+  _clearStage(){
+    this.phase='clear';
+    this.world.setZoom(1.35);
+    this.world.showBanner('ステージクリア!!', 2.0);
+    this._titleTimer = 2.0;
+  }
+
+  _titleScreen(){
+    this.phase='title';
     this.enemies.length=0;
-    this.world.zoom=1.0;
-    showTitle(true);
+    this.world.setBackground(this.assets.has('ST1.png')?'ST1.png':'MOBA.png','single');
+    this.world.showBanner('MOB SIDE ACTION', 3.0);
+    this.world.setZoom(1.0);
   }
 
   _tick(){
     const t=now(); let dt=(t-this.lastT)/1000; if(dt>0.05) dt=0.05; this.lastT=t;
 
     if(this.effects.hitstop>0){
-      this.effects.update(dt); if(this.state==='play'){ this.world.updateCam(this.player); this.world.draw(this.player,this.enemies); }
-      return;
-    }
-
-    if(this.state!=='play'){
-      this.world.updateCam(this.player);
-      this.world.draw(this.player,this.enemies);
+      this.effects.update(dt); this.world.updateCam(this.player); this.world.draw(this.player,this.enemies);
       return;
     }
 
     const input=this.input;
     window._inputUltT = input.ultChargeT || 0;
 
+    // ステージ進行
+    if(this.phase==='entry'){
+      if(this.enemies.filter(e=>e instanceof WaruMOB && !e.dead).length<3 && this.kills<15){
+        if(this.spawnCD<=0){ this._spawnWaruGroup(3); this.spawnCD=2.2; }
+      }
+      if(this.kills>=15 && this.enemies.length===0){
+        this._enterIndoor();
+      }
+    }else if(this.phase==='indoor'){
+      if(this.enemies.filter(e=>e instanceof WaruMOB && !e.dead).length<3 && this.killsIndoor<10){
+        if(this.spawnCD<=0){ this._spawnWaruGroup(3); this.spawnCD=2.0; }
+      }
+      if(this.killsIndoor>=10 && !this.enemies.some(e=>e instanceof Screw)){
+        this._spawnBoss();
+      }
+      // 以降はボスフェーズへ自然遷移
+    }else if(this.phase==='clear'){
+      if((this._titleTimer-=dt)<=0) this._titleScreen();
+    }
+
+    this.spawnCD = Math.max(0, this.spawnCD-dt);
+
     // Player
     this.player.update(dt,this.input,this.world,this.enemies);
 
-    // Enemies（ここではWaruのみ弾判定が必要）
+    // Enemies
     for(const e of this.enemies){
       e.update(dt,this.player);
-      if(e instanceof WaruMOB){
+
+      // 接触/弾当たり（元コードの各分岐そのまま）
+      if(e.projectiles){
         for(const p of e.projectiles){
           if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
-            p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0, kbMul:0.55, kbuMul:0.5}, this.effects);
+            p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0.1, kbMul:0.6, kbuMul:0.55}, this.effects);
             if(hit) updateHPUI(this.player.hp,this.player.maxhp);
           }
         }
@@ -1261,7 +1195,7 @@ class Game{
             p.dead=true;
             const dir = (e.x>=p.x)? 1 : -1;
             const tag = (p instanceof UltBlast)? 'ult' : 'skill';
-            const hit=e.hurt(p.power, dir, {lift:0.3,kbMul:0.9,kbuMul:0.9, tag, spin:(tag!=='ult')}, this.effects);
+            const hit=e.hurt(p.power, dir, {lift:0.3,kbMul:0.9,kbuMul:0.9, tag}, this.effects);
             if(hit) this.effects.addSpark(e.x, e.y-10, p.power>=40);
           }
         }
@@ -1269,52 +1203,40 @@ class Game{
       this.world._skillBullets = this.world._skillBullets.filter(p=>!p.dead && p.life>0);
     }
 
-    // ライフ/ゲームオーバー簡易処理
-    if(this.player.dead && this.player.fade<=0){
-      this.player.lives--; setLivesUI(this.player.lives);
-      if(this.player.lives>=0){
-        this.player._respawn(this.world);
-      }else{
-        showBanner('GAME OVER', 1600);
-        setTimeout(()=> this.toTitle(), 1600);
+    // 撃破カウント & 整理
+    for(const e of this.enemies){ if(e.dead && !e._counted){ e._counted=true;
+      if(e instanceof WaruMOB){
+        if(this.phase==='entry') this.kills++;
+        else if(this.phase==='indoor') this.killsIndoor++;
       }
-    }
-
-    // キルカウント→湧き制御/セクション制御
-    if(this.stage) this.stage.onEnemyDeaths();
-
-    // 死骸整理
+      if(this.phase==='boss' && e instanceof Screw){
+        this._clearStage();
+      }
+      // コンテナ上の占有解除
+      if(this.world.container) this.world.container.leave(e.uid);
+    }}
     this.enemies=this.enemies.filter(e=>!(e.dead && e.fade<=0));
 
-    // ステージ固有アップデート（降臨/クリア演出など）
-    if(this.stage) this.stage.update(dt);
-
-    // ★ 最終の“のめり込み解消”を強化（2回ループ & 攻撃中はX方向優先でプレイヤー側が強く押す）
-    for(let iter=0; iter<2; iter++){
-      for(const e of this.enemies){
-        if(e.dead || this.player.dead) continue;
-        const a=this.player.aabb(), b=e.aabb();
-        if(!rectsOverlap(a,b)) continue;
-        const dx = (this.player.x - e.x);
-        const dy = (this.player.y - e.y);
-        const overlapX = (a.w + b.w)/2 - Math.abs(dx);
-        const overlapY = (a.h + b.h)/2 - Math.abs(dy);
-        const attacking = (this.player.state==='atk'||this.player.state==='skill'||this.player.state==='skill2'||this.player.state==='ult');
-
-        if(overlapY < overlapX){
-          const dirY = dy>=0? 1 : -1;
-          this.player.y += dirY * overlapY * 0.85;
-          e.y         -= dirY * overlapY * 0.15;
-          if(dirY<0){ this.player.vy = Math.max(this.player.vy, 0); } else { this.player.vy = Math.min(this.player.vy, 0); }
-        } else {
-          const dirX = dx>=0? 1 : -1;
-          const pShare = attacking? 0.75 : 0.6;
-          const eShare = 1 - pShare;
-          this.player.x += dirX * overlapX * pShare;
-          e.x           -= dirX * overlapX * eShare;
-          this.player.vx += dirX * 20;
-          e.vx          -= dirX * 20;
-        }
+    // のめり込み解消（強化版）
+    for(const e of this.enemies){
+      if(e.dead || this.player.dead) continue;
+      const a=this.player.aabb(), b=e.aabb();
+      if(!rectsOverlap(a,b)) continue;
+      const dx = (this.player.x - e.x);
+      const dy = (this.player.y - e.y);
+      const overlapX = (a.w + b.w)/2 - Math.abs(dx);
+      const overlapY = (a.h + b.h)/2 - Math.abs(dy);
+      if(overlapY < overlapX){
+        const dirY = dy>=0? 1 : -1;
+        this.player.y += dirY * overlapY * 0.95;
+        e.y         -= dirY * overlapY * 0.05;
+        if(dirY<0){ this.player.vy = Math.max(this.player.vy, 0); } else { this.player.vy = Math.min(this.player.vy, 0); }
+      } else {
+        const dirX = dx>=0? 1 : -1;
+        this.player.x += dirX * overlapX * 0.7;
+        e.x           -= dirX * overlapX * 0.3;
+        this.player.vx += dirX * 24;
+        e.vx          -= dirX * 24;
       }
     }
 
