@@ -29,16 +29,21 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
 .bar>i{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:linear-gradient(90deg,#ff9a9e,#ff6b6b)}
 .timer{margin-left:auto}
 .name{margin-left:6px;opacity:.85}
+
 .overhead{position:absolute;left:50%;transform:translateX(-50%);display:none;gap:6px;align-items:center;pointer-events:none}
 .gauge{width:96px;height:6px;border-radius:999px;outline:1px solid #1a263d;background:#0a1220;overflow:hidden}
 .gauge>i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#69d0ff,#a0ffe6)}
-@media (max-height: 720px){ :root{ --stage-h: 650px; } }
 
-/* オーバーレイ/バナー */
-.overlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:linear-gradient(180deg,rgba(7,10,16,.7),rgba(7,10,16,.6));z-index:20}
-.overlay.show{display:flex}
-.ovl-inner{background:#0a0f18cc;border:1px solid #101a2b;border-radius:14px;padding:22px 20px;display:grid;gap:10px;text-align:center;min-width:70%}
-.start{border:none;border-radius:12px;background:#1b2d4a;color:#eaf1ff;font-weight:700;font-size:18px;padding:10px 14px}
-.help{opacity:.7;font-size:12px}
-.banner{position:absolute;left:50%;top:14%;transform:translate(-50%,-50%);background:#0b0f17e6;border:1px solid #1b2740;border-radius:12px;padding:10px 14px;font-weight:800;font-size:18px;letter-spacing:.5px;display:none;z-index:18}
-.banner.show{display:block}
+/* オーバーレイ層 */
+.layer{position:absolute;inset:0;display:grid;place-items:center;z-index:100;pointer-events:none}
+.layer.hidden{display:none}
+.overlay{background:linear-gradient(180deg,rgba(6,9,16,.88),rgba(6,9,16,.88));backdrop-filter:blur(4px)}
+.overlay .panel{pointer-events:auto;background:#0b0f17;outline:1px solid #13213a;border-radius:16px;padding:22px 20px;min-width:70%;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.45)}
+.overlay .panel h1{margin:.2em 0 .1em;font-size:24px;letter-spacing:.08em}
+.overlay .panel h2{margin:.1em 0 .8em;font-size:18px;opacity:.85}
+.overlay .panel .hint{opacity:.7;font-size:12px;margin-top:10px}
+.overlay .panel .start{border:none;border-radius:12px;background:#173058;color:#e9eef7;font-weight:700;font-size:18px;padding:10px 16px;cursor:pointer;outline:1px solid #254a7d}
+.banner{pointer-events:none;font-weight:900;font-size:28px;letter-spacing:.05em;color:#fff;text-shadow:0 4px 18px rgba(0,0,0,.6)}
+.banner::after{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at center, rgba(255,255,255,.08), transparent 60%);mix-blend-mode:overlay}
+
+@media (max-height: 720px){ :root{ --stage-h: 650px; } }
