@@ -1696,6 +1696,6 @@ class Game{
 /* =========================================
  * Boot
  * ========================================= */
-new Game().start();
+// Safe boot: start button fallback or auto-start\n(function(){\n  const boot = ()=>{\n    if(window.__gameStarted__) return;\n    window.__gameStarted__ = true;\n    new Game().start();\n    const ov = document.getElementById('startOverlay');\n    if(ov){ ov.style.display='none'; ov.classList.add('hidden'); ov.style.pointerEvents='none'; }\n  };\n  const btn = document.getElementById('btnStart') || document.getElementById('startButton') || document.querySelector('[data-role="start"]');\n  if(btn){\n    btn.addEventListener('click', boot);\n    btn.addEventListener('touchend', (e)=>{ e.preventDefault(); boot(); }, {passive:false});\n  }else{\n    if(document.readyState==='complete' || document.readyState==='interactive') boot();\n    else addEventListener('DOMContentLoaded', boot);\n  }\n})();
 
 })();
