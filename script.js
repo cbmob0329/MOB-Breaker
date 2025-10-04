@@ -1696,23 +1696,6 @@ class Game{
 /* =========================================
  * Boot
  * ========================================= */
-// Safe boot: start button fallback or auto-start
-(function(){
-  const boot = ()=>{
-    if(window.__gameStarted__) return;
-    window.__gameStarted__ = true;
-    new Game().start();
-    const ov = document.getElementById('startOverlay');
-    if(ov){ ov.style.display='none'; ov.classList.add('hidden'); ov.style.pointerEvents='none'; }
-  };
-  const btn = document.getElementById('btnStart') || document.getElementById('startButton') || document.querySelector('[data-role="start"]');
-  if(btn){
-    btn.addEventListener('click', boot);
-    btn.addEventListener('touchend', (e)=>{ e.preventDefault(); boot(); }, {passive:false});
-  }else{
-    if(document.readyState==='complete' || document.readyState==='interactive') boot();
-    else addEventListener('DOMContentLoaded', boot);
-  }
-})();
+// Safe boot: start button fallback or auto-start (v2 robust)\n(function(){\n  function hideOverlays(){\n    const sels = ['#startOverlay','#start','#overlay','.overlay','.start','.start-screen','#title','#startScreen','[data-overlay]'];\n    document.querySelectorAll(sels.join(',')).forEach(el=>{\n      try{ el.style.display='none'; el.classList.add('hidden'); el.style.pointerEvents='none'; el.setAttribute('aria-hidden','true'); }catch(_){}\n    });\n  }\n  const boot = ()=>{\n    if(window.__gameStarted__) return;\n    window.__gameStarted__ = true;\n    try{ new Game().start(); }catch(e){ console.error('Game boot error', e); window.__gameStarted__ = false; }\n    hideOverlays();\n  };\n  function hookButtons(){\n    const sels = ['#btnStart','#startButton','#start','#START','button[aria-label*="start" i]','[data-role="start"]','button.start','button[data-start]'];\n    document.querySelectorAll(sels.join(',')).forEach(btn=>{\n      if(btn.__gameHooked) return; btn.__gameHooked = true;\n      btn.addEventListener('click', boot);\n      btn.addEventListener('touchend', (e)=>{ if(e && e.cancelable) e.preventDefault(); boot(); }, {passive:false});\n    });\n  }\n  const phone = document.getElementById('phone') || document.getElementById('root') || document.body;\n  if(phone){\n    ['pointerdown','click','touchend'].forEach(ev=>{\n      phone.addEventListener(ev, (e)=>{ if(!window.__gameStarted__){ if(ev!=='touchend'||(e&&e.cancelable)) e.preventDefault(); boot(); } }, {once:true, passive:false});\n    });\n  } else {\n    document.addEventListener('pointerdown', ()=>boot(), {once:true});\n  }\n  document.addEventListener('keydown', (e)=>{ if(!window.__gameStarted__ && (e.key==='Enter' || e.key===' ')) boot(); });\n\n  const ready = ()=>{ hookButtons(); setTimeout(()=>{ if(!window.__gameStarted__) boot(); }, 1000); };\n  if(document.readyState==='complete' || document.readyState==='interactive') ready();\n  else document.addEventListener('DOMContentLoaded', ready);\n\n  // Re-hook in case overlay is created dynamically later\n  const ro = new MutationObserver(()=>hookButtons());\n  ro.observe(document.documentElement, {childList:true, subtree:true});\n})();
 
 })();
