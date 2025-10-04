@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-  <title>MOB Side Action – Stage1 Build</title>
+  <title>MOB Side Action – Stage1</title>
   <meta name="theme-color" content="#0b0c10" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -18,24 +18,23 @@
           <div class="chip name">MOBYOKI</div>
           <div class="chip timer">Time <strong id="time">00:00</strong></div>
         </header>
-        <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
 
-        <!-- タイトル/演出オーバーレイ -->
-        <div id="overlay" class="overlay hidden" aria-live="polite">
-          <div class="title">
+        <!-- バナー（ボス告知/クリア） -->
+        <div id="banner" class="banner" aria-live="polite" aria-atomic="true"></div>
+
+        <!-- タイトル -->
+        <div id="title" class="title">
+          <div class="title-inner">
             <h1>MOB SIDE ACTION</h1>
-            <p>ステージ1：入口 → 室内 → スクリュー</p>
-            <button id="startBtn" class="bigbtn">START</button>
-            <p class="sub">操作：左右 / J(□) / K(▲) / L(●) / O(◎) / U(ULT) / Space(ジャンプ)</p>
+            <p>ステージ1：入口 → 室内 → ボス</p>
+            <button id="startBtn" class="startbtn" aria-label="ゲーム開始">START</button>
           </div>
-          <div id="toast" class="toast"></div>
         </div>
 
-        <!-- システムメッセージ（登場/クリア表示） -->
-        <div id="banner" class="banner hidden"></div>
+        <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
       </div>
 
-      <!-- コントローラ -->
+      <!-- コントロール -->
       <div class="controls">
         <div class="stickArea" id="stickArea" aria-label="Move Stick">
           <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
@@ -54,5 +53,12 @@
 </div>
 
 <script src="script.js"></script>
+<script>
+  // タイトルからスタート
+  document.getElementById('startBtn').addEventListener('click', () => {
+    document.getElementById('title').classList.add('hide');
+    window.__startGame__ && window.__startGame__();
+  });
+</script>
 </body>
 </html>
