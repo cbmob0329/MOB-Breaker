@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-  <title>MOB Side Action – Rev33 (Stage1 / Containers / Random Spawns / Boss Drop)</title>
+  <title>MOB Side Action – Rev32 FULL (MOBA stage + GabuKing/Screw + Edge Walls + ULT test)</title>
   <meta name="theme-color" content="#0b0c10" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -18,25 +18,8 @@
           <div class="chip name">MOBYOKI</div>
           <div class="chip timer">Time <strong id="time">00:00</strong></div>
         </header>
-
-        <!-- ゲーム画面 -->
         <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
-
-        <!-- バナー（登場！/ステージクリア!! など） -->
-        <div class="layer banner hidden" id="banner"></div>
-
-        <!-- タイトル（戻り先） -->
-        <div class="layer overlay" id="titleOverlay">
-          <div class="panel">
-            <h1>MOB SIDE ACTION</h1>
-            <h2>Stage 1</h2>
-            <button id="startBtn" class="start">START</button>
-            <p class="hint">操作：左スティック / ■ ▲ ● ◎ U / ×</p>
-          </div>
-        </div>
       </div>
-
-      <!-- スマホ操作系 -->
       <div class="controls">
         <div class="stickArea" id="stickArea" aria-label="Move Stick">
           <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
@@ -51,6 +34,18 @@
         </div>
       </div>
     </div>
+
+    <!-- ▼ スタートオーバーレイ（押して開始） -->
+    <div id="startOverlay" aria-hidden="false">
+      <div class="startPanel" role="dialog" aria-modal="true">
+        <h1 class="gameTitle">MOB Side Action</h1>
+        <p class="subtitle">Rev32 – Press START</p>
+        <button id="startBtn" class="startBtn" aria-label="ゲームを開始する">START</button>
+        <p class="hints">操作: ←/→ or A/D、×: Space/W、攻撃: J/K、スキル: L/O、ULT: U</p>
+      </div>
+    </div>
+    <!-- ▲ スタートオーバーレイ -->
+
   </div>
 </div>
 
