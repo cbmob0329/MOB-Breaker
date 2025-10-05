@@ -2,9 +2,8 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-  <title>MOB Side Action – Reboot FULL (A1 fix + ULT turbo)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
+  <title>MOB Side Action – Stage1</title>
   <meta name="theme-color" content="#0b0c10" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -19,23 +18,25 @@
           <div class="chip name">MOBYOKI</div>
           <div class="chip timer">Time <strong id="time">00:00</strong></div>
         </header>
+
+        <!-- Game Canvas -->
         <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
 
-        <!-- 画面中央バナー（ボス登場／ステクリ表示など） -->
-        <div id="banner" class="banner hidden">READY</div>
-
-        <!-- タイトル＆スタート -->
+        <!-- Title Overlay -->
         <div id="titleOverlay" class="overlay">
-          <div class="card">
+          <div class="panel">
             <h1>MOB Side Action</h1>
-            <p>■で攻撃 / ▲で強攻撃 / ●・◎でスキル / UでULT / ×でジャンプ</p>
-            <button id="startBtn" class="start" disabled>読み込み中...</button>
-            <p class="hint">Enter / Space / 画面タップでも開始できます</p>
+            <p class="sub">Stage 1 – Entrance</p>
+            <button id="startBtn" class="start" disabled>Loading…</button>
+            <p class="hint">Enterキーでも開始</p>
           </div>
         </div>
+
+        <!-- On-screen banner (boss/clear etc.) -->
+        <div id="banner" class="banner hidden"></div>
       </div>
 
-      <!-- コントロール -->
+      <!-- Controls -->
       <div class="controls">
         <div class="stickArea" id="stickArea" aria-label="Move Stick">
           <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
