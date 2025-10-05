@@ -1,4 +1,4 @@
-// script.js – Rev33 (Stage1 two-sections, random spawns, container platform, boss drop, banners & zoom)
+// script.js – Rev33a (Stage1 two-sections, random spawns, container platform, boss drop, banners & zoom + fixes)
 (function(){
 'use strict';
 
@@ -386,6 +386,21 @@ class Player extends CharacterBase{
     }
     return null;
   }
+
+  // ★ 被弾時にコンボ固まりを解消するためのオーバーライド
+  hurt(amount, dir, opts={}, effects){
+    const hit = CharacterBase.prototype.hurt.call(this, amount, dir, opts, effects);
+    if(hit){
+      this.comboStep = 0;
+      this.bufferA1 = false;
+      this._actionSeq = null;
+      this._actionIndex = 0;
+      this._actionTime = 0;
+      this.a2LockoutT = 0;
+    }
+    return hit;
+  }
+
   update(dt,input,world,enemies){
     input.beginFrame(); this._posOverhead();
     if(this.saT>0) this.saT=Math.max(0,this.saT-dt);
@@ -541,7 +556,7 @@ class Player extends CharacterBase{
     ];
     this._actionIndex=0; this._actionTime=0;
 
-    this.ultCDT=3.0; // CT 3秒
+    this.ultCDT=3.0; // CT 3秒（要望反映）
 
     const img=this.world.assets.img(this.frames.ul3);
     const ox=this.face*30, oy=-12;
@@ -732,7 +747,7 @@ class WaruMOB extends CharacterBase{
   }
 }
 
-class IceRobo extends CharacterBase{ /* （中略：前バージョンのまま。ここではステージ1に出さないが残してあります） */
+class IceRobo extends CharacterBase{
   constructor(world,effects,assets,x=900){
     super(64,70); this.world=world; this.effects=effects; this.assets=assets;
     this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
@@ -740,25 +755,32 @@ class IceRobo extends CharacterBase{ /* （中略：前バージョンのまま�
     this.modeJump=false; this.modeSwapT=0; this._seq=null; this._idx=0; this._t=0; this.chargeT=0; this.energyOrbs=[];
   }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.9}; }
+  // ★ ULTでSA無効化（ぶっ飛ばし貫通）
   hurt(amount, dir, opts={}, effects){
     if(this.invulnT>0||this.dead) return false;
     this.hp=Math.max(0,this.hp-amount);
-    const kbMul = this.superArmor ? 0.15 : (opts.kbMul||1);
-    const kbuMul= this.superArmor ? 0.10 : (opts.kbuMul||1);
+
+    const ult = (opts && opts.tag === 'ult');
+    const saActive = this.superArmor && !ult; // ULT時はSA無視
+
+    const kbMul = saActive ? 0.15 : (opts.kbMul||1);
+    const kbuMul= saActive ? 0.10 : (opts.kbuMul||1);
+
     const baseKb = 140 + amount*12;
     const baseKbu = opts.lift ? 360 : (amount>=15? 300 : 210);
     this.vx = clamp(dir * baseKb * kbMul, -220, 220);
     this.vy = - clamp(baseKbu * kbuMul, 0, 380);
     this.x += dir * 2; this.face = -dir;
-    if(!this.superArmor){ this.state='hurt'; this.hurtT=0; this.invulnT=0.25; }
+
+    if(!saActive){ this.state='hurt'; this.hurtT=0; this.invulnT=0.25; }
     if(effects) effects.addSpark(this.x, this.y-10, amount>=20);
     if(this.hp<=0){ this.dead=true; this.vx = dir * 540; this.vy = -560; this.spinSpeed = 18; this.deathT = 0; this.fade = 1; }
     return true;
   }
   img(key){ const map={ idle:'I1.png', walk1:'I1.png', walk2:'I2.png', jump1:'I1.png', jump2:'I2.png', jump3:'I3.png', charge:'I4.png', release:'I5.png', dashPrep:'I6.png', dashAtk:'I7.png', orb:'I8.png' }; return this.assets.img(map[key]||'I1.png'); }
   addEnergyBall(chargeSec){ const img=this.img('orb'); const ox=this.face*30, oy=-10; this.energyOrbs.push(new EnergyBall(this.world,this.x+ox,this.y+oy,this.face,img,20,chargeSec,1)); }
-  update(dt, player){ /* 省略：従来ロジック */ this.updatePhysics(dt); }
-  draw(ctx,world){ /* 省略：従来ロジック */ }
+  update(dt, player){ this.updatePhysics(dt); }
+  draw(ctx,world){ /* 既存の省略ロジックのまま */ }
 }
 
 class Screw extends CharacterBase{
@@ -999,7 +1021,7 @@ class Stage1 {
     // 背景/障害物（コンテナは上に乗れる一方通行）
     this.g.world.setBackground('ST1.png');
     this.g.world.setObstacles([
-      {x:780, yTop:GROUND_TOP_Y-60, w:160, h:80, oneWay:true, img:'contena.png'}
+      {x:780, yTop:GROUND_TOP_Y - 80, w:160, h:80, oneWay:true, img:'contena.png'} // ★接地修正
     ]);
     // 初期スポーン
     this.spawnWaruGroup(3);
@@ -1121,7 +1143,15 @@ class Game{
     this.player=null; this.enemies=[]; this.world=null; this.lastT=0;
     this.state='title';  // 'title' | 'play'
     addEventListener('resize',()=>this.world?.resize());
-    document.getElementById('startBtn').addEventListener('click', ()=> this.beginStage1());
+
+    // ★ START連打ガード
+    const startBtn = document.getElementById('startBtn');
+    startBtn.addEventListener('click', ()=>{
+      if(this.state==='play') return;
+      startBtn.setAttribute('disabled','');
+      this.beginStage1();
+      setTimeout(()=> startBtn.removeAttribute('disabled'), 500);
+    });
   }
   async start(){
     const imgs=[
@@ -1167,7 +1197,7 @@ class Game{
     this.world.time=0; this.world.zoom=1.0;
     this.world.setBackground('ST1.png');
     this.world.setObstacles([
-      {x:780, yTop:GROUND_TOP_Y-60, w:160, h:80, oneWay:true, img:'contena.png'}
+      {x:780, yTop:GROUND_TOP_Y - 80, w:160, h:80, oneWay:true, img:'contena.png'} // ★接地修正
     ]);
     this.stage = new Stage1(this);
     this.stage.start();
