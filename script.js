@@ -1,13 +1,18 @@
-// script.js – Stage1 stable build
+// script.js – Rev34 (Stage1 polish: BG offset, containers on ground, CS one-shot BG & narrow bounds,
+// Skill1 power/KB up + target spin, anti-pass-through on combos)
 (function(){
 'use strict';
 
-/* ===== Tunables ===== */
-const ST1_BG_YOFF = 0; // ST1.png の縦オフセット（必要なら微調整）
+/* ================================
+ * Tunables (簡単に調整できる定数)
+ * ================================ */
+const ST1_BG_YOFF = -30; // 入口ステージ背景の縦オフセット（-で背景を上に/地面を上げる見え方）
 
-/* ===== Constants & Utils ===== */
+/* ================================
+ * Constants & Utils
+ * ================================ */
 const STAGE_LEFT = 0;
-const STAGE_RIGHT = 2200;
+const STAGE_RIGHT_DEFAULT = 2200;  // セクション未指定時の広さ
 const WALL_PAD = 12;
 
 const GRAV=2000, MOVE=260, JUMP_V=760, MAX_FALL=1200;
@@ -18,7 +23,9 @@ const lerp=(a,b,t)=>a+(b-a)*t;
 const now=()=>performance.now();
 const rectsOverlap=(a,b)=> Math.abs(a.x-b.x)*2 < (a.w+b.w) && Math.abs(a.y-b.y)*2 < (a.h+b.h);
 
-/* ===== Effects ===== */
+/* ================================
+ * Screen Effects
+ * ================================ */
 class Effects{
   constructor(){ this.sparks=[]; this.shakeT=0; this.shakeAmp=0; this.hitstop=0; }
   addSpark(x,y,strong=false){
@@ -46,7 +53,9 @@ class Effects{
   }
 }
 
-/* ===== Assets ===== */
+/* ================================
+ * Assets
+ * ================================ */
 class Assets{
   constructor(){ this.images=new Map(); this.missing=new Set(); }
   load(srcs){
@@ -61,7 +70,9 @@ class Assets{
   has(n){ return this.images.has(n) && !this.missing.has(n); }
 }
 
-/* ===== Input ===== */
+/* ================================
+ * Input
+ * ================================ */
 class Input{
   constructor(){
     this.left=0; this.right=0; this.jump=false;
@@ -83,7 +94,6 @@ class Input{
       if(k==='l'||k==='L'){ if(!this.btn.skill){ this.btn.skill=true; this.edge.skillPress=true; this.skillCharging=true; this.skillChargeT=0; } }
       if(k==='o'||k==='O'){ this.edge.skill2=true; this.btn.skill2=true; }
       if(k==='u'||k==='U'){ if(!this.btn.ult){ this.btn.ult=true; this.edge.ultPress=true; this.ultCharging=true; this.ultChargeT=0; } }
-      if(k==='Enter'){ window.__game?.beginStage1FromTitle?.(); }
     },{passive:false});
     addEventListener('keyup',(e)=>{
       const k=e.key;
@@ -154,28 +164,37 @@ class Input{
   }
 }
 
-/* ===== Character Base ===== */
+/* ================================
+ * Character Base — ★ 強ヒット & 一方通行足場 & ヒット回転
+ * ================================ */
 class CharacterBase{
   constructor(w,h){
     this.w=w; this.h=h; this.x=0; this.y=0; this.vx=0; this.vy=0; this.face=1;
     this.onGround=false; this.state='idle'; this.animT=0;
     this.hp=100; this.maxhp=100; this.dead=false; this.deathT=0;
     this.invulnT=0; this.spinAngle=0; this.spinSpeed=0; this.fade=1; this.hurtT=0; this.maxHurt=0.22;
+    this.world=null;
+    this._prevY=0;
+    this._spinDecayT=0;
   }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.8}; }
+
+  // ★ ぶっ飛び＋回転
   hurt(amount, dir, opts={}, effects){
     if(this.invulnT>0||this.dead) return false;
-    this.hp=Math.max(0,this.hp-amount);
 
     const strongPower = amount>=40;
     const strongKbMul = (opts.kbMul||1) >= 1.4;
     const isULT = opts.tag==='ult';
     const isStrong = strongPower || strongKbMul || isULT;
 
+    this.hp=Math.max(0,this.hp-amount);
+
     const baseKb = 140 + amount*12;
     const baseKbu = opts.lift ? 360 : (amount>=15? 300 : 210);
     const kbMulIn = (opts.kbMul??1);
     const kbuMulIn= (opts.kbuMul??1);
+
     const STRONG_X = isStrong ? 1.75 : 1.0;
     const STRONG_Y = isStrong ? 1.65 : 1.0;
 
@@ -187,6 +206,12 @@ class CharacterBase{
 
     this.state='hurt'; this.hurtT=0; this.animT=0; this.invulnT=0.35;
 
+    // スキル①などで回転付与
+    if(opts.spin || isStrong){
+      this.spinSpeed = Math.max(this.spinSpeed, 14 * (isStrong?1.15:1.0));
+      this._spinDecayT = Math.max(this._spinDecayT, 0.45);
+    }
+
     if(effects){
       effects.addSpark(this.x, this.y-10, isStrong || amount>=15);
       if(isStrong){ effects.shake(0.18,10); effects.hitstop=Math.max(effects.hitstop,0.11); }
@@ -197,12 +222,35 @@ class CharacterBase{
     }
     return true;
   }
+
+  // ★ 一方通行足場（上からだけ着地）
+  _applyPlatforms(){
+    const w=this.world; if(!w||!w.obstacles||this.vy<0) return;
+    const a=this.aabb(); const prevBottom=this._prevY + this.h/2;
+    const curBottom = this.y + this.h/2;
+    for(const o of w.obstacles){
+      if(!o.oneWay) continue;
+      const left = o.x - o.w/2, right = o.x + o.w/2, top = o.yTop;
+      const withinX = (a.x > left-8 && a.x < right+8);
+      const crossed = prevBottom <= top && curBottom >= top;
+      if(withinX && crossed){
+        this.y = top - this.h/2 + FOOT_PAD;
+        this.vy = 0; this.onGround=true;
+        return;
+      }
+    }
+  }
+
   updatePhysics(dt){
+    this._prevY=this.y;
     this.vy = Math.min(this.vy + GRAV*dt, MAX_FALL);
     this.x += this.vx*dt; this.y += this.vy*dt;
 
-    const leftBound  = STAGE_LEFT  + WALL_PAD + this.w*0.4;
-    const rightBound = STAGE_RIGHT - WALL_PAD - this.w*0.4;
+    // ★ セクションごとの可変境界
+    const sl = this.world?.stageLeft ?? STAGE_LEFT;
+    const sr = this.world?.stageRight ?? STAGE_RIGHT_DEFAULT;
+    const leftBound  = sl + WALL_PAD + this.w*0.4;
+    const rightBound = sr - WALL_PAD - this.w*0.4;
     if(this.x < leftBound){ this.x = leftBound; this.vx = Math.max(this.vx, 0); }
     if(this.x > rightBound){ this.x = rightBound; this.vx = Math.min(this.vx, 0); }
 
@@ -210,12 +258,23 @@ class CharacterBase{
     if(this.y + this.h/2 >= top + FOOT_PAD){ this.y = top - this.h/2 + FOOT_PAD; this.vy=0; this.onGround=true; }
     else this.onGround=false;
 
+    // 一方通行足場
+    this._applyPlatforms();
+
+    // 被弾スピンの減衰
+    if(this.spinSpeed>0){
+      this.spinAngle += this.spinSpeed*dt;
+      if(this.onGround) this.spinSpeed *= 0.86;
+      if(this._spinDecayT>0){ this._spinDecayT-=dt; if(this._spinDecayT<=0) this.spinSpeed=0; }
+    }
+
     if(this.invulnT>0) this.invulnT=Math.max(0,this.invulnT-dt);
     if(this.state==='hurt'){
       this.hurtT+=dt; if(this.onGround || this.hurtT>=this.maxHurt){ this.state='idle'; }
     }
     if(this.dead){ this.deathT += dt; this.spinAngle += this.spinSpeed*dt; this.fade = clamp(1 - this.deathT/1.2, 0, 1); }
   }
+
   drawHPBar(ctx,world){
     const w=36, h=4, x=this.x-world.camX, y=this.y-world.camY - this.h/2 - 10;
     const ratio=Math.max(0,this.hp/this.maxhp);
@@ -227,7 +286,9 @@ class CharacterBase{
   }
 }
 
-/* ===== Projectiles ===== */
+/* ================================
+ * Projectiles
+ * ================================ */
 class Projectile{
   constructor(world,x,y,dir,img,power=10){
     this.world=world; this.x=x; this.y=y; this.dir=dir; this.vx=160*dir; this.vy=0; this.img=img; this.power=power; this.life=3.2; this.dead=false; this.w=40; this.h=28;
@@ -283,7 +344,9 @@ class GroundSpike extends Projectile{
   }
 }
 
-/* ===== Player ===== */
+/* ================================
+ * Player
+ * ================================ */
 class Player extends CharacterBase{
   constructor(assets, world, effects){
     super(56,64);
@@ -315,15 +378,6 @@ class Player extends CharacterBase{
 
     this._activeSpikes=null;
   }
-  // ★ A1が出なくなる対策：被弾時にコンボ/バッファをリセット
-  hurt(amount, dir, opts={}, effects){
-    const hit = super.hurt(amount, dir, opts, effects);
-    if(hit){
-      this.comboStep = 0;
-      this.bufferA1 = false;
-    }
-    return hit;
-  }
   _getFramePath(key, i=0){ const v=this.frames[key]; return Array.isArray(v)? v[Math.max(0,Math.min(v.length-1,i))] : v; }
   _imgByKey(key,i=0){ return this.world.assets.img(this._getFramePath(key,i)); }
   _createOverheadGauge(){
@@ -348,11 +402,11 @@ class Player extends CharacterBase{
     const cur=this._actionSeq[this._actionIndex]; if(!cur) return null;
     if(this.state==='skill' || this.state==='skill2' || this.state==='ult'){
       const W=86,H=64; const x=this.x + this.face*(this.w*0.2);
-      return {x, y:this.y, w:W, h:H, power:cur.power||0, dir:this.face, lift:cur.lift||0, kbMul:cur.kbMul||1.6, kbuMul:cur.kbuMul||1.3, tag:cur.tag};
+      return {x, y:this.y, w:W, h:H, power:cur.power||0, dir:this.face, lift:cur.lift||0, kbMul:cur.kbMul||1.6, kbuMul:cur.kbuMul||1.3, tag:cur.tag, spin:cur.spin||false};
     }
     if(cur.kind==='hit' || cur.kind==='sp'){
       const w=52, h=42, x=this.x + this.face*(this.w*0.3 + w*0.5), y=this.y - 6;
-      return {x,y,w,h, power:cur.power||0, dir:this.face, lift:cur.lift||1, kbMul:cur.kbMul||1, kbuMul:cur.kbuMul||1, tag:cur.tag};
+      return {x,y,w,h, power:cur.power||0, dir:this.face, lift:cur.lift||1, kbMul:cur.kbMul||1, kbuMul:cur.kbuMul||1, tag:cur.tag, spin:cur.spin||false};
     }
     return null;
   }
@@ -370,7 +424,7 @@ class Player extends CharacterBase{
 
     if(this.dead){ this.updatePhysics(dt); if(this.fade<=0){ this._respawn(world); } world.updateTimer(dt); return; }
 
-    // スキル1チャージ
+    // ● スキル1チャージ
     if(input.skillCharging && this.skillCDT<=0){
       input.skillChargeT=Math.min(1.0, input.skillChargeT+dt);
       this._showGauge(true,'● Charge', input.skillChargeT/1.0);
@@ -394,24 +448,28 @@ class Player extends CharacterBase{
       input.ultChargeT=0; input.edge.ultRelease=false;
     }
 
-    // 実行中（攻撃/スキル/ULT）
+    // 実行中
     if(this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='ult'){
       const hb=this.currentHitbox();
       if(hb){
         for(const e of enemies){
           if(!e || e.dead || e.invulnT>0) continue;
           if(rectsOverlap({x:hb.x,y:hb.y,w:hb.w,h:hb.h}, e.aabb())){
-            const hit = e.hurt(hb.power, hb.dir, {lift:hb.lift, kbMul:hb.kbMul, kbuMul:hb.kbuMul, tag:hb.tag}, this.effects);
-            // 密着すり抜け軽減：直後に軽い押し戻し
-            if(hit && rectsOverlap(this.aabb(), e.aabb())){
+            const hit = e.hurt(hb.power, hb.dir, {lift:hb.lift, kbMul:hb.kbMul, kbuMul:hb.kbuMul, tag:hb.tag, spin:hb.spin}, this.effects);
+            // ★ 直後にその場で強めの押し戻し（すり抜け防止）
+            if(hit){
               const a=this.aabb(), b=e.aabb();
               const dx = (this.x - e.x);
               const overlapX = (a.w + b.w)/2 - Math.abs(dx);
               if(overlapX>0){
                 const dir = (dx>=0?1:-1);
-                this.x += dir * overlapX * 0.5;
-                e.x     -= dir * overlapX * 0.5;
+                this.x += dir * overlapX * 0.55;  // プレイヤー寄り強め
+                e.x     -= dir * overlapX * 0.45;
+                this.vx = 0; e.vx *= 0.7;
               }
+            }
+            if(hit && this.state==='atk' && this._actionSeq && this._actionSeq[this._actionIndex]?.tag==='chaseFinisher'){
+              this.effects.addSpark(e.x, e.y-10, true);
             }
           }
         }
@@ -473,14 +531,16 @@ class Player extends CharacterBase{
     this.state='skill'; this.animT=0; this.skillCDT=5.0;
     const t=clamp(chargeSec,0,1.0);
     const rounds = 2 + Math.floor(t/0.33);
-    const base   = 26 + Math.floor(t/0.1)*2;
-    const kbm  = 1.6 + 0.1*(rounds-2);
-    const kbum = 1.3 + 0.05*(rounds-2);
+    // ★威力底上げ
+    const base   = 32 + Math.floor(t/0.1)*3;
+    // ★KBかなり強め（気持ちよく飛ぶ）
+    const kbm  = 2.0 + 0.20*(rounds-2);
+    const kbum = 1.6 + 0.08*(rounds-2);
     const frames=this.frames.spin; const seq=[];
     for(let r=0;r<rounds;r++){
       for(let i=0;i<frames.length;i++){
-        const pow = base*(i===1?1:0.6); const lift=(i===1?1:0);
-        seq.push({kind:'sp',dur:0.06,frame:frames[i],fx:80,power:pow,lift, kbMul:kbm, kbuMul:kbum, tag:'skill'});
+        const pow = base*(i===1?1:0.65); const lift=(i===1?1:0);
+        seq.push({kind:'sp',dur:0.06,frame:frames[i],fx:80,power:pow,lift, kbMul:kbm, kbuMul:kbum, tag:'skill', spin:true});
       }
     }
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
@@ -519,6 +579,7 @@ class Player extends CharacterBase{
     this._actionIndex=0; this._actionTime=0;
 
     this.ultCDT=3.0;
+
     const img=this.world.assets.img(this.frames.ul3);
     const ox=this.face*30, oy=-12;
     const blast=new UltBlast(this.world, this.x+ox, this.y+oy, this.face, img, chargeSec);
@@ -615,8 +676,9 @@ class Player extends CharacterBase{
   }
 }
 
-/* ===== Enemies (全部残す) ===== */
-// WaruMOB（雑魚）
+/* ================================
+ * Enemy: WaruMOB（描画に“被弾スピン”を反映）
+ * ================================ */
 class WaruMOB extends CharacterBase{
   constructor(world,effects,assets,x=520){
     super(52,60); this.world=world; this.effects=effects; this.assets=assets;
@@ -696,6 +758,8 @@ class WaruMOB extends CharacterBase{
   draw(ctx,world){
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
     if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
+    // ★ 被弾中にスピンが付いていれば回す
+    if(!this.dead && this.spinSpeed>0 && this.state==='hurt'){ ctx.rotate(this.spinAngle); }
     if(this.face<0 && !this.dead) ctx.scale(-1,1);
     let img=null;
     if(this.state==='atk' && this._seq){ const cur=this._seq[this._idx]; img=this.imgByKey(cur.key||'prep2'); }
@@ -707,383 +771,9 @@ class WaruMOB extends CharacterBase{
   }
 }
 
-/* —— 以降の敵は元のまま —— */
-// IceRobo（中ボス）
-class IceRobo extends CharacterBase{
-  constructor(world,effects,assets,x=900){
-    super(64,70); this.world=world; this.effects=effects; this.assets=assets;
-    this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
-    this.maxhp=1200; this.hp=1200; this.superArmor=false; this.cool=0; this.recoverT=0;
-    this.modeJump=false; this.modeSwapT=0; this._seq=null; this._idx=0; this._t=0; this.chargeT=0; this.energyOrbs=[];
-  }
-  aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.9}; }
-  hurt(amount, dir, opts={}, effects){
-    if(this.invulnT>0||this.dead) return false;
-    this.hp=Math.max(0,this.hp-amount);
-    const kbMul = this.superArmor ? 0.15 : (opts.kbMul||1);
-    const kbuMul= this.superArmor ? 0.10 : (opts.kbuMul||1);
-    const baseKb = 140 + amount*12;
-    const baseKbu = opts.lift ? 360 : (amount>=15? 300 : 210);
-    this.vx = clamp(dir * baseKb * kbMul, -220, 220);
-    this.vy = - clamp(baseKbu * kbuMul, 0, 380);
-    this.x += dir * 2; this.face = -dir;
-    if(!this.superArmor){ this.state='hurt'; this.hurtT=0; this.invulnT=0.25; }
-    if(effects) effects.addSpark(this.x, this.y-10, amount>=20);
-    if(this.hp<=0){ this.dead=true; this.vx = dir * 540; this.vy = -560; this.spinSpeed = 18; this.deathT = 0; this.fade = 1; }
-    return true;
-  }
-  img(key){ const map={ idle:'I1.png', walk1:'I1.png', walk2:'I2.png', jump1:'I1.png', jump2:'I2.png', jump3:'I3.png', charge:'I4.png', release:'I5.png', dashPrep:'I6.png', dashAtk:'I7.png', orb:'I8.png' }; return this.assets.img(map[key]||'I1.png'); }
-  addEnergyBall(chargeSec){ const img=this.img('orb'); const ox=this.face*30, oy=-10; this.energyOrbs.push(new EnergyBall(this.world,this.x+ox,this.y+oy,this.face,img,20,chargeSec,1)); }
-  update(dt, player){
-    if(this.dead){ this.updatePhysics(dt); return; }
-    if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
-    if(this.recoverT>0){ this.recoverT=Math.max(0,this.recoverT-dt); }
-    for(const p of this.energyOrbs) p.update(dt); this.energyOrbs=this.energyOrbs.filter(p=>!p.dead);
-
-    if(this.state==='charge'){
-      this.superArmor = true; this.vx = 0; this.updatePhysics(dt);
-      this._t += dt; this.chargeT = Math.min(2.0, this.chargeT + dt); this.animT += dt;
-      const adx = Math.abs(player.x - this.x);
-      if(adx < 180 && this.chargeT > 0.25){ this.releaseEnergy(); }
-      else if(this.chargeT >= 2.0){ this.releaseEnergy(); }
-      return;
-    }
-    if(this.state==='dash'){
-      this.updatePhysics(dt); this._t += dt;
-      if(this._t>=0.35){ this.state='idle'; this.superArmor=false; this.vx=0; this.cool=2.0; }
-      this.animT += dt; return;
-    }
-    if(this.state==='atk' || this.state==='recover'){ this.updatePhysics(dt); this.animT += dt; if(this.state==='recover' && this.recoverT<=0){ this.state='idle'; } return; }
-    if(this.state==='hurt'){ this.updatePhysics(dt); if(this.onGround) this.state='idle'; this.animT += dt; return; }
-
-    const dx = player.x - this.x; const adx = Math.abs(dx); this.face = dx>=0? 1 : -1;
-    this.modeSwapT -= dt; if(this.modeSwapT<=0 && this.onGround){ this.modeSwapT = 2.0 + Math.random()*1.6; this.modeJump = !this.modeJump; }
-    const desireCharge = (adx>=140 && adx<=520);
-    if(this.cool<=0 && this.recoverT<=0 && desireCharge){
-      if(this.onGround || Math.random()<0.3){ this.state='charge'; this._t=0; this.chargeT=0; this.vx=0; this.superArmor=true; this.cool=2.8; return; }
-    }
-    if(this.cool<=0 && this.recoverT<=0 && adx<260){
-      this.state='atk'; this.superArmor=true; this.vx=0;
-      this._seq=[{key:'dashPrep', dur:0.24, vibrate:true},{key:'dashAtk', dur:0.32}];
-      this._idx=0; this._t=0; this.animT=0; this.cool=2.2; return;
-    }
-    const walk=90, run=MOVE;
-    if(adx>140){ const sp = this.modeJump? run : walk; this.vx = (dx>0? sp : -sp); if(this.modeJump && this.onGround){ this.vy = -JUMP_V*0.8; } }
-    else { this.vx = 0; }
-    this.updatePhysics(dt);
-    this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
-    this.animT += dt;
-  }
-  releaseEnergy(){ this.addEnergyBall(this.chargeT); this.state='recover'; this.recoverT=0.7; this.superArmor=false; }
-  draw(ctx,world){
-    if(this.state==='atk' && this._seq){
-      this._t+=1/60; const cur=this._seq[this._idx];
-      if(cur){ cur._t=(cur._t||0)+1/60; if(cur._t>=cur.dur){ this._idx++; if(this._idx>=this._seq.length){ this.state='dash'; this._t=0; this.vx = (this.face>0? 520 : -520); this._seq=null; } } }
-    }
-    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
-    if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
-    if(this.face<0 && !this.dead) ctx.scale(-1,1);
-    let img=null, ox=0;
-    if(this.state==='charge'){ img=this.img('charge'); ox=Math.sin(performance.now()/25)*1.5; }
-    else if(this.state==='dash' || (this.state==='atk' && this._seq && this._seq[this._idx] && this._seq[this._idx].key==='dashAtk')){ img=this.img('dashAtk'); }
-    else if(this.state==='atk' && this._seq){ const cur=this._seq[this._idx]; img=this.img(cur.key||'dashPrep'); ox=Math.sin(performance.now()/25)*2; }
-    else if(this.state==='recover'){ img=this.img('release'); }
-    else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.img(f? 'walk1':'walk2'); }
-    else if(this.state==='jump'){ const f=Math.floor(this.animT*8)%3; img=this.img(['jump1','jump2','jump3'][f]); }
-    else { img=this.img('idle'); }
-    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2+ox), Math.round(-h/2), Math.round(w), Math.round(h)); }
-    if(this.state==='charge'){
-      const orb=this.img('orb'); const t=this.chargeT;
-      const mul = 0.6 + 0.8*(t/2); const hh=32*mul, ww=44*mul; const oxh = this.face*26, oyh=-14;
-      if(orb){ ctx.save(); ctx.translate(oxh, oyh); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.9; ctx.drawImage(orb, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh)); ctx.restore(); }
-    }
-    ctx.restore();
-    this.drawHPBar(ctx,world);
-    for(const p of this.energyOrbs) p.draw(ctx);
-  }
-}
-
-// IceRoboMini（雑魚）
-class IceRoboMini extends CharacterBase{
-  constructor(world, effects, assets, x=1200){
-    super(40,44); this.world=world; this.effects=effects; this.assets=assets;
-    this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
-    this.maxhp=50; this.hp=50; this.cool=0; this.state='idle'; this.animT=0; this.hopT=0; this.superArmor=false;
-    this._lastImg=null;
-  }
-  img(key){ const map={ idle:'IC.png', move:'IC2.png', atk1:'IC3.png', sp:'IC4.png' }; return this.assets.img(map[key]||'IC.png'); }
-  aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.9}; }
-  hurt(amount, dir, opts={}, effects){ opts={...(opts||{}), kbMul:(opts.kbMul??1)*1.35, kbuMul:(opts.kbuMul??1)*1.25}; return super.hurt(amount, dir, opts, effects); }
-  update(dt, player){
-    if(this.dead){ this.updatePhysics(dt); return; }
-    if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
-    if(this.state==='sp'){
-      this.superArmor=true; this.hopT+=dt; const period=0.24, bounces=5;
-      const bi=Math.floor(this.hopT/period); const dir = (bi%2===0)? this.face : -this.face;
-      this.vx = dir * 240; if(this.onGround) this.vy = -JUMP_V*0.45;
-      this.updatePhysics(dt);
-      if(this.hopT>=period*bounces){ this.state='idle'; this.vx=0; this.superArmor=false; this.hopT=0; this.cool=1.6; }
-      if(rectsOverlap(this.aabb(), player.aabb()) && player.invulnT<=0){
-        const hit = player.hurt(7, (player.x>=this.x?1:-1), {lift:0.3,kbMul:0.9,kbuMul:0.9}, this.effects); if(hit) updateHPUI(player.hp,player.maxhp);
-      }
-      this.animT+=dt; return;
-    }
-    if(this.state==='atk'){
-      this.hopT+=dt; const dur=0.32; this.vx = this.face * 140; this.updatePhysics(dt);
-      if(this.hopT>dur*0.5 && this.hopT<=dur*0.75){
-        const hb={x:this.x + this.face*18, y:this.y, w:36, h:28};
-        if(player.invulnT<=0 && rectsOverlap(hb, player.aabb())){ const hit=player.hurt(5, this.face, {lift:0.2,kbMul:0.8,kbuMul:0.8}, this.effects); if(hit) updateHPUI(player.hp,player.maxhp); }
-      }
-      if(this.hopT>=dur){ this.state='idle'; this.hopT=0; this.vx=0; this.cool=0.9; }
-      this.animT+=dt; return;
-    }
-    const dx=player.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
-    const swirl = Math.sin(performance.now()/350)*60;
-    this.vx = (dx>0? 70 : -70) + (this.face>0?swirl:-swirl)*0.2;
-    this.hopT+=dt;
-    if(this.onGround && this.hopT>0.35){ this.vy=-JUMP_V*0.35; this.hopT=0; }
-    if(this.cool<=0){
-      if(adx<120 && Math.random()<0.6){ this.state='atk'; this.hopT=0; this.animT=0; }
-      else if(adx<220 && Math.random()<0.35){ this.state='sp'; this.hopT=0; this.animT=0; }
-    }
-    this.updatePhysics(dt);
-    this.state = (this.state==='idle'||this.state==='run') ? (this.onGround? 'run':'jump') : this.state;
-    this.animT+=dt;
-  }
-  draw(ctx,world){
-    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
-    let img=null; if(this.state==='sp') img=this.img('sp');
-    else if(this.state==='atk'){ img=this.hopT<0.16? this.img('idle'): this.img('atk1'); }
-    else if(!this.onGround) img=this.img('move'); else img=this.img('move');
-    if(!img) img=this._lastImg;
-    if(img){
-      const scale=this.h/img.height, w=img.width*scale, h=this.h;
-      ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
-      this._lastImg=img;
-    }
-    ctx.restore(); this.drawHPBar(ctx,world);
-  }
-}
-
-// Kozou（雑魚）
-class KozouStone extends Projectile{
-  constructor(world,x,y,dir,img){ super(world,x,y,dir,img,5); this.vx = 120*dir; this.vy = -360; this.w = 24; this.h = 24; this.gravity = 900; }
-  update(dt){
-    if(this.dead) return; this.vy += this.gravity*dt; this.x += this.vx*dt; this.y += this.vy*dt;
-    const ground = Math.floor(GROUND_TOP_Y); if(this.y + this.h/2 >= ground+FOOT_PAD){ this.dead=true; }
-  }
-}
-class Kozou extends CharacterBase{
-  constructor(world,effects,assets,x=1400){
-    super(50,58); this.world=world; this.effects=effects; this.assets=assets;
-    this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
-    this.maxhp=100; this.hp=100; this.cool=0; this.state='idle'; this.animT=0; this.projectiles=[];
-    this.guard=false; this.guardHits=0; this._thrown=false;
-    this.brainT=0;
-  }
-  img(key){ const map={ idle:'SL.png', w1:'SL2.png', w2:'SL3.png', prep:'SL4.png', throw:'SL5.png', guard:'SL6.png', counter:'SL7.png', stone:'SL8.png'}; return this.assets.img(map[key]||'SL.png'); }
-  aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.9}; }
-  hurt(amount, dir, opts={}, effects){
-    if(this.guard){ amount = Math.ceil(amount*0.5); this.guardHits = Math.min(3, this.guardHits+1); if(this.guardHits>=3 && this.state!=='counter'){ this.state='counter'; this.animT=0; this.vx=0; } }
-    opts = {...opts, kbMul:(opts.kbMul??1)*1.25, kbuMul:(opts.kbuMul??1)*1.2};
-    return super.hurt(amount, dir, opts, effects);
-  }
-  update(dt,player){
-    if(this.dead){ this.updatePhysics(dt); return; }
-    if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
-    for(const p of this.projectiles) p.update(dt); this.projectiles=this.projectiles.filter(p=>!p.dead);
-
-    if(this.state==='counter'){
-      this.updatePhysics(dt); this.animT+=dt; const dur=0.28; const mid=0.14;
-      if(this.animT<dur){ this.vx=this.face*120; }
-      if(this.animT>mid){
-        const hb={x:this.x + this.face*18, y:this.y, w:36, h:30};
-        if(player.invulnT<=0 && rectsOverlap(hb, player.aabb())){ const hit=player.hurt(8, this.face, {lift:0.3,kbMul:0.9,kbuMul:0.9}, this.effects); if(hit) updateHPUI(player.hp,player.maxhp); }
-      }
-      if(this.animT>=dur){ this.state='idle'; this.vx=0; this.cool=1.2; this.guard=false; this.guardHits=0; }
-      return;
-    }
-    if(this.state==='throw'){
-      this.updatePhysics(dt); this.animT+=dt;
-      if(this.animT>0.22 && !this._thrown){ this._thrown=true; const img=this.img('stone'); const ox=this.face*14, oy=-18;
-        this.projectiles.push(new KozouStone(this.world, this.x+ox, this.y+oy, this.face, img)); }
-      if(this.animT>0.4){ this.state='idle'; this.vx=0; this.cool=1.4; this._thrown=false; }
-      return;
-    }
-    if(this.guard){ this.vx=0; this.updatePhysics(dt); this.animT+=dt;
-      const dx=player.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1; if(adx<120){ this.vx = (dx>0? -80 : 80); } return; }
-
-    this.brainT-=dt;
-    if(this.brainT<=0){
-      this.brainT=0.45+Math.random()*0.2;
-      const dx=player.x-this.x, adx=Math.abs(dx); this.face=dx>=0?1:-1;
-      if(adx>180) this.intent='approach';
-      else if(adx>120) this.intent='strafe';
-      else this.intent = Math.random()<0.5?'guard':'throw';
-    }
-
-    const dx=player.x-this.x; const adx=Math.abs(dx); this.face=dx>=0?1:-1;
-
-    if(this.intent==='throw' && this.cool<=0){
-      this.state='throw'; this.animT=0; this.vx=0; return;
-    }
-    if(this.intent==='guard' && !this.guard){
-      this.guard=true; this.state='idle'; this.animT=0; this.vx=0;
-    }
-
-    if(this.intent==='approach') this.vx = (dx>0? 70 : -70);
-    else if(this.intent==='strafe'){
-      const swirl=Math.sin(performance.now()/320)*60;
-      this.vx = (dx>0? 50 : -50) + (this.face>0?swirl:-swirl)*0.4;
-    }
-
-    if(this.cool<=0 && adx>120 && Math.random()<0.15){ this.state='throw'; this.animT=0; this.vx=0; }
-
-    this.updatePhysics(dt);
-    this.state = this.onGround ? (Math.abs(this.vx)>1?'run':'idle') : 'jump';
-    this.animT+=dt;
-  }
-  draw(ctx,world){
-    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
-    let img=null;
-    if(this.state==='throw'){ img=this.animT<0.2? this.img('prep'): this.img('throw'); }
-    else if(this.state==='counter'){ img=this.img('counter'); }
-    else if(this.guard){ img=this.img('guard'); }
-    else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.img(f?'w1':'w2'); }
-    else { img=this.img('idle'); }
-    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); }
-    ctx.restore(); this.drawHPBar(ctx,world);
-    for(const p of this.projectiles) p.draw(ctx);
-  }
-}
-
-// GabuKing（ボス）
-class GabuUltShot extends Projectile{
-  constructor(world,x,y,dir,img){ super(world,x,y,dir,img,130); this.w=60; this.h=60; this.vx=260*dir; this.life=2.0; }
-}
-class GabuKing extends CharacterBase{
-  constructor(world,effects,assets,x=1200){
-    super(80,90);
-    this.world=world; this.effects=effects; this.assets=assets;
-    this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
-    this.maxhp=500; this.hp=500; this.cool=0; this.state='idle'; this.animT=0; this._seq=null; this._idx=0; this._t=0;
-    this.superArmor=false; this.bullets=[];
-  }
-  img(key){
-    const map={
-      idle:'t1.png', w1:'t2.png', w2:'t3.png',
-      atk1a:'t4.png', atk1b:'t5.png',
-      prep:'t6.png',
-      fin8:'t8.png', fin9:'t9.png',
-      hold:'t10.png', pose:'t7.png', shot:'t11.png'
-    };
-    return this.assets.img(map[key]||'t1.png');
-  }
-  aabb(){ return {x:this.x, y:this.y, w:this.w*0.7, h:this.h*0.95}; }
-  hurt(amount, dir, opts={}, effects){
-    const proc = Math.random()<0.50;
-    if(proc){
-      opts={...(opts||{}), kbMul:0.25, kbuMul:0.22};
-      const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
-      if(hit){ this.state='idle'; }
-      return hit;
-    }
-    return CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
-  }
-  addUltShot(){
-    const img=this.img('shot'); const ox=this.face*38, oy=-18;
-    this.bullets.push(new GabuUltShot(this.world, this.x+ox, this.y+oy, this.face, img));
-  }
-  update(dt, player){
-    if(this.dead){ this.updatePhysics(dt); return; }
-    if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
-
-    for(const b of this.bullets){
-      b.update(dt);
-      if(!b.dead && player.invulnT<=0 && rectsOverlap(b.aabb(), player.aabb())){
-        b.dead=true; const hit=player.hurt(b.power, b.dir, {lift:1.3, kbMul:1.2, kbuMul:1.2}, this.effects); if(hit) updateHPUI(player.hp,player.maxhp);
-      }
-    }
-    this.bullets=this.bullets.filter(b=>!b.dead);
-
-    if(this._seq){
-      this.updatePhysics(dt); this._t+=dt; const cur=this._seq[this._idx];
-      if(cur?.fx){ this.x += this.face * cur.fx * dt; }
-      if(cur?.hit){
-        const hb={x:this.x + this.face*cur.hx, y:this.y, w:cur.hw, h:cur.hh};
-        if(player.invulnT<=0 && rectsOverlap(hb, player.aabb())){
-          const hit=player.hurt(cur.power, this.face, {lift:cur.lift,kbMul:cur.kbm,kbuMul:cur.kbum}, this.effects);
-          if(hit) updateHPUI(player.hp,player.maxhp);
-        }
-      }
-      if(cur?.fire && !cur._fired){ this.addUltShot(); cur._fired=true; }
-      if(this._t>=cur.dur){ this._idx++; this._t=0;
-        if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; this.superArmor=false; this.vx=0; } }
-      this.animT+=dt; return;
-    }
-
-    const dx=player.x-this.x, adx=Math.abs(dx); this.face=dx>=0?1:-1;
-    const slow=80;
-    if(adx>220) this.vx = (dx>0? slow : -slow);
-    else this.vx=0;
-
-    if(this.cool<=0){
-      if(adx<140 && Math.random()<0.55){
-        this.state='atk';
-        this._seq=[
-          {dur:0.08, key:'atk1a', fx:160, hit:false},
-          {dur:0.12, key:'atk1b', fx:200, hit:true, hx:26, hw:48, hh:40, power:30, lift:0.6, kbm:1.0, kbum:1.0},
-          {dur:0.06, key:'atk1a', fx:140},
-          {dur:0.12, key:'atk1b', fx:200, hit:true, hx:26, hw:48, hh:40, power:30, lift:0.6, kbm:1.0, kbum:1.0}
-        ];
-        this.cool=1.6; this._idx=0; this._t=0; return;
-      }
-      if(adx<320 && Math.random()<0.35){
-        this.state='skill'; this.superArmor=true;
-        this._seq=[
-          {dur:0.50, key:'prep', fx:0},
-          {dur:0.30, key:'prep', fx:520, hit:true, hx:28, hw:70, hh:46, power:70, lift:0.9, kbm:1.2, kbum:1.1}
-        ];
-        this.cool=3.0; this._idx=0; this._t=0; return;
-      }
-      if(adx<340 && Math.random()<0.30){
-        this.state='skill'; this.superArmor=true;
-        this._seq=[
-          {dur:0.50, key:'prep', fx:0},
-          {dur:0.28, key:'prep', fx:540, hit:true, hx:28, hw:74, hh:48, power:100, lift:1.2, kbm:1.2, kbum:1.2},
-          {dur:0.12, key:'fin8', fx:60, hit:false},
-          {dur:0.18, key:'fin9', fx:80, hit:false}
-        ];
-        this.cool=4.2; this._idx=0; this._t=0; return;
-      }
-      if(adx<420 && Math.random()<0.22){
-        this.state='ult'; this.superArmor=true;
-        this._seq=[
-          {dur:0.50, key:'hold', fx:0},
-          {dur:0.18, key:'pose', fx:0, hit:true, hx:24, hw:56, hh:50, power:50, lift:0.6, kbm:1.0, kbum:1.0},
-          {dur:0.30, key:'pose', fx:0, fire:true}
-        ];
-        this.cool=8.0; this._idx=0; this._t=0; return;
-      }
-    }
-
-    this.updatePhysics(dt);
-    this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
-    this.animT+=dt;
-  }
-  draw(ctx,world){
-    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
-    let img=null;
-    if(this._seq){ const cur=this._seq[this._idx]; img=this.img(cur?.key||'idle'); }
-    else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.img(f?'w1':'w2'); }
-    else img=this.img('idle');
-    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); }
-    ctx.restore(); this.drawHPBar(ctx,world);
-    for(const b of this.bullets) b.draw(world.ctx);
-  }
-}
-
-// Screw（ボス）
+/* ================================
+ * Enemy: Screw（ステージ1のボス。被弾スピン反映）
+ * ================================ */
 class Screw extends CharacterBase{
   constructor(world,effects,assets,x=1500){
     super(62,68);
@@ -1201,7 +891,10 @@ class Screw extends CharacterBase{
     this.animT+=dt;
   }
   draw(ctx,world){
-    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
+    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
+    if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
+    if(!this.dead && this.spinSpeed>0 && this.state==='hurt'){ ctx.rotate(this.spinAngle); }
+    if(this.face<0 && !this.dead) ctx.scale(-1,1);
     let img=null;
     if(this._seq){ const cur=this._seq[this._idx]; img=this.img(cur?.key||'idle'); }
     else if(!this.onGround){ img=this.img(this.highJump? 'high':'jump'); }
@@ -1212,135 +905,9 @@ class Screw extends CharacterBase{
   }
 }
 
-// MOBGiant（ボス）
-class MOBGiant extends CharacterBase{
-  constructor(world,effects,assets,x=1650){
-    super(100,120);
-    this.world=world; this.effects=effects; this.assets=assets;
-    this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
-    this.maxhp=2800; this.hp=2800;
-    this.superArmor=false;
-    this.cool=0; this.recoverT=0; this.modeJump=false; this.modeSwapT=0;
-    this.chargeT=0; this.energyOrbs=[]; this.postLagT=0;
-    this.lowFreqBias=0.0;
-  }
-  aabb(){ return {x:this.x, y:this.y, w:this.w*0.7, h:this.h*0.96}; }
-  img(key){
-    const map={ idle:'P1.png', w1:'P1.png', w2:'P2.png', j1:'P1.png', j2:'P2.png', j3:'P3.png',
-      dashPrep:'P4.png', dashAtk:'P5.png', charge:'P6.png', release:'P7.png', orb:'P10.png' };
-    return this.assets.img(map[key]||'P1.png');
-  }
-  hurt(amount, dir, opts={}, effects){
-    if(this.invulnT>0||this.dead) return false;
-    const stateSA = this.superArmor;
-    const halfSA = Math.random()<0.65;
-    const activeSA = stateSA || halfSA;
-    this.hp=Math.max(0,this.hp-amount);
-    const kbMul = activeSA ? 0.12 : (opts.kbMul||1);
-    const kbuMul= activeSA ? 0.10 : (opts.kbuMul||1);
-    const baseKb = 140 + amount*12;
-    const baseKbu = opts.lift ? 360 : (amount>=15? 300 : 210);
-    this.vx = clamp(dir * baseKb * kbMul, -220, 220);
-    this.vy = - clamp(baseKbu * kbuMul, 0, 340);
-    this.x += dir * 1.5; this.face = -dir;
-    if(!activeSA){ this.state='hurt'; this.hurtT=0; this.invulnT=0.20; }
-    if(effects) effects.addSpark(this.x, this.y-12, amount>=25);
-    if(this.hp<=0){ this.dead=true; this.vx = dir * 540; this.vy = -540; this.spinSpeed = 16; this.deathT = 0; this.fade = 1; }
-    return true;
-  }
-  addEnergyPair(chargeSec){
-    const img=this.img('orb'); const ox=this.face*40, oy=-20;
-    this.energyOrbs.push(new EnergyBall(this.world,this.x+ox,this.y+oy, this.face,  img, 36, chargeSec, 2));
-    this.energyOrbs.push(new EnergyBall(this.world,this.x-ox,this.y+oy,-this.face, img, 36, chargeSec, 2));
-  }
-  update(dt, player){
-    if(this.dead){ this.updatePhysics(dt); return; }
-    if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
-    if(this.recoverT>0){ this.recoverT=Math.max(0,this.recoverT-dt); }
-    if(this.postLagT>0){ this.postLagT=Math.max(0,this.postLagT-dt); }
-    for(const p of this.energyOrbs) p.update(dt); this.energyOrbs=this.energyOrbs.filter(p=>!p.dead);
-
-    if(this.state==='charge'){
-      this.superArmor = true; this.vx=0; this.updatePhysics(dt);
-      this.chargeT=Math.min(2.2, this.chargeT + dt);
-      const adx=Math.abs(player.x - this.x);
-      if(adx<220 && this.chargeT>0.3){ this.releaseEnergy(); }
-      else if(this.chargeT>=2.2){ this.releaseEnergy(); }
-      this.animT+=dt; return;
-    }
-    if(this.state==='dash'){
-      this.updatePhysics(dt); this.animT+=dt;
-      if(this.animT>=0.42){ this.state='idle'; this.superArmor=false; this.vx=0; this.cool=2.6 + this.lowFreqBias; }
-      return;
-    }
-    if(this.state==='post'){
-      this.updatePhysics(dt); this.animT+=dt;
-      if(this.postLagT<=0){ this.state='idle'; }
-      return;
-    }
-    if(this.state==='hurt'){ this.updatePhysics(dt); if(this.onGround) this.state='idle'; this.animT+=dt; return; }
-
-    const dx = player.x - this.x; const adx = Math.abs(dx); this.face = dx>=0?1:-1;
-    this.modeSwapT -= dt;
-    if(this.modeSwapT<=0 && this.onGround){
-      this.modeSwapT = 2.4 + Math.random()*2.0;
-      this.modeJump = !this.modeJump;
-    }
-    this.lowFreqBias = clamp(this.lowFreqBias + (Math.random()*0.2-0.1), 0.0, 1.2);
-
-    const desireCharge = (adx>=220 && adx<=620);
-    if(this.cool<=0 && this.recoverT<=0 && this.postLagT<=0 && desireCharge){
-      if(this.onGround || Math.random()<0.45){
-        this.state='charge'; this.chargeT=0; this.superArmor=true; this.vx=0;
-        this.cool = 2.8 + this.lowFreqBias; this.animT=0;
-        return;
-      }
-    }
-    if(this.cool<=0 && this.recoverT<=0 && adx<260){
-      this.state='dash'; this.animT=0; this.superArmor=true;
-      this.vx = (this.face>0? 560 : -560);
-      this.cool = 2.4 + this.lowFreqBias;
-      return;
-    }
-
-    const walk=78, run=220;
-    if(adx>150){
-      const sp = this.modeJump? run : walk;
-      this.vx = (dx>0? sp : -sp);
-      if(this.modeJump && this.onGround){ this.vy = -JUMP_V*1.0; }
-    } else { this.vx=0; }
-
-    this.updatePhysics(dt);
-    if(!this.onGround) this.state='jump';
-    else this.state = Math.abs(this.vx)>1? 'run':'idle';
-    this.animT+=dt;
-  }
-  releaseEnergy(){ this.addEnergyPair(this.chargeT); this.state='post'; this.postLagT=1.0; this.superArmor=false; this.animT=0; }
-  draw(ctx,world){
-    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
-    if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
-    if(this.face<0 && !this.dead) ctx.scale(-1,1);
-    let img=null, ox=0;
-    if(this.state==='charge'){ img=this.img('charge'); ox=Math.sin(performance.now()/25)*2; }
-    else if(this.state==='dash'){ img=this.img('dashAtk'); }
-    else if(this.state==='post'){ img=this.img('release'); }
-    else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.img(f?'w1':'w2'); }
-    else if(this.state==='jump'){ const f=Math.floor(this.animT*8)%3; img=this.img(['j1','j2','j3'][f]); }
-    else { img=this.img('idle'); }
-    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2+ox), Math.round(-h/2), Math.round(w), Math.round(h)); }
-    if(this.state==='charge'){
-      const orb=this.img('orb'); const t=this.chargeT;
-      const mul = 0.7 + 1.0*(t/2.2);
-      const hh=38*mul, ww=54*mul; const oxh = this.face*34, oyh=-22;
-      if(orb){ ctx.save(); ctx.translate(oxh, oyh); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.95; ctx.drawImage(orb, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh)); ctx.restore(); }
-    }
-    ctx.restore();
-    this.drawHPBar(ctx,world);
-    for(const p of this.energyOrbs) p.draw(ctx);
-  }
-}
-
-/* ===== World ===== */
+/* ================================
+ * World（背景/障害物/ズーム/境界）
+ * ================================ */
 class World{
   constructor(assets, canvas, effects){
     this.assets=assets; this.effects=effects; this.canvas=canvas;
@@ -1348,8 +915,19 @@ class World{
     this.gameW=canvas.width; this.gameH=canvas.height; this.camX=0; this.camY=0; this.time=0; this._timerAcc=0;
     const r=this.canvas.getBoundingClientRect(); this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
 
-    this.bgImg = null; this.bgScale=1; this.bgDW=0; this.bgDH=0;
+    this.bgImg=null; this.bgScale=1; this.bgDW=0; this.bgDH=0;
     this.bgSpeed=0.75; this.bgLoopX=true; this.bgYOffset=0;
+
+    this.obstacles=[]; // [{x,yTop,w,h,oneWay:true,img:'contena.png'}]
+
+    this.stageLeft=STAGE_LEFT;
+    this.stageRight=STAGE_RIGHT_DEFAULT;
+
+    this.zoom=1.0;
+  }
+  setBounds(l, r){
+    this.stageLeft = l;
+    this.stageRight = Math.max(l+this.gameW, r);
   }
   setBackground(src, opts={}){
     this.bgImg = this.assets.has(src) ? this.assets.img(src) : null;
@@ -1361,14 +939,27 @@ class World{
     this.bgLoopX = (opts.loopX!==undefined)? opts.loopX : true;
     this.bgYOffset = opts.yOffset||0;
   }
+  setObstacles(list){ this.obstacles = Array.isArray(list)? list : []; }
   resize(){ const r=this.canvas.getBoundingClientRect(); this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH; }
-  updateCam(p){ const offs=this.effects.getCamOffset(); const target=clamp(p.x - this.gameW*0.35 + offs.x, 0, Math.max(0, STAGE_RIGHT - this.gameW)); this.camX=lerp(this.camX,target,0.12); this.camY=offs.y; }
+  updateCam(p){
+    const offs=this.effects.getCamOffset();
+    const sr = this.stageRight;
+    const target=clamp(p.x - this.gameW*0.35 + offs.x, this.stageLeft, Math.max(this.stageLeft, sr - this.gameW));
+    this.camX=lerp(this.camX,target,0.12); this.camY=offs.y;
+  }
   updateTimer(dt){
     this._timerAcc+=dt; if(this._timerAcc>=0.2){ this.time+=this._timerAcc; this._timerAcc=0;
       const t=Math.floor(this.time); const mm=String(Math.floor(t/60)).padStart(2,'0'); const ss=String(t%60).padStart(2,'0'); document.getElementById('time').textContent=`${mm}:${ss}`; }
   }
   draw(player, enemies){
-    const ctx=this.ctx; ctx.clearRect(0,0,this.gameW,this.gameH);
+    const ctx=this.ctx;
+    ctx.save();
+    // 画面ズーム（ステージクリア用）
+    ctx.translate(this.gameW/2, this.gameH/2);
+    ctx.scale(this.zoom, this.zoom);
+    ctx.translate(-this.gameW/2, -this.gameH/2);
+
+    ctx.clearRect(0,0,this.gameW,this.gameH);
     if(this.bgImg){
       const w=Math.round(this.bgDW), h=Math.round(this.bgDH);
       if(this.bgLoopX){
@@ -1376,36 +967,48 @@ class World{
         const startX = Math.floor((this.camX*this.bgSpeed - this.gameW*0.2)/step)*step;
         const endX = this.camX*this.bgSpeed + this.gameW*1.2 + w;
         for(let x=startX; x<=endX; x+=step){
-          ctx.drawImage(this.bgImg, 0,0,this.bgImg.width,this.bgImg.height, Math.round(x - this.camX*this.bgSpeed), this.bgYOffset, w, h);
+          ctx.drawImage(this.bgImg, 0,0,this.bgImg.width,this.bgImg.height,
+            Math.round(x - this.camX*this.bgSpeed), this.bgYOffset, w, h);
         }
       }else{
+        // 横ループなしで1枚だけ
         const drawX = Math.round(- this.camX*this.bgSpeed);
-        ctx.drawImage(this.bgImg, 0,0,this.bgImg.width,this.bgImg.height, drawX, this.bgYOffset, w, h);
+        ctx.drawImage(this.bgImg, 0,0,this.bgImg.width,this.bgImg.height,
+          drawX, this.bgYOffset, w, h);
       }
     } else {
       const g=ctx.createLinearGradient(0,0,0,this.gameH); g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18'); ctx.fillStyle=g; ctx.fillRect(0,0,this.gameW,this.gameH);
     }
+    // 地面線
     ctx.fillStyle='#0b0f17'; const yTop=Math.floor(GROUND_TOP_Y); ctx.fillRect(0,yTop-1,this.gameW,1);
+
+    // 障害物（コンテナ）
+    for(const o of this.obstacles){
+      const img=this.assets.img(o.img||''); if(img){
+        const scaleH = o.h / img.height;
+        const drawW  = Math.round(img.width * scaleH);
+        const left   = Math.round(o.x - drawW/2);
+        const top    = Math.round(o.yTop - o.h);
+        ctx.imageSmoothingEnabled=false;
+        ctx.drawImage(img, left - this.camX, top - this.camY, drawW, o.h);
+      }else{
+        ctx.fillStyle='rgba(100,160,220,.25)';
+        ctx.fillRect(Math.round(o.x - o.w/2 - this.camX), Math.round(o.yTop - o.h - this.camY), o.w, o.h);
+      }
+    }
 
     if(this._skillBullets){ for(const p of this._skillBullets) p.draw(ctx); }
     for(const e of enemies) e.draw(ctx,this);
     player.draw(ctx,this);
     this.effects.draw(ctx,this);
+
+    ctx.restore();
   }
 }
 
-/* ===== Spawner helper ===== */
-function spawnGroup(factory, count, baseX, spacing=70, jitter=20){
-  const arr=[];
-  const startX = baseX - ((count-1)*spacing)/2;
-  for(let i=0;i<count;i++){
-    const x = startX + i*spacing + (Math.random()*2-1)*jitter;
-    arr.push(factory(x));
-  }
-  return arr;
-}
-
-/* ===== UI helpers ===== */
+/* =========================================
+ * UI helpers
+ * ========================================= */
 const updateHPUI=(hp,maxhp)=>{
   const fill=document.getElementById('hpfill');
   document.getElementById('hpnum').textContent=hp;
@@ -1413,29 +1016,155 @@ const updateHPUI=(hp,maxhp)=>{
 };
 const setLivesUI=(l)=>{ document.getElementById('lives').textContent = l; };
 const showBanner=(text, ms=1000)=>{
-  const el=document.getElementById('banner'); if(!el) return;
+  const el=document.getElementById('banner');
+  if(!el) return;
   el.textContent = text;
   el.classList.remove('hidden');
   setTimeout(()=>{ el.classList.add('hidden'); }, ms);
 };
 const showTitle=(show=true)=>{
-  const el=document.getElementById('titleOverlay'); if(!el) return;
+  const el=document.getElementById('titleOverlay');
+  if(!el) return;
   if(show){ el.classList.remove('hidden'); } else { el.classList.add('hidden'); }
 };
 
-/* ===== Game ===== */
+/* =========================================
+ * Stage1 制御（入口→室内）
+ * ================================ */
+class Stage1 {
+  constructor(game){
+    this.g=game;
+    this.section=1;
+    this.waruKilled=0;
+    this.waruTarget=15;
+    this.groupActive=false;
+    this.boss=null;
+    this._bossDropAnnounced=false;
+    this._clearZoomT=0;
+  }
+
+  start(){
+    // 入口: 背景オフセットで地面に合わせる、コンテナは地面に接地
+    this.g.world.setBackground('ST1.png', { yOffset: ST1_BG_YOFF, loopX:true });
+    this.g.world.setBounds(STAGE_LEFT, STAGE_RIGHT_DEFAULT);
+    this.g.world.setObstacles([
+      {x:780, yTop:GROUND_TOP_Y, w:160, h:80, oneWay:true, img:'contena.png'}
+    ]);
+    this.spawnWaruGroup(3);
+    this.groupActive=true;
+  }
+
+  gotoSection2(){
+    this.section=2;
+    this.waruKilled=0;
+    this.waruTarget=10;
+    this.groupActive=false;
+    this.g.player.x = STAGE_LEFT + 40;
+
+    // 室内は1枚のみ・狭い
+    this.g.world.setBackground('CS.png', { loopX:false, yOffset:0 });
+    // 背景幅に合わせて境界を狭く
+    const sr = Math.max(this.g.world.gameW, Math.round(this.g.world.bgDW));
+    this.g.world.setBounds(STAGE_LEFT, sr);
+
+    this.g.world.setObstacles([]);
+    setTimeout(()=>{ this.spawnWaruGroup(3); this.groupActive=true; }, 350);
+  }
+
+  spawnWaruGroup(n){
+    for(let i=0;i<n;i++){
+      const x = this.randomSpawnX();
+      this.g.enemies.push(new WaruMOB(this.g.world, this.g.effects, this.g.assets, x));
+    }
+  }
+  randomSpawnX(){
+    const margin=80;
+    const sl=this.g.world.stageLeft, sr=this.g.world.stageRight;
+    const minX = sl + margin;
+    const maxX = sr - margin;
+    for(let tries=0; tries<20; tries++){
+      const x = Math.random()*(maxX-minX)+minX;
+      if(Math.abs(x - this.g.player.x) > 160) return x;
+    }
+    return Math.random()*(maxX-minX)+minX;
+  }
+
+  onEnemyDeaths(){
+    for(const e of this.g.enemies){
+      if(e instanceof WaruMOB && e.dead && !e._countedKill){
+        e._countedKill = true;
+        this.waruKilled++;
+      }
+    }
+    const waruAlive = this.g.enemies.some(e=> e instanceof WaruMOB && !e.dead);
+
+    if(this.section===1){
+      if(this.waruKilled>=this.waruTarget && !waruAlive){
+        this.groupActive=false;
+        this.gotoSection2();
+        return;
+      }
+      if(!waruAlive && this.waruKilled < this.waruTarget){
+        this.spawnWaruGroup(3);
+        this.groupActive=true;
+      }
+    } else if(this.section===2){
+      if(this.waruKilled>=this.waruTarget && !waruAlive){
+        this.groupActive=false;
+        if(!this.boss) this.spawnBossDrop();
+        return;
+      }
+      if(!waruAlive && this.waruKilled < this.waruTarget){
+        this.spawnWaruGroup(3);
+        this.groupActive=true;
+      }
+    }
+  }
+
+  spawnBossDrop(){
+    const sl=this.g.world.stageLeft, sr=this.g.world.stageRight;
+    const x = clamp(this.g.player.x + (Math.random()<0.5?-120:120), sl+120, sr-120);
+    const boss = new Screw(this.g.world, this.g.effects, this.g.assets, x);
+    boss.maxhp = 2000; boss.hp = 2000;
+    boss.y = -200; boss.vy = 900;
+    this.boss = boss;
+    this.g.enemies.push(boss);
+  }
+
+  update(dt){
+    if(this.boss && !this._bossDropAnnounced){
+      const onGround = this.boss.onGround || (this.boss.y + this.boss.h/2 >= GROUND_TOP_Y-1);
+      if(onGround){
+        this._bossDropAnnounced=true;
+        this.g.effects.shake(0.35,14);
+        showBanner('MOBスクリュー登場！', 1000);
+      }
+    }
+    if(this.boss && this.boss.dead && this.boss.fade<=0 && !this._clearZoomT){
+      this._clearZoomT = 0.0001;
+      showBanner('ステージクリア!!', 2000);
+    }
+    if(this._clearZoomT){
+      this._clearZoomT += dt;
+      this.g.world.zoom = lerp(this.g.world.zoom, 1.5, 0.08);
+      if(this._clearZoomT>=2.0){
+        this.g.toTitle();
+      }
+    }
+  }
+}
+
+/* =========================================
+ * Game（最後の“すり抜け”解消を強化）
+ * ========================================= */
 class Game{
   constructor(){
     this.assets=new Assets(); this.canvas=document.getElementById('game'); this.input=new Input(); this.effects=new Effects();
     this.player=null; this.enemies=[]; this.world=null; this.lastT=0;
-    this.waveIndex=0; this.ready=false;
-
+    this.state='title';
     addEventListener('resize',()=>this.world?.resize());
-    // Startボタンはassets読了後に有効化
-    const startBtn = document.getElementById('startBtn');
-    if(startBtn){
-      startBtn.addEventListener('click', ()=> this.beginStage1FromTitle());
-    }
+    const startBtn=document.getElementById('startBtn');
+    startBtn?.addEventListener('click', ()=> this.beginStage1());
   }
   async start(){
     const imgs=[
@@ -1451,75 +1180,56 @@ class Game{
       'Y1.png','Y2.png','Y3.png','Y4.png',
       'UL1.PNG','UL2.PNG','UL3.png',
       'kem.png',
-      /* Enemies */
+      /* Enemies（必要分） */
       'teki1.png','teki2.png','teki3.png','teki7.png',
-      'I1.png','I2.png','I3.png','I4.png','I5.png','I6.png','I7.png','I8.png',
-      'IC.png','IC2.png','IC3.png','IC4.png',
-      'SL.png','SL2.png','SL3.png','SL4.png','SL5.png','SL6.png','SL7.png','SL8.png',
-      'P1.png','P2.png','P3.png','P4.png','P5.png','P6.png','P7.png','P10.png',
-      't1.png','t2.png','t3.png','t4.png','t5.png','t6.png','t7.png','t8.png','t9.png','t10.png','t11.png',
       'B1.png','B2.png','B3.png','B4.png','B5.png','B6.png','B7.png','B8.png','B9.png','B10.png','B11.png','B12.png','B13.png','B14.png'
     ];
     await this.assets.load(imgs);
-
     this.world=new World(this.assets,this.canvas,this.effects);
-    // 入口は ST1.png を使用（横ループ／Yオフセット調整可）
-    this.world.setBackground('ST1.png', { loopX:true, yOffset: ST1_BG_YOFF });
-
     this.player=new Player(this.assets,this.world,this.effects);
     updateHPUI(this.player.hp,this.player.maxhp);
     setLivesUI(this.player.lives);
-
-    this.ready=true;
-    const btn=document.getElementById('startBtn');
-    if(btn){ btn.disabled=false; btn.textContent='START'; }
 
     this.lastT=now();
     const loop=()=>{ this._tick(); requestAnimationFrame(loop); };
     requestAnimationFrame(loop);
   }
 
-  beginStage1FromTitle(){
-    if(!this.ready) return; // 読み込み前無効
-    showTitle(false);
-    this.beginStage1();
-  }
-
   beginStage1(){
-    // 初期化 & Wave0
+    showTitle(false);
+    this.state='play';
     this.enemies.length=0;
-    this.waveIndex=0;
     this.player.dead=false; this.player.hp=this.player.maxhp; updateHPUI(this.player.hp,this.player.maxhp);
     this.player.x=100; this.player.y=Math.floor(GROUND_TOP_Y)-this.player.h/2+FOOT_PAD; this.player.vx=0; this.player.vy=0;
-    this.world.time=0;
+    this.world.time=0; this.world.zoom=1.0;
 
-    this.world.setBackground('ST1.png', { loopX:true, yOffset: ST1_BG_YOFF });
-    this._startWave(0);
-    showBanner('Stage 1 Start', 800);
+    this.world.setBackground('ST1.png', { yOffset: ST1_BG_YOFF, loopX:true });
+    this.world.setBounds(STAGE_LEFT, STAGE_RIGHT_DEFAULT);
+    this.world.setObstacles([
+      {x:780, yTop:GROUND_TOP_Y, w:160, h:80, oneWay:true, img:'contena.png'}
+    ]);
+    this.stage = new Stage1(this);
+    this.stage.start();
   }
 
-  _startWave(i){
-    const spawnX = 720 + i*60;
+  toTitle(){
+    this.state='title';
     this.enemies.length=0;
-
-    // 既存の全敵データを活かしたまま出現
-    const minis = spawnGroup((x)=> new IceRoboMini(this.world,this.effects,this.assets,x), 5, spawnX-100, 68, 16);
-    const kozous = spawnGroup((x)=> new Kozou(this.world,this.effects,this.assets,x), 5, spawnX+200, 74, 20);
-    const waru = spawnGroup((x)=> new WaruMOB(this.world,this.effects,this.assets,x), 5, spawnX+420, 76, 18);
-
-    const gabu = new GabuKing(this.world,this.effects,this.assets,spawnX+680);
-    const screw = new Screw(this.world,this.effects,this.assets,spawnX+820);
-    const irobo = new IceRobo(this.world,this.effects,this.assets,spawnX+980);
-    const giant = new MOBGiant(this.world,this.effects,this.assets,spawnX+1120);
-
-    this.enemies.push(...minis, ...kozous, ...waru, gabu, screw, irobo, giant);
+    this.world.zoom=1.0;
+    showTitle(true);
   }
 
   _tick(){
     const t=now(); let dt=(t-this.lastT)/1000; if(dt>0.05) dt=0.05; this.lastT=t;
 
     if(this.effects.hitstop>0){
-      this.effects.update(dt); this.world.updateCam(this.player); this.world.draw(this.player,this.enemies);
+      this.effects.update(dt); if(this.state==='play'){ this.world.updateCam(this.player); this.world.draw(this.player,this.enemies); }
+      return;
+    }
+
+    if(this.state!=='play'){
+      this.world.updateCam(this.player);
+      this.world.draw(this.player,this.enemies);
       return;
     }
 
@@ -1529,52 +1239,13 @@ class Game{
     // Player
     this.player.update(dt,this.input,this.world,this.enemies);
 
-    // Enemies
+    // Enemies（ここではWaruのみ弾判定が必要）
     for(const e of this.enemies){
       e.update(dt,this.player);
-
       if(e instanceof WaruMOB){
         for(const p of e.projectiles){
           if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
             p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0, kbMul:0.55, kbuMul:0.5}, this.effects);
-            if(hit) updateHPUI(this.player.hp,this.player.maxhp);
-          }
-        }
-      }
-      if(e instanceof IceRobo){
-        if(e.state==='dash'){
-          const hb = {x:e.x + e.face*22, y:e.y, w:e.w*0.9, h:e.h*0.9};
-          if(this.player.invulnT<=0 && rectsOverlap(hb, this.player.aabb())){
-            const hit=this.player.hurt(30, e.face, {lift:1, kbMul:1.1, kbuMul:1.1}, this.effects);
-            if(hit) updateHPUI(this.player.hp,this.player.maxhp);
-          }
-        }
-        for(const p of e.energyOrbs){
-          if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
-            p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0.2, kbMul:0.8, kbuMul:0.8}, this.effects);
-            if(hit) updateHPUI(this.player.hp,this.player.maxhp);
-          }
-        }
-      }
-      if(e instanceof Kozou){
-        for(const p of e.projectiles){
-          if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
-            p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0.15, kbMul:0.7, kbuMul:0.7}, this.effects);
-            if(hit) updateHPUI(this.player.hp,this.player.maxhp);
-          }
-        }
-      }
-      if(e instanceof MOBGiant){
-        if(e.state==='dash'){
-          const hb = {x:e.x + e.face*30, y:e.y, w: e.w*0.96, h: e.h*0.96};
-          if(this.player.invulnT<=0 && rectsOverlap(hb, this.player.aabb())){
-            const hit=this.player.hurt(44, e.face, {lift:1, kbMul:1.15, kbuMul:1.15}, this.effects);
-            if(hit) updateHPUI(this.player.hp,this.player.maxhp);
-          }
-        }
-        for(const p of e.energyOrbs){
-          if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
-            p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0.25, kbMul:0.85, kbuMul:0.85}, this.effects);
             if(hit) updateHPUI(this.player.hp,this.player.maxhp);
           }
         }
@@ -1590,7 +1261,7 @@ class Game{
             p.dead=true;
             const dir = (e.x>=p.x)? 1 : -1;
             const tag = (p instanceof UltBlast)? 'ult' : 'skill';
-            const hit=e.hurt(p.power, dir, {lift:0.3,kbMul:0.9,kbuMul:0.9, tag}, this.effects);
+            const hit=e.hurt(p.power, dir, {lift:0.3,kbMul:0.9,kbuMul:0.9, tag, spin:(tag!=='ult')}, this.effects);
             if(hit) this.effects.addSpark(e.x, e.y-10, p.power>=40);
           }
         }
@@ -1598,29 +1269,52 @@ class Game{
       this.world._skillBullets = this.world._skillBullets.filter(p=>!p.dead && p.life>0);
     }
 
-    // 撃破整理
+    // ライフ/ゲームオーバー簡易処理
+    if(this.player.dead && this.player.fade<=0){
+      this.player.lives--; setLivesUI(this.player.lives);
+      if(this.player.lives>=0){
+        this.player._respawn(this.world);
+      }else{
+        showBanner('GAME OVER', 1600);
+        setTimeout(()=> this.toTitle(), 1600);
+      }
+    }
+
+    // キルカウント→湧き制御/セクション制御
+    if(this.stage) this.stage.onEnemyDeaths();
+
+    // 死骸整理
     this.enemies=this.enemies.filter(e=>!(e.dead && e.fade<=0));
 
-    // のめり込み解消（軽）
-    for(const e of this.enemies){
-      if(e.dead || this.player.dead) continue;
-      const a=this.player.aabb(), b=e.aabb();
-      if(!rectsOverlap(a,b)) continue;
-      const dx = (this.player.x - e.x);
-      const dy = (this.player.y - e.y);
-      const overlapX = (a.w + b.w)/2 - Math.abs(dx);
-      const overlapY = (a.h + b.h)/2 - Math.abs(dy);
-      if(overlapY < overlapX){
-        const dirY = dy>=0? 1 : -1;
-        this.player.y += dirY * overlapY * 0.85;
-        e.y         -= dirY * overlapY * 0.15;
-        if(dirY<0){ this.player.vy = Math.max(this.player.vy, 0); } else { this.player.vy = Math.min(this.player.vy, 0); }
-      } else {
-        const dirX = dx>=0? 1 : -1;
-        this.player.x += dirX * overlapX * 0.6;
-        e.x           -= dirX * overlapX * 0.4;
-        this.player.vx += dirX * 20;
-        e.vx          -= dirX * 20;
+    // ステージ固有アップデート（降臨/クリア演出など）
+    if(this.stage) this.stage.update(dt);
+
+    // ★ 最終の“のめり込み解消”を強化（2回ループ & 攻撃中はX方向優先でプレイヤー側が強く押す）
+    for(let iter=0; iter<2; iter++){
+      for(const e of this.enemies){
+        if(e.dead || this.player.dead) continue;
+        const a=this.player.aabb(), b=e.aabb();
+        if(!rectsOverlap(a,b)) continue;
+        const dx = (this.player.x - e.x);
+        const dy = (this.player.y - e.y);
+        const overlapX = (a.w + b.w)/2 - Math.abs(dx);
+        const overlapY = (a.h + b.h)/2 - Math.abs(dy);
+        const attacking = (this.player.state==='atk'||this.player.state==='skill'||this.player.state==='skill2'||this.player.state==='ult');
+
+        if(overlapY < overlapX){
+          const dirY = dy>=0? 1 : -1;
+          this.player.y += dirY * overlapY * 0.85;
+          e.y         -= dirY * overlapY * 0.15;
+          if(dirY<0){ this.player.vy = Math.max(this.player.vy, 0); } else { this.player.vy = Math.min(this.player.vy, 0); }
+        } else {
+          const dirX = dx>=0? 1 : -1;
+          const pShare = attacking? 0.75 : 0.6;
+          const eShare = 1 - pShare;
+          this.player.x += dirX * overlapX * pShare;
+          e.x           -= dirX * overlapX * eShare;
+          this.player.vx += dirX * 20;
+          e.vx          -= dirX * 20;
+        }
       }
     }
 
@@ -1628,8 +1322,9 @@ class Game{
   }
 }
 
-/* ===== Boot ===== */
-window.__game = new Game();
-window.__game.start();
+/* =========================================
+ * Boot
+ * ========================================= */
+new Game().start();
 
 })();
