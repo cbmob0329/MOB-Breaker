@@ -11,17 +11,17 @@ canvas#game{display:block;width:100%;height:100%}
 .stick{width:120px;height:120px;border-radius:50%;background:#0d1828;outline:2px solid #22324d;position:relative}
 .stickThumb{width:64px;height:64px;border-radius:50%;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#1a2a45;outline:2px solid #2e4a73;box-shadow:inset 0 0 0 4px #0c1422}
 
-/* 右側ボタン：3x2（5ボタン+×） */
+/* 右ボタン */
 .buttons{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,1fr);gap:12px;align-content:stretch;justify-items:stretch}
 .btn{border:none;border-radius:14px;background:#0d1828;outline:2px solid #22324d;color:var(--fg);font-size:26px;display:grid;place-items:center;touch-action:none;box-shadow:inset 0 -4px 0 rgba(255,255,255,.04);transition:opacity .15s ease;min-height:64px}
 .btn:active{transform:scale(.98)}
 .btn[disabled]{opacity:.35;pointer-events:none}
-.btn.attack1{background:#112033} /* ■ */
-.btn.attack2{background:#1a2436} /* ▲ */
-.btn.skill1 {background:#132a22} /* ● */
-.btn.skill2 {background:#1f2433} /* ◎ */
-.btn.ult    {background:#2b2030} /* U */
-.btn.jump   {background:#25202b} /* × */
+.btn.attack1{background:#112033}
+.btn.attack2{background:#1a2436}
+.btn.skill1 {background:#132a22}
+.btn.skill2 {background:#1f2433}
+.btn.ult    {background:#2b2030}
+.btn.jump   {background:#25202b}
 
 header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex;gap:10px;align-items:center;z-index:10;pointer-events:none}
 .chip{background:var(--hud-bg);outline:1px solid #0e1522;border-radius:12px;padding:6px 10px;font-weight:600;font-size:12px;display:flex;gap:8px;align-items:center}
@@ -34,7 +34,7 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
 .gauge{width:96px;height:6px;border-radius:999px;outline:1px solid #1a263d;background:#0a1220;overflow:hidden}
 .gauge>i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#69d0ff,#a0ffe6)}
 
-/* オーバーレイ層 */
+/* オーバーレイ */
 .layer{position:absolute;inset:0;display:grid;place-items:center;z-index:100;pointer-events:none}
 .layer.hidden{display:none}
 .overlay{background:linear-gradient(180deg,rgba(6,9,16,.88),rgba(6,9,16,.88));backdrop-filter:blur(4px)}
