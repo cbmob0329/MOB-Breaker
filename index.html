@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-  <title>MOB Side Action – Rev33b (Floor=314 / No Container / CS Non-Loop)</title>
+  <title>MOB Side Action – Rev33b</title>
   <meta name="theme-color" content="#0b0c10" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -19,13 +19,10 @@
           <div class="chip timer">Time <strong id="time">00:00</strong></div>
         </header>
 
-        <!-- ゲーム画面 -->
         <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
 
-        <!-- バナー -->
         <div class="layer banner hidden" id="banner"></div>
 
-        <!-- タイトル -->
         <div class="layer overlay" id="titleOverlay">
           <div class="panel">
             <h1>MOB SIDE ACTION</h1>
@@ -36,7 +33,7 @@
         </div>
       </div>
 
-      <!-- スマホ操作系 -->
+      <!-- スマホ操作 -->
       <div class="controls">
         <div class="stickArea" id="stickArea" aria-label="Move Stick">
           <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
@@ -54,6 +51,14 @@
   </div>
 </div>
 
-<script src="script.js"></script>
+<!-- JS（分割） ※順序厳守 -->
+<script src="js/constants.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/effects_assets_input.js"></script>
+<script src="js/characters.js"></script>
+<script src="js/enemies.js"></script>
+<script src="js/world.js"></script>
+<script src="js/stage1.js"></script>
+<script src="js/game.js"></script>
 </body>
 </html>
