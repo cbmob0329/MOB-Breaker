@@ -171,14 +171,13 @@ class CharacterBase{
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.8}; }
 
   /**
-   * ★ ぶっ飛び超強化ルール
-   * - 強ヒット判定: 威力>=40 もしくは opts.kbMul>=1.4、もしくは opts.tag==='ult'
-   * - 強ヒット時はKBに追加倍率を乗算、ヒットストップ/シェイク強化
+   * ★ ぶっ飛び超強化ルール（スマブラ級）
+   * - 強ヒット判定: 威力>=40 / kbMul>=1.4 / tag==='ult'
+   * - 強ヒット時：KB上限＆演出強化、回転付与
    */
   hurt(amount, dir, opts={}, effects){
     if(this.invulnT>0||this.dead) return false;
 
-    // 強ヒット判定
     const strongPower = amount>=40;
     const strongKbMul = (opts.kbMul||1) >= 1.4;
     const isULT = opts.tag==='ult';
@@ -186,36 +185,37 @@ class CharacterBase{
 
     this.hp=Math.max(0,this.hp-amount);
 
-    // 基本KB
     const baseKb = 140 + amount*12;
     const baseKbu = opts.lift ? 360 : (amount>=15? 300 : 210);
 
-    // 既存KB倍率
     const kbMulIn = (opts.kbMul??1);
     const kbuMulIn= (opts.kbuMul??1);
 
-    // ★ 強ヒット追加倍率（超爽快）
-    // 横: 最大2.2倍、縦: 最大2.0倍まで伸ばす
     const STRONG_X = isStrong ? 1.75 : 1.0;
     const STRONG_Y = isStrong ? 1.65 : 1.0;
 
-    // 最終KB
-    this.vx = clamp(dir * baseKb * kbMulIn * STRONG_X, -640, 640);
-    this.vy = - clamp(baseKbu * kbuMulIn * STRONG_Y, 0, 620);
+    // ★ 上限引き上げ：スマブラ級の飛び
+    this.vx = clamp(dir * baseKb * kbMulIn * STRONG_X, -1400, 1400);
+    this.vy = - clamp(baseKbu * kbuMulIn * STRONG_Y, 0, 1200);
 
-    this.x += dir * (isStrong? 4 : 2);
+    this.x += dir * (isStrong? 6 : 3);
     this.face = -dir;
 
     this.state='hurt'; this.hurtT=0; this.animT=0; this.invulnT=0.35;
 
-    // ★ 強ヒット時の演出強化
+    // ★ 回転付与（ULT・強ヒット・明示指定のいずれか）
+    if(opts.spin || isStrong){
+      this.spinSpeed = Math.max(this.spinSpeed, 16 * (isStrong?1.15:1.0));
+      this._spinDecayT = Math.max(this._spinDecayT||0, 0.6);
+    }
+
     if(effects){
       effects.addSpark(this.x, this.y-10, isStrong || amount>=15);
-      if(isStrong){ effects.shake(0.18,10); effects.hitstop=Math.max(effects.hitstop,0.11); }
+      if(isStrong){ effects.shake(0.2,12); effects.hitstop=Math.max(effects.hitstop,0.12); }
     }
 
     if(this.hp<=0){
-      this.dead=true; this.vx = dir * 540; this.vy = -560; this.spinSpeed = 18; this.deathT = 0; this.fade = 1;
+      this.dead=true; this.vx = dir * 700; this.vy = -680; this.spinSpeed = 20; this.deathT = 0; this.fade = 1;
     }
     return true;
   }
@@ -238,6 +238,14 @@ class CharacterBase{
       this.hurtT+=dt; if(this.onGround || this.hurtT>=this.maxHurt){ this.state='idle'; }
     }
     if(this.dead){ this.deathT += dt; this.spinAngle += this.spinSpeed*dt; this.fade = clamp(1 - this.deathT/1.2, 0, 1); }
+
+    // ★ 被弾スピンの減衰（死亡時は既存ロジックに任せる）
+    if(!this.dead && this.spinSpeed>0){
+      this.spinAngle += this.spinSpeed*dt;
+      if(this.onGround) this.spinSpeed *= 0.86;
+      this._spinDecayT = Math.max(0,(this._spinDecayT||0)-dt);
+      if(this._spinDecayT<=0) this.spinSpeed=0;
+    }
   }
 
   drawHPBar(ctx,world){
@@ -283,11 +291,11 @@ class UltBlast extends Projectile{
   constructor(world,x,y,dir,img,chargeSec){
     super(world,x,y,dir,img,300);
     const cs = clamp(chargeSec,0,3.0);
-    const sizeMul = lerp(0.35, 1.6, clamp(cs/3.0,0,1));
-    this.w = Math.round(60*sizeMul);
-    this.h = Math.round(60*sizeMul);
-    this.vx = (230 + 120*sizeMul) * dir;
-    this.life = 1.7 + 0.55*sizeMul;
+    const sizeMul = lerp(0.6, 2.0, clamp(cs/3.0,0,1)); // ← サイズ幅拡大（約2倍）
+    this.w = Math.round(120*sizeMul);
+    this.h = Math.round(120*sizeMul);
+    this.vx = (280 + 160*sizeMul) * dir;
+    this.life = 1.9 + 0.7*sizeMul;
   }
 }
 class GroundSpike extends Projectile{
@@ -367,11 +375,11 @@ class Player extends CharacterBase{
     const cur=this._actionSeq[this._actionIndex]; if(!cur) return null;
     if(this.state==='skill' || this.state==='skill2' || this.state==='ult'){
       const W=86,H=64; const x=this.x + this.face*(this.w*0.2);
-      return {x, y:this.y, w:W, h:H, power:cur.power||0, dir:this.face, lift:cur.lift||0, kbMul:cur.kbMul||1.6, kbuMul:cur.kbuMul||1.3, tag:cur.tag};
+      return {x, y:this.y, w:W, h:H, power:cur.power||0, dir:this.face, lift:cur.lift||0, kbMul:cur.kbMul||1.6, kbuMul:cur.kbuMul||1.3, tag:cur.tag, spin: !!cur.spin};
     }
     if(cur.kind==='hit' || cur.kind==='sp'){
       const w=52, h=42, x=this.x + this.face*(this.w*0.3 + w*0.5), y=this.y - 6;
-      return {x,y,w,h, power:cur.power||0, dir:this.face, lift:cur.lift||1, kbMul:cur.kbMul||1, kbuMul:cur.kbuMul||1, tag:cur.tag};
+      return {x,y,w,h, power:cur.power||0, dir:this.face, lift:cur.lift||1, kbMul:cur.kbMul||1, kbuMul:cur.kbuMul||1, tag:cur.tag, spin: !!cur.spin};
     }
     return null;
   }
@@ -395,10 +403,10 @@ class Player extends CharacterBase{
       this._showGauge(true,'● Charge', input.skillChargeT/1.0);
       this.saT = 0.08;
     }
-    // ULT：溜めながら移動可（★超高速チャージ化）
+    // ULT：溜めながら移動可（★超高速チャージ）
     this.isUltCharging = input.ultCharging && this.ultCDT<=0;
     if(this.isUltCharging){
-      input.ultChargeT = Math.min(3, input.ultChargeT + dt*4); // ← 高速化
+      input.ultChargeT = Math.min(3, input.ultChargeT + dt*60); // ← ほぼ瞬時にMAX
       this._showGauge(true,'U Charge', input.ultChargeT/3);
       this.saT = 0.12;
     }
@@ -420,7 +428,7 @@ class Player extends CharacterBase{
         for(const e of enemies){
           if(!e || e.dead || e.invulnT>0) continue;
           if(rectsOverlap({x:hb.x,y:hb.y,w:hb.w,h:hb.h}, e.aabb())){
-            const hit = e.hurt(hb.power, hb.dir, {lift:hb.lift, kbMul:hb.kbMul, kbuMul:hb.kbuMul, tag:hb.tag}, this.effects);
+            const hit = e.hurt(hb.power, hb.dir, {lift:hb.lift, kbMul:hb.kbMul, kbuMul:hb.kbuMul, tag:hb.tag, spin: hb.spin}, this.effects);
             if(hit && rectsOverlap(this.aabb(), e.aabb())){ e.x = this.x + hb.dir * (this.w*0.55); }
             if(hit && this.state==='atk' && this._actionSeq && this._actionSeq[this._actionIndex]?.tag==='chaseFinisher'){
               this.effects.addSpark(e.x, e.y-10, true);
@@ -456,9 +464,9 @@ class Player extends CharacterBase{
   _startA1(){
     this.state='atk'; this.animT=0; this.comboStep=Math.min(this.comboStep+1,3);
     const seq=[ {kind:'prep',dur:0.08,frame:'k1prep',fx:80,power:0} ];
-    let frame='k1a', power=6, fx=140;
-    if(this.comboStep===2){ frame='k1b'; power=9; fx=170; }
-    else if(this.comboStep===3){ frame='k1c'; power=12; fx=200; }
+    let frame='k1a', power=16, fx=150;     // ← +10
+    if(this.comboStep===2){ frame='k1b'; power=19; fx=180; }
+    else if(this.comboStep===3){ frame='k1c'; power=22; fx=210; }
     seq.push({kind:'hit',dur:0.20,frame,fx,power, kbMul:1.0, kbuMul:1.0});
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
@@ -466,8 +474,8 @@ class Player extends CharacterBase{
     this.state='atk'; this.animT=0;
     this._actionSeq=[
       {kind:'prep',dur:0.10,frame:'k2prep',fx:90,power:0},
-      // ★ 強化：ダメ+30（18→48）、KB大幅アップ
-      {kind:'hit', dur:0.22,frame:'k2',fx:220,power:48, lift:1.0, kbMul:1.9, kbuMul:1.45, after:'enableChase'}
+      // スマブラ級：ダメ48＆超KB＋回転
+      {kind:'hit', dur:0.22,frame:'k2',fx:240,power:48, lift:1.0, kbMul:2.6, kbuMul:2.2, spin:true, tag:'smash', after:'enableChase'}
     ];
     this._actionIndex=0; this._actionTime=0; this.a2LockoutT = 0.35;
     this._chaseWindowT = 0; this._chaseEnabled=false; this._chaseConsumed=false;
@@ -486,16 +494,14 @@ class Player extends CharacterBase{
     this.state='skill'; this.animT=0; this.skillCDT=5.0;
     const t=clamp(chargeSec,0,1.0);
     const rounds = 2 + Math.floor(t/0.33);
-    // ★ダメージ+20相当＆伸び調整
-    const base   = 46 + Math.floor(t/0.1)*3;
-    // ★KB大幅アップ（強ヒット帯）
-    const kbm  = 2.2 + 0.25*(rounds-2);
-    const kbum = 1.8 + 0.12*(rounds-2);
+    const base   = 46 + Math.floor(t/0.1)*3; // ← +20相当 強化
+    const kbm  = 2.2 + 0.20*(rounds-2);      // ← KB 大幅
+    const kbum = 1.8 + 0.10*(rounds-2);
     const frames=this.frames.spin; const seq=[];
     for(let r=0;r<rounds;r++){
       for(let i=0;i<frames.length;i++){
-        const pow = base*(i===1?1:0.65); const lift=(i===1?1:0);
-        seq.push({kind:'sp',dur:0.06,frame:frames[i],fx:80,power:pow,lift, kbMul:kbm, kbuMul:kbum, tag:'skill'});
+        const pow = base*(i===1?1:0.7); const lift=(i===1?1:0);
+        seq.push({kind:'sp',dur:0.06,frame:frames[i],fx:90,power:pow,lift, kbMul:kbm, kbuMul:kbum, tag:'skill', spin:true});
       }
     }
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
@@ -535,9 +541,11 @@ class Player extends CharacterBase{
 
     this.ultCDT=3.0; // CT 3秒
 
+    // ★ 常に最大チャージ扱いで生成
     const img=this.world.assets.img(this.frames.ul3);
     const ox=this.face*30, oy=-12;
-    const blast=new UltBlast(this.world, this.x+ox, this.y+oy, this.face, img, chargeSec);
+    const cs = Math.max(chargeSec, 3);
+    const blast=new UltBlast(this.world, this.x+ox, this.y+oy, this.face, img, cs);
     (this.world._skillBullets||(this.world._skillBullets=[])).push(blast);
     this.saT=0;
     this._showGauge(false);
@@ -591,6 +599,8 @@ class Player extends CharacterBase{
   draw(ctx,world){
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
     if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
+    // ★ 被弾中の回転（プレイヤーも）
+    if(!this.dead && this.spinSpeed>0 && this.state==='hurt'){ ctx.rotate(this.spinAngle); }
     if(this.face<0 && !this.dead) ctx.scale(-1,1);
 
     let img=null, ox=this._shakeOX||0;
@@ -760,6 +770,8 @@ class WaruMOB extends CharacterBase{
   draw(ctx,world){
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
     if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
+    // ★ 被弾中回転
+    if(!this.dead && this.spinSpeed>0 && this.state==='hurt'){ ctx.rotate(this.spinAngle); }
     if(this.face<0 && !this.dead) ctx.scale(-1,1);
     let img=null;
     if(this.state==='atk' && this._seq){ const cur=this._seq[this._idx]; img=this.imgByKey(cur.key||'prep2'); }
@@ -847,6 +859,8 @@ class IceRobo extends CharacterBase{
     }
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
     if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
+    // ★ 被弾中回転
+    if(!this.dead && this.spinSpeed>0 && this.state==='hurt'){ ctx.rotate(this.spinAngle); }
     if(this.face<0 && !this.dead) ctx.scale(-1,1);
     let img=null, ox=0;
     if(this.state==='charge'){ img=this.img('charge'); ox=Math.sin(performance.now()/25)*1.5; }
@@ -920,7 +934,11 @@ class IceRoboMini extends CharacterBase{
     this.animT+=dt;
   }
   draw(ctx,world){
-    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
+    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); 
+    if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
+    // ★ 被弾中回転
+    if(!this.dead && this.spinSpeed>0 && this.state==='hurt'){ ctx.rotate(this.spinAngle); }
+    if(this.face<0 && !this.dead) ctx.scale(-1,1);
     let img=null; if(this.state==='sp') img=this.img('sp');
     else if(this.state==='atk'){ img=this.hopT<0.16? this.img('idle'): this.img('atk1'); }
     else if(!this.onGround) img=this.img('move'); else img=this.img('move');
@@ -1018,13 +1036,17 @@ class Kozou extends CharacterBase{
     this.animT+=dt;
   }
   draw(ctx,world){
-    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
+    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); 
+    if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
+    // ★ 被弾中回転
+    if(!this.dead && this.spinSpeed>0 && this.state==='hurt'){ ctx.rotate(this.spinAngle); }
+    if(this.face<0 && !this.dead) ctx.scale(-1,1);
     let img=null;
     if(this.state==='throw'){ img=this.animT<0.2? this.img('prep'): this.img('throw'); }
     else if(this.state==='counter'){ img=this.img('counter'); }
     else if(this.guard){ img=this.img('guard'); }
     else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.img(f?'w1':'w2'); }
-    else { img=this.img('idle'); }
+    else img=this.img('idle');
     if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); }
     ctx.restore(); this.drawHPBar(ctx,world);
     for(const p of this.projectiles) p.draw(ctx);
@@ -1149,7 +1171,11 @@ class GabuKing extends CharacterBase{
     this.animT+=dt;
   }
   draw(ctx,world){
-    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
+    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); 
+    if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
+    // ★ 被弾中回転
+    if(!this.dead && this.spinSpeed>0 && this.state==='hurt'){ ctx.rotate(this.spinAngle); }
+    if(this.face<0 && !this.dead) ctx.scale(-1,1);
     let img=null;
     if(this._seq){ const cur=this._seq[this._idx]; img=this.img(cur?.key||'idle'); }
     else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.img(f?'w1':'w2'); }
@@ -1162,8 +1188,6 @@ class GabuKing extends CharacterBase{
 
 /* =========================================
  * Enemy: Screw（攻撃しない問題 → 行動積極化）
- *  - 思考頻度↑、突進/2段/スキル/ULTの抽選上げ
- *  - 距離に応じてダッシュ接近 or ハイジャンプ or 横振り
  * ========================================= */
 class Screw extends CharacterBase{
   constructor(world,effects,assets,x=1500){
@@ -1289,7 +1313,11 @@ class Screw extends CharacterBase{
     this.animT+=dt;
   }
   draw(ctx,world){
-    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
+    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); 
+    if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
+    // ★ 被弾中回転
+    if(!this.dead && this.spinSpeed>0 && this.state==='hurt'){ ctx.rotate(this.spinAngle); }
+    if(this.face<0 && !this.dead) ctx.scale(-1,1);
     let img=null;
     if(this._seq){ const cur=this._seq[this._idx]; img=this.img(cur?.key||'idle'); }
     else if(!this.onGround){ img=this.img(this.highJump? 'high':'jump'); }
@@ -1409,6 +1437,8 @@ class MOBGiant extends CharacterBase{
   draw(ctx,world){
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
     if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
+    // ★ 被弾中回転
+    if(!this.dead && this.spinSpeed>0 && this.state==='hurt'){ ctx.rotate(this.spinAngle); }
     if(this.face<0 && !this.dead) ctx.scale(-1,1);
     let img=null, ox=0;
     if(this.state==='charge'){ img=this.img('charge'); ox=Math.sin(performance.now()/25)*2; }
@@ -1632,10 +1662,14 @@ class Game{
           if(!p.dead && !e.dead && rectsOverlap(p.aabb(), e.aabb())){
             p.dead=true;
             const dir = (e.x>=p.x)? 1 : -1;
-            // ULTはタグ付けで更に強ヒット扱い（パート1の共通強化が効く）
-            const tag = (p instanceof UltBlast)? 'ult' : 'skill';
-            const hit=e.hurt(p.power, dir, {lift:0.3,kbMul:0.9,kbuMul:0.9, tag}, this.effects);
-            if(hit) this.effects.addSpark(e.x, e.y-10, p.power>=40);
+            if(p instanceof UltBlast){
+              // ★ ULT：超ぶっ飛び＆回転
+              e.hurt(p.power, dir, {lift:1.3, kbMul:2.6, kbuMul:2.2, tag:'ult', spin:true}, this.effects);
+            }else{
+              // それ以外（例：地面スパイク等）は少し強め＋回転
+              e.hurt(p.power, dir, {lift:0.5, kbMul:1.2, kbuMul:1.1, tag:'skill', spin:true}, this.effects);
+            }
+            this.effects.addSpark(e.x, e.y-10, true);
           }
         }
       }
