@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-  <title>MOB Side Action – Boosted</title>
+  <title>MOB Side Action – Reset Build</title>
   <meta name="theme-color" content="#0b0c10" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -20,18 +20,17 @@
         </header>
         <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
 
-        <!-- タイトル/スタート -->
+        <!-- 画面バナー（ボス登場/クリアなど） -->
+        <div id="banner" class="overlay hidden" aria-live="polite"></div>
+
+        <!-- タイトルオーバーレイ（スタートボタン） -->
         <div id="titleOverlay" class="overlay">
-          <div class="titleBox">
+          <div class="titlePanel">
             <h1>MOB Side Action</h1>
-            <p>ステージ1：入口 → 室内 → ボス</p>
-            <button id="startBtn" class="startBtn">START</button>
-            <div class="tip">※ 画面タップ / Enter / Space / J でも開始</div>
+            <button id="startBtn" class="start">START</button>
+            <p class="hint">操作: 矢印 / A D、J:攻撃① ■、K:攻撃② ▲、L:スキル①、O:スキル②、U:ULT、Space:ジャンプ</p>
           </div>
         </div>
-
-        <!-- バナー表示 -->
-        <div id="banner" class="banner hidden">READY</div>
       </div>
 
       <div class="controls">
