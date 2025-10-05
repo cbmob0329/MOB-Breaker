@@ -1,59 +1,32 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-  <title>MOB Side Action – Rev33a (Stage1 / Containers / Random Spawns / Boss Drop / Fixes)</title>
-  <meta name="theme-color" content="#0b0c10" />
-  <link rel="stylesheet" href="style.css" />
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
+<title>MOB Side Action – Rev27 FULL (Floor Adjusted / No Loop CS / Container Removed)</title>
+<meta name="theme-color" content="#0b0c10" />
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div id="root">
-  <div id="phone">
-    <div class="grid">
-      <div class="gamewrap">
-        <header class="hud">
-          <div class="chip">残機 <strong id="lives">3</strong></div>
-          <div class="chip">HP <span class="bar"><i id="hpfill" style="width:100%"></i></span> <strong id="hpnum">1000</strong></div>
-          <div class="chip name">MOBYOKI</div>
-          <div class="chip timer">Time <strong id="time">00:00</strong></div>
-        </header>
-
-        <!-- ゲーム画面 -->
-        <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
-
-        <!-- バナー（登場！/ステージクリア!! など） -->
-        <div class="layer banner hidden" id="banner"></div>
-
-        <!-- タイトル（戻り先） -->
-        <div class="layer overlay" id="titleOverlay">
-          <div class="panel">
-            <h1>MOB SIDE ACTION</h1>
-            <h2>Stage 1</h2>
-            <button id="startBtn" class="start">START</button>
-            <p class="hint">操作：左スティック / ■ ▲ ● ◎ U / ×</p>
-          </div>
-        </div>
+  <div id="root">
+    <div id="game">
+      <canvas id="cv"></canvas>
+      <div class="hud">
+        <div id="hpBar"><div id="hpFill"></div></div>
+        <div id="ultGauge"><div id="ultFill"></div></div>
       </div>
-
-      <!-- スマホ操作系 -->
-      <div class="controls">
-        <div class="stickArea" id="stickArea" aria-label="Move Stick">
-          <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
-        </div>
-        <div class="buttons">
-          <button class="btn attack1" id="btnA1"  aria-label="攻撃① ■">■</button>
-          <button class="btn attack2" id="btnA2"  aria-label="攻撃② ▲">▲</button>
-          <button class="btn skill1"  id="btnSK"  aria-label="スキル① ●">●</button>
-          <button class="btn skill2"  id="btnSK2" aria-label="スキル② ◎">◎</button>
-          <button class="btn ult"     id="btnULT" aria-label="ULT U">U</button>
-          <button class="btn jump"    id="btnJMP" aria-label="ジャンプ ×">×</button>
-        </div>
+      <div id="ui">
+        <button id="btnA1">攻①</button>
+        <button id="btnSkill">技①</button>
+        <button id="btnULT">ULT</button>
+        <div id="stickArea"></div>
       </div>
     </div>
+    <div id="panel">
+      <h1>MOB BREAKER</h1>
+      <button id="startBtn">START</button>
+    </div>
   </div>
-</div>
-
 <script src="script.js"></script>
 </body>
 </html>
