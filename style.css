@@ -1,59 +1,296 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-  <title>MOB Side Action – Rev33 FULL</title>
-  <meta name="theme-color" content="#0b0c10" />
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-<div id="root">
-  <div id="phone">
-    <div class="grid">
-      <div class="gamewrap">
-        <header class="hud">
-          <div class="chip">残機 <strong id="lives">3</strong></div>
-          <div class="chip">HP <span class="bar"><i id="hpfill" style="width:100%"></i></span> <strong id="hpnum">1000</strong></div>
-          <div class="chip name">MOBYOKI</div>
-          <div class="chip timer">Time <strong id="time">00:00</strong></div>
-        </header>
+:root {
+  --stage-w: 420px;
+  --stage-h: 720px;
+  --hud-bg: #0b0f17cc;
+  --fg: #e9eef7;
+  --grid-gap: 10px;
+}
 
-        <!-- ゲーム画面 -->
-        <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #0a0d13;
+  color: var(--fg);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Arial, sans-serif;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
 
-        <!-- バナー -->
-        <div class="layer banner hidden" id="banner"></div>
+* { box-sizing: border-box; }
 
-        <!-- タイトル -->
-        <div class="layer overlay" id="titleOverlay">
-          <div class="panel">
-            <h1>MOB SIDE ACTION</h1>
-            <h2>Stage 1</h2>
-            <button id="startBtn" class="start">START</button>
-            <p class="hint">操作：左スティック / ■ ▲ ● ◎ U / ×</p>
-          </div>
-        </div>
-      </div>
+#root {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+}
 
-      <!-- スマホ操作系 -->
-      <div class="controls">
-        <div class="stickArea" id="stickArea" aria-label="Move Stick">
-          <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
-        </div>
-        <div class="buttons">
-          <button class="btn attack1" id="btnA1"  aria-label="攻撃① ■">■</button>
-          <button class="btn attack2" id="btnA2"  aria-label="攻撃② ▲">▲</button>
-          <button class="btn skill1"  id="btnSK"  aria-label="スキル① ●">●</button>
-          <button class="btn skill2"  id="btnSK2" aria-label="スキル② ◎">◎</button>
-          <button class="btn ult"     id="btnULT" aria-label="ULT U">U</button>
-          <button class="btn jump"    id="btnJMP" aria-label="ジャンプ ×">×</button>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+#phone {
+  width: var(--stage-w);
+  height: var(--stage-h);
+  position: relative;
+  overflow: hidden;
+  background: #060910;
+  border: 1px solid #0f1726;
+  border-radius: 20px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, .55);
+  touch-action: none;
+  margin: 0 auto;
+}
 
-<script src="script.js"></script>
-</body>
-</html>
+.grid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-rows: 1fr 220px;
+  gap: var(--grid-gap);
+  padding: var(--grid-gap);
+}
+
+.gamewrap {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #05070c;
+  outline: 1px solid #0e1522;
+}
+
+canvas#game {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* 操作エリア */
+.controls {
+  position: relative;
+  border-radius: 14px;
+  background: var(--hud-bg);
+  outline: 1px solid #0e1522;
+  backdrop-filter: blur(6px);
+  padding: 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.stickArea {
+  position: relative;
+  border-radius: 12px;
+  background: #0a121f;
+  outline: 1px solid #152033;
+  display: grid;
+  place-items: center;
+  touch-action: none;
+}
+
+.stick {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: #0d1828;
+  outline: 2px solid #22324d;
+  position: relative;
+}
+
+.stickThumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: #1a2a45;
+  outline: 2px solid #2e4a73;
+  box-shadow: inset 0 0 0 4px #0c1422;
+}
+
+/* ボタン配置 */
+.buttons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 12px;
+  align-content: stretch;
+  justify-items: stretch;
+}
+
+.btn {
+  border: none;
+  border-radius: 14px;
+  background: #0d1828;
+  outline: 2px solid #22324d;
+  color: var(--fg);
+  font-size: 26px;
+  display: grid;
+  place-items: center;
+  touch-action: none;
+  box-shadow: inset 0 -4px 0 rgba(255,255,255,.04);
+  transition: opacity .15s ease;
+  min-height: 64px;
+}
+
+.btn:active { transform: scale(.98); }
+.btn[disabled] { opacity: .35; pointer-events: none; }
+
+.btn.attack1 { background: #112033; } /* ■ */
+.btn.attack2 { background: #1a2436; } /* ▲ */
+.btn.skill1  { background: #132a22; } /* ● */
+.btn.skill2  { background: #1f2433; } /* ◎ */
+.btn.ult     { background: #2b2030; } /* U */
+.btn.jump    { background: #25202b; } /* × */
+
+/* HUD */
+header.hud {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  padding: 10px 14px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.chip {
+  background: var(--hud-bg);
+  outline: 1px solid #0e1522;
+  border-radius: 12px;
+  padding: 6px 10px;
+  font-weight: 600;
+  font-size: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.bar {
+  --w: 160px;
+  --h: 10px;
+  width: var(--w);
+  height: var(--h);
+  border-radius: 999px;
+  outline: 1px solid #1a263d;
+  background: #0a1220;
+  position: relative;
+  overflow: hidden;
+}
+.bar > i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg,#ff9a9e,#ff6b6b);
+}
+
+.timer { margin-left: auto; }
+.name { margin-left: 6px; opacity: .85; }
+
+/* 頭上ゲージ */
+.overhead {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  gap: 6px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.gauge {
+  width: 96px;
+  height: 6px;
+  border-radius: 999px;
+  outline: 1px solid #1a263d;
+  background: #0a1220;
+  overflow: hidden;
+}
+.gauge > i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg,#69d0ff,#a0ffe6);
+}
+
+/* オーバーレイ */
+.layer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 100;
+  pointer-events: none;
+}
+.layer.hidden { display: none; }
+
+.overlay {
+  background: linear-gradient(180deg,rgba(6,9,16,.88),rgba(6,9,16,.88));
+  backdrop-filter: blur(4px);
+}
+.overlay .panel {
+  pointer-events: auto;
+  background: #0b0f17;
+  outline: 1px solid #13213a;
+  border-radius: 16px;
+  padding: 22px 20px;
+  min-width: 70%;
+  text-align: center;
+  box-shadow: 0 10px 40px rgba(0,0,0,.45);
+}
+.overlay .panel h1 {
+  margin: .2em 0 .1em;
+  font-size: 24px;
+  letter-spacing: .08em;
+}
+.overlay .panel h2 {
+  margin: .1em 0 .8em;
+  font-size: 18px;
+  opacity: .85;
+}
+.overlay .panel .hint {
+  opacity: .7;
+  font-size: 12px;
+  margin-top: 10px;
+}
+.overlay .panel .start {
+  border: none;
+  border-radius: 12px;
+  background: #173058;
+  color: #e9eef7;
+  font-weight: 700;
+  font-size: 18px;
+  padding: 10px 16px;
+  cursor: pointer;
+  outline: 1px solid #254a7d;
+}
+
+/* バナー */
+.banner {
+  pointer-events: none;
+  font-weight: 900;
+  font-size: 28px;
+  letter-spacing: .05em;
+  color: #fff;
+  text-shadow: 0 4px 18px rgba(0,0,0,.6);
+}
+.banner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(255,255,255,.08), transparent 60%);
+  mix-blend-mode: overlay;
+}
+
+@media (max-height: 720px) {
+  :root { --stage-h: 650px; }
+}
