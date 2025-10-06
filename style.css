@@ -1,209 +1,59 @@
-:root {
-  --stage-w: 420px;
-  --stage-h: 720px;
-  --hud-bg: #0b0f17cc;
-  --fg: #e9eef7;
-  --accent: #00ffff;
-  --hp-color: #ff4444;
-  --ult-color: #00ccff;
-}
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
+  <title>MOB Side Action – Rev33 FULL</title>
+  <meta name="theme-color" content="#0b0c10" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="root">
+  <div id="phone">
+    <div class="grid">
+      <div class="gamewrap">
+        <header class="hud">
+          <div class="chip">残機 <strong id="lives">3</strong></div>
+          <div class="chip">HP <span class="bar"><i id="hpfill" style="width:100%"></i></span> <strong id="hpnum">1000</strong></div>
+          <div class="chip name">MOBYOKI</div>
+          <div class="chip timer">Time <strong id="time">00:00</strong></div>
+        </header>
 
-html, body {
-  height: 100%;
-  margin: 0;
-  background: #000;
-  color: var(--fg);
-  font-family: "Orbitron", "Arial Black", sans-serif;
-  overscroll-behavior: none;
-  -webkit-user-select: none;
-  user-select: none;
-}
+        <!-- ゲーム画面 -->
+        <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
 
-#root {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-}
+        <!-- バナー -->
+        <div class="layer banner hidden" id="banner"></div>
 
-.screen {
-  display: none;
-  width: var(--stage-w);
-  height: var(--stage-h);
-  background: #070b12;
-  border-radius: 16px;
-  overflow: hidden;
-  box-shadow: 0 0 40px rgba(0, 0, 0, 0.7);
-  position: relative;
-}
+        <!-- タイトル -->
+        <div class="layer overlay" id="titleOverlay">
+          <div class="panel">
+            <h1>MOB SIDE ACTION</h1>
+            <h2>Stage 1</h2>
+            <button id="startBtn" class="start">START</button>
+            <p class="hint">操作：左スティック / ■ ▲ ● ◎ U / ×</p>
+          </div>
+        </div>
+      </div>
 
-.screen.active {
-  display: block;
-}
+      <!-- スマホ操作系 -->
+      <div class="controls">
+        <div class="stickArea" id="stickArea" aria-label="Move Stick">
+          <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
+        </div>
+        <div class="buttons">
+          <button class="btn attack1" id="btnA1"  aria-label="攻撃① ■">■</button>
+          <button class="btn attack2" id="btnA2"  aria-label="攻撃② ▲">▲</button>
+          <button class="btn skill1"  id="btnSK"  aria-label="スキル① ●">●</button>
+          <button class="btn skill2"  id="btnSK2" aria-label="スキル② ◎">◎</button>
+          <button class="btn ult"     id="btnULT" aria-label="ULT U">U</button>
+          <button class="btn jump"    id="btnJMP" aria-label="ジャンプ ×">×</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
-#title-screen {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-.logo {
-  font-size: 26px;
-  letter-spacing: 1px;
-  color: #00f2ff;
-  text-shadow: 0 0 10px #00f2ff;
-  margin-bottom: 20px;
-}
-
-#enemy-select {
-  background: rgba(20, 25, 30, 0.85);
-  padding: 16px;
-  border-radius: 12px;
-  width: 90%;
-  max-height: 60%;
-  overflow-y: auto;
-}
-
-#enemy-select h2 {
-  text-align: center;
-  margin-top: 0;
-  color: var(--accent);
-}
-
-#enemy-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: center;
-  margin-bottom: 10px;
-}
-
-#enemy-list button {
-  background: #0b0c10;
-  color: var(--fg);
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 6px 10px;
-  cursor: pointer;
-  font-size: 12px;
-  transition: background 0.2s, color 0.2s;
-}
-
-#enemy-list button.selected {
-  background: var(--accent);
-  color: #000;
-}
-
-#start-btn {
-  background: #00ffcc;
-  color: #000;
-  border: none;
-  border-radius: 8px;
-  padding: 10px 16px;
-  font-size: 14px;
-  cursor: pointer;
-  display: block;
-  margin: 0 auto;
-  transition: background 0.3s;
-}
-
-#start-btn:hover {
-  background: #00ffaa;
-}
-
-/* --- ゲーム画面 --- */
-#gameCanvas {
-  width: var(--stage-w);
-  height: var(--stage-h);
-  display: block;
-  background: #0d0f15;
-}
-
-#hud {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  padding: 6px;
-  background: var(--hud-bg);
-  display: grid;
-  grid-template-rows: 20px 20px auto;
-  gap: 6px;
-}
-
-.hp-bar,
-.ult-bar {
-  width: 100%;
-  height: 10px;
-  background: #222;
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.hp-bar .fill {
-  width: 100%;
-  height: 100%;
-  background: var(--hp-color);
-  transition: width 0.2s linear;
-}
-
-.ult-bar .fill {
-  width: 0%;
-  height: 100%;
-  background: var(--ult-color);
-  transition: width 0.2s linear;
-}
-
-#buttons {
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-}
-
-#buttons button {
-  flex: 1;
-  padding: 8px;
-  border: none;
-  border-radius: 6px;
-  background: #111;
-  color: var(--fg);
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-#buttons button:active {
-  background: var(--accent);
-  color: #000;
-}
-
-/* --- 結果画面 --- */
-#result-screen {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-}
-
-#result-text {
-  font-size: 22px;
-  margin-bottom: 20px;
-  color: #fff;
-  text-shadow: 0 0 8px #0ff;
-}
-
-#result-screen button {
-  margin: 6px;
-  background: #0ff;
-  border: none;
-  color: #000;
-  border-radius: 8px;
-  padding: 10px 16px;
-  font-weight: bold;
-  cursor: pointer;
-}
-
-#result-screen button:hover {
-  background: #00ddff;
-}
+<script src="script.js"></script>
+</body>
+</html>
