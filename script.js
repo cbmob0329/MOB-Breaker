@@ -1,4 +1,4 @@
-// script.js – Rev33 (Stage1 two-sections, random spawns, container platform, boss drop, banners & zoom)
+// script.js – Rev33+ (Stage1 side-solid containers, random spawns, boss drop, banners & zoom)
 (function(){
 'use strict';
 
@@ -6,11 +6,11 @@
  * Constants & Utils
  * ================================ */
 const STAGE_LEFT = 0;
-const STAGE_RIGHT = 2200;          // 端の“見えない壁”は現行通り。描画しない。
+const STAGE_RIGHT = 2200;
 const WALL_PAD = 12;
 
-// ★ 地面Yはステージごとに切り替える
-let GROUND_TOP_Y = 360;            // 既定（室内など）
+// ★ 地面Yはステージごとに切り替え
+let GROUND_TOP_Y = 360;
 const GRAV=2000, MOVE=260, JUMP_V=760, MAX_FALL=1200;
 const FOOT_PAD=2;
 
@@ -161,7 +161,7 @@ class Input{
 }
 
 /* ================================
- * Character Base — ★ 強ヒットぶっ飛び共通化 + 一方通行足場
+ * Character Base — 一方通行＋側面ブロック
  * ================================ */
 class CharacterBase{
   constructor(w,h){
@@ -170,7 +170,7 @@ class CharacterBase{
     this.hp=100; this.maxhp=100; this.dead=false; this.deathT=0;
     this.invulnT=0; this.spinAngle=0; this.spinSpeed=0; this.fade=1; this.hurtT=0; this.maxHurt=0.22;
     this.world=null;
-    this._prevY=0;
+    this._prevY=0; this._prevX=0;
   }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.6, h:this.h*0.8}; }
 
@@ -210,25 +210,61 @@ class CharacterBase{
     return true;
   }
 
-  _applyPlatforms(){
-    const w=this.world; if(!w||!w.obstacles||this.vy<0) return;
-    const a=this.aabb(); const prevBottom=this._prevY + this.h/2;
+  // ★ コンテナ等：上面＝一方通行、側面＝常時ブロック
+  _applyObstacles(){
+    const w=this.world; if(!w||!w.obstacles) return;
+    const a=this.aabb();
+    const prevBottom=this._prevY + this.h/2;
     const curBottom = this.y + this.h/2;
+    const prevLeft  = this._prevX - a.w/2;
+    const prevRight = this._prevX + a.w/2;
+    const curLeft   = this.x - a.w/2;
+    const curRight  = this.x + a.w/2;
+
     for(const o of w.obstacles){
-      if(!o.oneWay) continue;
-      const left = o.x - o.w/2, right = o.x + o.w/2, top = o.yTop;
-      const withinX = (a.x > left-8 && a.x < right+8);
-      const crossed = prevBottom <= top && curBottom >= top;
-      if(withinX && crossed){
-        this.y = top - this.h/2 + FOOT_PAD;
-        this.vy = 0; this.onGround=true;
-        return;
+      const left   = o.x - o.w/2;
+      const right  = o.x + o.w/2;
+      const top    = o.yTop - o.h;
+      const bottom = o.yTop;
+
+      // (A) 一方通行：上からだけ着地（落下中のみ）
+      if(o.oneWay && this.vy>=0){
+        const withinX = (a.x > left-8 && a.x < right+8);
+        const crossed = prevBottom <= top && curBottom >= top;
+        if(withinX && crossed){
+          this.y = top - this.h/2 + FOOT_PAD;
+          this.vy = 0; this.onGround=true;
+          // 上面に乗った瞬間は側面判定は不要
+          continue;
+        }
+      }
+
+      // (B) 側面ブロック：上下通過条件を満たしていない時のみ
+      if(o.solidSides){
+        // 角ひっかかり防止：上に立っている（底がtop+2以下）なら横ブロックを無効化
+        const aTop = this.y - this.h/2;
+        const aBottom = this.y + this.h/2;
+        const verticalOverlap = (aTop < bottom) && (aBottom > top+2);
+        const standingAbove   = (aBottom <= top + 2);
+
+        if(verticalOverlap && !standingAbove){
+          // 左側面：外→内へ交差
+          if(prevRight <= left && curRight > left && this.vx > 0){
+            this.x = left - a.w/2; this.vx = 0;
+          }
+          // 右側面：外→内へ交差
+          if(prevLeft >= right && curLeft < right && this.vx < 0){
+            this.x = right + a.w/2; this.vx = 0;
+          }
+        }
       }
     }
   }
 
   updatePhysics(dt){
     this._prevY=this.y;
+    this._prevX=this.x;
+
     this.vy = Math.min(this.vy + GRAV*dt, MAX_FALL);
     this.x += this.vx*dt; this.y += this.vy*dt;
 
@@ -241,7 +277,8 @@ class CharacterBase{
     if(this.y + this.h/2 >= top + FOOT_PAD){ this.y = top - this.h/2 + FOOT_PAD; this.vy=0; this.onGround=true; }
     else this.onGround=false;
 
-    this._applyPlatforms();
+    // ★ 障害物（上面/側面）
+    this._applyObstacles();
 
     if(this.invulnT>0) this.invulnT=Math.max(0,this.invulnT-dt);
     if(this.state==='hurt'){
@@ -540,7 +577,7 @@ class Player extends CharacterBase{
     ];
     this._actionIndex=0; this._actionTime=0;
 
-    this.ultCDT=3.0; // CT 3秒
+    this.ultCDT=3.0;
 
     const img=this.world.assets.img(this.frames.ul3);
     const ox=this.face*30, oy=-12;
@@ -666,7 +703,7 @@ class WaruMOB extends CharacterBase{
     if(this.brainT<=0){
       this.brainT=0.4+Math.random()*0.2;
       const dx=player.x-this.x, adx=Math.abs(dx);
-      self: this.face = dx>=0?1:-1;
+      this.face = dx>=0?1:-1;
 
       if(adx<110) this.intent = Math.random()<0.55 ? 'backstep' : 'strafe';
       else if(adx<220) this.intent = Math.random()<0.5 ? 'strafe' : 'shoot';
@@ -899,7 +936,7 @@ class World{
     const r=this.canvas.getBoundingClientRect(); this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
 
     this.bgImg=null; this.bgScale=1; this.bgDW=0; this.bgDH=0; this.bgSpeed=0.75;
-    this.obstacles=[]; // [{x,yTop,w,h,oneWay:true,img:'contena.png'}]
+    this.obstacles=[]; // [{x,yTop,w,h,oneWay:true,solidSides:true,img:'contena.png'}]
     this.zoom=1.0;
   }
   setBackground(src){
@@ -916,7 +953,7 @@ class World{
   draw(player, enemies){
     const ctx=this.ctx;
     ctx.save();
-    // 画面ズーム（ステージクリア用）
+    // 画面ズーム
     ctx.translate(this.gameW/2, this.gameH/2);
     ctx.scale(this.zoom, this.zoom);
     ctx.translate(-this.gameW/2, -this.gameH/2);
@@ -924,7 +961,7 @@ class World{
     ctx.clearRect(0,0,this.gameW,this.gameH);
     if(this.bgImg){
       const w=Math.round(this.bgDW), h=Math.round(this.bgDH);
-      const step=Math.max(1, w);          // 正確なタイル刻み
+      const step=Math.max(1, w);
       const startX = Math.floor((this.camX*this.bgSpeed - this.gameW*0.2)/step)*step;
       const endX = this.camX*this.bgSpeed + this.gameW*1.2 + w;
       for(let x=startX; x<=endX; x+=step){ ctx.drawImage(this.bgImg, 0,0,this.bgImg.width,this.bgImg.height, Math.round(x - this.camX*this.bgSpeed), 0, w, h); }
@@ -979,14 +1016,14 @@ const showTitle=(show=true)=>{
 };
 
 /* =========================================
- * Stage1 制御（ST1=地面437）
+ * Stage1 制御（ST1=地面437、コンテナ側面ブロックON）
  * ========================================= */
 class Stage1 {
   constructor(game){
     this.g=game;
-    this.section=1;                // 1:入口(ST1) → 2:室内(CS)
+    this.section=1;
     this.waruKilled=0;
-    this.waruTarget=15;            // section1
+    this.waruTarget=15;
     this.groupActive=false;
     this.boss=null;
     this._bossDropAnnounced=false;
@@ -994,34 +1031,34 @@ class Stage1 {
   }
 
   start(){
-    // ★ ST1 は赤帯上端に合わせた地面高さ
+    // ST1 の地面は赤帯上端
     GROUND_TOP_Y = 437;
 
-    // 背景/障害物（コンテナは“地面に接地”）
+    // 背景/障害物（コンテナは地面接地・上面一方通行＋側面ブロック）
     this.g.world.setBackground('ST1.png');
     this.g.world.setObstacles([
-      {x:780, yTop:GROUND_TOP_Y, w:160, h:80, oneWay:true, img:'contena.png'}
+      {x:780, yTop:GROUND_TOP_Y, w:160, h:80, oneWay:true, solidSides:true, img:'contena.png'}
     ]);
 
     // 初期スポーン
     this.spawnWaruGroup(3);
     this.groupActive=true;
 
-    // プレイヤー改めて地面に配置（高さ切り替え後）
+    // プレイヤーを地面に再配置
     this.g.player.y = Math.floor(GROUND_TOP_Y)-this.g.player.h/2+FOOT_PAD;
   }
 
-  // セクション2へ（室内は既定の360運用）
+  // セクション2へ（室内）
   gotoSection2(){
     this.section=2;
     this.waruKilled=0;
     this.waruTarget=10;
     this.groupActive=false;
 
-    GROUND_TOP_Y = 360;                   // 室内の地面（従来）
+    GROUND_TOP_Y = 360;
 
     this.g.world.setBackground('CS.png');
-    this.g.world.setObstacles([]);        // 障害物なし
+    this.g.world.setObstacles([]); // 室内は障害物なし
 
     // プレイヤー再配置
     this.g.player.x = STAGE_LEFT + 40;
@@ -1082,8 +1119,8 @@ class Stage1 {
   spawnBossDrop(){
     const x = this.g.player.x + (Math.random()<0.5?-120:120);
     const boss = new Screw(this.g.world, this.g.effects, this.g.assets, clamp(x, STAGE_LEFT+120, STAGE_RIGHT-120));
-    boss.maxhp = 2000; boss.hp = 2000;            // HP2000
-    boss.y = -200; boss.vy = 900;                 // 天から落下
+    boss.maxhp = 2000; boss.hp = 2000;
+    boss.y = -200; boss.vy = 900; // 天から落下
     this.boss = boss;
     this.g.enemies.push(boss);
   }
@@ -1118,7 +1155,7 @@ class Game{
   constructor(){
     this.assets=new Assets(); this.canvas=document.getElementById('game'); this.input=new Input(); this.effects=new Effects();
     this.player=null; this.enemies=[]; this.world=null; this.lastT=0;
-    this.state='title';  // 'title' | 'play'
+    this.state='title';
     addEventListener('resize',()=>this.world?.resize());
     document.getElementById('startBtn').addEventListener('click', ()=> this.beginStage1());
   }
@@ -1219,7 +1256,7 @@ class Game{
       }
     }
 
-    // プレイヤー弾
+    // プレイヤーの弾・スパイク（敵へ）
     if(this.world._skillBullets){
       for(const p of this.world._skillBullets){
         p.update(dt);
