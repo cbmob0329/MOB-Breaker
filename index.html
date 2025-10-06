@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-  <title>MOB Side Action – Rev33b</title>
+  <title>MOB Side Action – Rev33b (Stage1 / Floor=314 / No Containers / CS Non-Loop)</title>
   <meta name="theme-color" content="#0b0c10" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -33,7 +33,6 @@
         </div>
       </div>
 
-      <!-- スマホ操作 -->
       <div class="controls">
         <div class="stickArea" id="stickArea" aria-label="Move Stick">
           <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
@@ -51,14 +50,8 @@
   </div>
 </div>
 
-<!-- JS（分割） ※順序厳守 -->
-<script src="js/constants.js"></script>
-<script src="js/ui.js"></script>
-<script src="js/effects_assets_input.js"></script>
-<script src="js/characters.js"></script>
-<script src="js/enemies.js"></script>
-<script src="js/world.js"></script>
-<script src="js/stage1.js"></script>
-<script src="js/game.js"></script>
+<!-- 分割JS（順番厳守） -->
+<script src="script-part1.js"></script>
+<script src="script-part2.js"></script>
 </body>
 </html>
