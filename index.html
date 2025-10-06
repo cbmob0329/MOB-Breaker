@@ -3,53 +3,43 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB Side Action – Rev33 FULL (No Containers / Clean Ground / Skill1 4-8 Spins)</title>
+<title>MOB Side Action – Rev.ST1 Ground437 FULL</title>
 <meta name="theme-color" content="#0b0c10" />
 <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 <div id="root">
-  <div id="phone">
-    <div class="grid">
-      <div class="gamewrap">
-        <header class="hud">
-          <div class="chip">残機 <strong id="lives">3</strong></div>
-          <div class="chip">HP <span class="bar"><i id="hpfill" style="width:100%"></i></span> <strong id="hpnum">1000</strong></div>
-          <div class="chip name">MOBYOKI</div>
-          <div class="chip timer">Time <strong id="time">00:00</strong></div>
-        </header>
+  <div id="title-screen" class="screen active">
+    <h1 class="logo">MOB SIDE ACTION</h1>
+    <div id="enemy-select">
+      <h2>敵を選択</h2>
+      <div id="enemy-list"></div>
+      <button id="start-btn">START</button>
+    </div>
+  </div>
 
-        <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
-
-        <div class="layer banner hidden" id="banner"></div>
-
-        <div class="layer overlay" id="titleOverlay">
-          <div class="panel">
-            <h1>MOB SIDE ACTION</h1>
-            <h2>Stage 1</h2>
-            <button id="startBtn" class="start">START</button>
-            <p class="hint">操作：左スティック / ■ ▲ ● ◎ U / ×</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="controls">
-        <div class="stickArea" id="stickArea">
-          <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
-        </div>
-        <div class="buttons">
-          <button class="btn attack1" id="btnA1">■</button>
-          <button class="btn attack2" id="btnA2">▲</button>
-          <button class="btn skill1"  id="btnSK">●</button>
-          <button class="btn skill2"  id="btnSK2">◎</button>
-          <button class="btn ult"     id="btnULT">U</button>
-          <button class="btn jump"    id="btnJMP">×</button>
-        </div>
+  <div id="game-screen" class="screen">
+    <canvas id="gameCanvas" width="420" height="720"></canvas>
+    <div id="hud">
+      <div class="hp-bar"><div class="fill" id="hp-fill"></div></div>
+      <div class="ult-bar"><div class="fill" id="ult-fill"></div></div>
+      <div id="buttons">
+        <button id="attack1">攻撃①</button>
+        <button id="attack2">攻撃②</button>
+        <button id="skill1">スキル①</button>
+        <button id="skill2">スキル②</button>
+        <button id="ult">ULT</button>
       </div>
     </div>
   </div>
+
+  <div id="result-screen" class="screen">
+    <h2 id="result-text"></h2>
+    <button id="retry-btn">RETRY</button>
+    <button id="back-btn">タイトルへ</button>
+  </div>
 </div>
 
-<script src="script.js"></script>
+<script src="main.js"></script>
 </body>
 </html>
