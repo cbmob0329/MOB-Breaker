@@ -37,6 +37,5 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
 .overlay .panel h2{margin:.1em 0 .8em;font-size:18px;opacity:.85}
 .overlay .panel .hint{opacity:.7;font-size:12px;margin-top:10px}
 .overlay .panel .start{border:none;border-radius:12px;background:#173058;color:#e9eef7;font-weight:700;font-size:18px;padding:10px 16px;cursor:pointer;outline:1px solid #254a7d}
-.banner{pointer-events:none;font-weight:900;font-size:28px;letter-spacing:.05em;color:#fff;text-shadow:0 4px 18px rgba(0,0,0,.6)}
-.banner::after{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at center, rgba(255,255,255,.08), transparent 60%);mix-blend-mode:overlay}
-@media (max-height: 720px){ :root{ --stage-h: 650px; } }
+.banner{font-weight:900;font-size:28px;letter-spacing:.05em;color:#fff;text-shadow:0 4px 18px rgba(0,0,0,.6)}
+@media (max-height:720px){:root{--stage-h:650px}}
