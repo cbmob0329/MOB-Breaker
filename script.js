@@ -209,7 +209,6 @@ class CharacterBase{
     return true;
   }
 
-  // 一方通行足場（本ステージは障害物なしだが機能は残す）
   _applyPlatforms(){
     const w=this.world; if(!w||!w.obstacles||this.vy<0) return;
     const a=this.aabb(); const prevBottom=this._prevY + this.h/2;
@@ -386,7 +385,7 @@ class Player extends CharacterBase{
     return null;
   }
 
-  // ★ 被弾時：コンボ/ロックアウトをリセット
+  // 被弾時：コンボ/ロックアウトをリセット
   hurt(amount, dir, opts={}, effects){
     const hit = CharacterBase.prototype.hurt.call(this, amount, dir, opts, effects);
     if(hit){
@@ -654,7 +653,7 @@ class Player extends CharacterBase{
 }
 
 /* ================================
- * Enemies
+ * Enemies（WaruMOB / Screw / IceRobo）
  * ================================ */
 class WaruMOB extends CharacterBase{
   constructor(world,effects,assets,x=520){
@@ -754,23 +753,19 @@ class IceRobo extends CharacterBase{
     this.modeJump=false; this.modeSwapT=0; this._seq=null; this._idx=0; this._t=0; this.chargeT=0; this.energyOrbs=[];
   }
   aabb(){ return {x:this.x, y:this.y, w:this.w*0.65, h:this.h*0.9}; }
-  // ★ ULT時はSA無視（KB軽減を解除）
+  // ULT時はSA無視
   hurt(amount, dir, opts={}, effects){
     if(this.invulnT>0||this.dead) return false;
     this.hp=Math.max(0,this.hp-amount);
-
     const ult = (opts && opts.tag === 'ult');
     const saActive = this.superArmor && !ult;
-
     const kbMul = saActive ? 0.15 : (opts.kbMul||1);
     const kbuMul= saActive ? 0.10 : (opts.kbuMul||1);
-
     const baseKb = 140 + amount*12;
     const baseKbu = opts.lift ? 360 : (amount>=15? 300 : 210);
     this.vx = clamp(dir * baseKb * kbMul, -220, 220);
     this.vy = - clamp(baseKbu * kbuMul, 0, 380);
     this.x += dir * 2; this.face = -dir;
-
     if(!saActive){ this.state='hurt'; this.hurtT=0; this.invulnT=0.25; }
     if(effects) effects.addSpark(this.x, this.y-10, amount>=20);
     if(this.hp<=0){ this.dead=true; this.vx = dir * 540; this.vy = -560; this.spinSpeed = 18; this.deathT = 0; this.fade = 1; }
@@ -779,7 +774,7 @@ class IceRobo extends CharacterBase{
   img(key){ const map={ idle:'I1.png', walk1:'I1.png', walk2:'I2.png', jump1:'I1.png', jump2:'I2.png', jump3:'I3.png', charge:'I4.png', release:'I5.png', dashPrep:'I6.png', dashAtk:'I7.png', orb:'I8.png' }; return this.assets.img(map[key]||'I1.png'); }
   addEnergyBall(chargeSec){ const img=this.img('orb'); const ox=this.face*30, oy=-10; this.energyOrbs.push(new EnergyBall(this.world,this.x+ox,this.y+oy,this.face,img,20,chargeSec,1)); }
   update(dt, player){ this.updatePhysics(dt); }
-  draw(ctx,world){ /* 省略 */ }
+  draw(ctx,world){ /* not used in Stage1 */ }
 }
 
 class Screw extends CharacterBase{
@@ -964,7 +959,7 @@ class World{
     // 地面線（赤線位置に一致）
     ctx.fillStyle='#0b0f17'; const yTop=Math.floor(GROUND_TOP_Y); ctx.fillRect(0,yTop-1,this.gameW,1);
 
-    // 障害物（本ステージは空）
+    // 障害物（今回は無し）
     for(const o of this.obstacles){
       const img=this.assets.img(o.img||''); if(img){
         const scaleH = o.h / img.height;
@@ -978,8 +973,8 @@ class World{
 
     if(this._skillBullets){ for(const p of this._skillBullets) p.draw(ctx); }
     for(const e of enemies) e.draw(ctx,this);
-    player.draw(ctx,this);
-    window.MOB.effects.draw(ctx,this); // expose
+    if(player && player.draw) player.draw(ctx,this);
+    this.effects.draw(ctx,this);
 
     ctx.restore();
   }
@@ -1022,7 +1017,7 @@ window.MOB = {
 };
 
 })();
-// script.part2.js – Rev33b (Stage1 / Game / Boot)
+// script.part2.js – Rev33b Full (Stage1 / Non-loop CS / Ground=RedLine / Load Guard)
 (function(){
 'use strict';
 
@@ -1051,7 +1046,7 @@ class Stage1 {
   }
 
   start(){
-    // 背景：入口はループあり。障害物は無し。
+    // 入口：ループ背景／障害物なし（コンテナ削除）
     this.g.world.setBackground('ST1.png', {loopX:true, speed:0.75});
     this.g.world.setObstacles([]);
     // 初期スポーン
@@ -1163,7 +1158,7 @@ class Stage1 {
 }
 
 /* =========================================
- * Game
+ * Game（ロード完了待ち & 自動開始ガード）
  * ========================================= */
 class Game{
   constructor(){
@@ -1173,18 +1168,31 @@ class Game{
     this.effects=window.MOB.effects;         // 共通のエフェクト
     this.player=null; this.enemies=[]; this.world=null; this.lastT=0;
     this.state='title';  // 'title' | 'play'
+
+    this.ready=false;          // ★ ロード完了フラグ
+    this.pendingStart=false;   // ★ ロード中に押されたら保持
+
     addEventListener('resize',()=>this.world?.resize());
-    // START連打ガード
+
+    // START押下のガード
     const startBtn=document.getElementById('startBtn');
     startBtn.addEventListener('click', ()=>{
-      if(this.state!=='play'){ this.beginStage1(); }
+      if(this.state==='play') return;
+      if(this.ready){
+        this.beginStage1();
+      }else{
+        this.pendingStart=true;
+        startBtn.disabled=true;
+        startBtn.textContent='LOADING…';
+      }
     });
   }
+
   async start(){
     const imgs=[
       /* 背景 */
       'MOBA.png','back1.png','ST1.png','CS.png',
-      /* 障害物（使わないが読み込みだけ維持） */
+      /* 障害物（読み込みだけ維持） */
       'contena.png',
       /* Player */
       'M1-1.png','M1-2.png','M1-3.png','M1-4.png',
@@ -1204,10 +1212,24 @@ class Game{
       'B1.png','B2.png','B3.png','B4.png','B5.png','B6.png','B7.png','B8.png','B9.png','B10.png','B11.png','B12.png','B13.png','B14.png'
     ];
     await this.assets.load(imgs);
+
+    // ロード完了：初期化
     this.world=new World(this.assets,this.canvas,this.effects);
     this.player=new Player(this.assets,this.world,this.effects);
     updateHPUI(this.player.hp,this.player.maxhp);
     setLivesUI(this.player.lives);
+
+    // READY!
+    this.ready=true;
+    const btn=document.getElementById('startBtn');
+    btn.disabled=false;
+    btn.textContent='START';
+
+    // ロード中に押されていたら自動開始
+    if(this.pendingStart){
+      this.pendingStart=false;
+      this.beginStage1();
+    }
 
     this.lastT=performance.now();
     const loop=()=>{ this._tick(); requestAnimationFrame(loop); };
@@ -1215,15 +1237,17 @@ class Game{
   }
 
   beginStage1(){
+    if(!this.world || !this.player) return; // 念のため
     showTitle(false);
     this.state='play';
+
     // リセット
     this.enemies.length=0;
     this.player.dead=false; this.player.hp=this.player.maxhp; updateHPUI(this.player.hp,this.player.maxhp);
     this.player.x=100; this.player.y=Math.floor(GROUND_TOP_Y)-this.player.h/2+FOOT_PAD; this.player.vx=0; this.player.vy=0;
     this.world.time=0; this.world.zoom=1.0;
 
-    // 入口はループ背景、障害物なし
+    // 入口はループ背景、障害物なし（コンテナ無し）
     this.world.setBackground('ST1.png', {loopX:true, speed:0.75});
     this.world.setObstacles([]);
 
@@ -1247,10 +1271,12 @@ class Game{
     }
 
     if(this.state!=='play'){
-      // タイトル中は背景を軽く描画
-      if(!this.world.bgImg) this.world.setBackground('MOBA.png', {loopX:true, speed:0.5});
-      this.world.updateCam(this.player);
-      this.world.draw(this.player,this.enemies);
+      // タイトル中は背景を軽く描画（ロード済みのみ）
+      if(this.world){
+        if(!this.world.bgImg) this.world.setBackground('MOBA.png', {loopX:true, speed:0.5});
+        this.world.updateCam(this.player || {x:0,y:0});
+        this.world.draw(this.player||{draw:()=>{}}, this.enemies);
+      }
       return;
     }
 
