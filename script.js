@@ -594,3 +594,307 @@ window.addEventListener('load',()=>{
 });
 
 })();
+/* =======================================================
+ * script.js – Rev33 FULL Part④ (Enemy AI + Stage System)
+ * ======================================================= */
+
+(function(){
+
+/* =======================================================
+ * 基底：EnemyBase
+ * ======================================================= */
+class EnemyBase extends CharacterBase {
+  constructor(world,effects,assets,x,y,hp=200,img=''){
+    super(56,64);
+    this.world=world;this.effects=effects;this.assets=assets;
+    this.x=x;this.y=y;this.hp=hp;this.maxhp=hp;
+    this.face=-1;this.dead=false;this.state='idle';
+    this.animT=0;this.attackT=0;this.coolT=0;this.vx=0;this.vy=0;
+    this._img=img;this.target=null;this._fireT=0;
+  }
+  draw(ctx,world){
+    if(this.dead&&this.fade<=0)return;
+    const img=this.assets.img(this._img);if(!img)return;
+    const scale=this.h/img.height;
+    const w=img.width*scale,h=this.h;
+    ctx.save();ctx.translate(this.x-world.camX,this.y-world.camY);
+    ctx.globalAlpha=this.fade;
+    if(this.face<0)ctx.scale(-1,1);
+    ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(img,Math.round(-w/2),Math.round(-h/2),Math.round(w),Math.round(h));
+    ctx.restore();
+    this.drawHPBar(ctx,world);
+  }
+  update(dt,player){
+    if(this.dead){this.updatePhysics(dt);return;}
+    if(!this.target)this.target=player;
+    const dx=this.target.x-this.x;
+    this.face=(dx>=0)?1:-1;
+    this._ai(dt);
+    this.updatePhysics(dt);
+  }
+  _ai(dt){}
+}
+
+/* =======================================================
+ * ワルMOB – 近接突進型
+ * ======================================================= */
+class WaruMOB extends EnemyBase{
+  constructor(world,effects,assets,x){
+    super(world,effects,assets,x,GROUND_TOP_Y-32,160,'warumob.png');
+    this.coolT=1.0;this.range=120;
+  }
+  _ai(dt){
+    const t=this.target;if(!t)return;
+    const dist=Math.abs(t.x-this.x);
+    this.coolT=Math.max(0,this.coolT-dt);
+    if(this.coolT<=0&&dist<this.range&&this.onGround){
+      this.state='atk';
+      this.vx=this.face*280;
+      this.coolT=1.4;
+      this.effects.addSpark(this.x,this.y-10);
+    }else{
+      this.vx=this.face*120*(dist>this.range?1:0);
+    }
+  }
+}
+
+/* =======================================================
+ * ゴレムロボ – 中距離投石
+ * ======================================================= */
+class GolemRobo extends EnemyBase{
+  constructor(world,effects,assets,x){
+    super(world,effects,assets,x,GROUND_TOP_Y-32,320,'golem.png');
+    this._fireT=1.8;this.coolT=2.2;
+  }
+  _ai(dt){
+    const t=this.target;if(!t)return;
+    this._fireT-=dt;if(this._fireT<=0){
+      this._fireT=2.6;
+      const img=this.assets.img('stone.png');
+      const p=new Projectile(this.world,this.x,this.y-20,this.face,img,35);
+      p.vx=220*this.face;p.vy=-200;
+      this.world._skillBullets.push(p);
+      this.effects.addSpark(this.x,this.y-10);
+    }
+    const dx=t.x-this.x;
+    this.face=(dx>=0)?1:-1;
+    this.vx=clamp(dx*0.6,-80,80);
+  }
+}
+
+/* =======================================================
+ * アイスロボ – 遠距離ビーム
+ * ======================================================= */
+class IceRobo extends EnemyBase{
+  constructor(world,effects,assets,x){
+    super(world,effects,assets,x,GROUND_TOP_Y-32,260,'icerobo.png');
+    this._fireT=1.2;
+  }
+  _ai(dt){
+    const t=this.target;if(!t)return;
+    const dx=t.x-this.x;this.face=(dx>=0)?1:-1;
+    this._fireT-=dt;
+    if(this._fireT<=0){
+      this._fireT=1.6;
+      const img=this.assets.img('icebeam.png');
+      const p=new Projectile(this.world,this.x+this.face*28,this.y-8,this.face,img,25);
+      p.vx=420*this.face;
+      this.world._skillBullets.push(p);
+      this.effects.addSpark(this.x,this.y-10);
+    }
+    this.vx=0;
+  }
+}
+
+/* =======================================================
+ * アイスミニロボ – 突進型
+ * ======================================================= */
+class IceMini extends EnemyBase{
+  constructor(world,effects,assets,x){
+    super(world,effects,assets,x,GROUND_TOP_Y-24,180,'icemin.png');
+    this.coolT=1.0;
+  }
+  _ai(dt){
+    const t=this.target;if(!t)return;
+    this.coolT-=dt;
+    const dist=Math.abs(t.x-this.x);
+    if(this.coolT<=0&&dist<200){
+      this.vx=this.face*520;
+      this.coolT=1.6;
+      this.effects.shake(0.08,4);
+    }else{
+      this.vx=this.face*100;
+    }
+  }
+}
+
+/* =======================================================
+ * ガブキング – 中ボス
+ * ======================================================= */
+class GabKing extends EnemyBase{
+  constructor(world,effects,assets,x){
+    super(world,effects,assets,x,GROUND_TOP_Y-50,900,'gabking.png');
+    this.coolT=1.4;
+  }
+  _ai(dt){
+    const t=this.target;if(!t)return;
+    const dx=t.x-this.x;
+    this.face=(dx>=0)?1:-1;
+    this.coolT-=dt;
+    if(this.coolT<=0&&Math.abs(dx)<240){
+      this.coolT=2.2;
+      const img=this.assets.img('gabfire.png');
+      const p=new Projectile(this.world,this.x+this.face*40,this.y-10,this.face,img,60);
+      p.vx=280*this.face;
+      this.world._skillBullets.push(p);
+      this.effects.addSpark(this.x,this.y-20,true);
+    }else{
+      this.vx=this.face*60;
+    }
+  }
+}
+
+/* =======================================================
+ * 巨神 – 重量級ボス
+ * ======================================================= */
+class Giant extends EnemyBase{
+  constructor(world,effects,assets,x){
+    super(world,effects,assets,x,GROUND_TOP_Y-64,1500,'giant.png');
+    this.coolT=2.6;
+  }
+  _ai(dt){
+    const t=this.target;if(!t)return;
+    const dx=t.x-this.x;this.face=(dx>=0)?1:-1;
+    this.coolT-=dt;
+    if(this.coolT<=0&&Math.abs(dx)<260){
+      this.coolT=3.2;
+      this.vx=this.face*420;
+      this.effects.shake(0.2,8);
+      this.effects.addSpark(this.x,this.y-20,true);
+    }else{
+      this.vx=this.face*80;
+    }
+  }
+}
+
+/* =======================================================
+ * シールド – 防御型
+ * ======================================================= */
+class Shield extends EnemyBase{
+  constructor(world,effects,assets,x){
+    super(world,effects,assets,x,GROUND_TOP_Y-32,300,'shield.png');
+    this.guardT=0;this.coolT=2.0;
+  }
+  _ai(dt){
+    const t=this.target;if(!t)return;
+    this.guardT=Math.max(0,this.guardT-dt);
+    const dx=t.x-this.x;this.face=(dx>=0)?1:-1;
+    if(this.guardT<=0&&Math.random()<0.01){
+      this.guardT=1.8;
+      this.effects.addSpark(this.x,this.y-14);
+    }
+    this.vx=this.face*(this.guardT>0?0:80);
+  }
+  hurt(amount,dir,opts,effects){
+    if(this.guardT>0){
+      this.effects.addSpark(this.x,this.y-8);
+      this.guardT=0.4;
+      return false;
+    }
+    return super.hurt(amount,dir,opts,effects);
+  }
+}
+
+/* =======================================================
+ * スクリュー – 最終ボス
+ * ======================================================= */
+class Screw extends EnemyBase{
+  constructor(world,effects,assets,x){
+    super(world,effects,assets,x,GROUND_TOP_Y-64,2000,'screw.png');
+    this.coolT=2.0;
+  }
+  _ai(dt){
+    const t=this.target;if(!t)return;
+    const dx=t.x-this.x;this.face=(dx>=0)?1:-1;
+    this.coolT-=dt;
+    if(this.coolT<=0){
+      this.coolT=3.5;
+      const img=this.assets.img('screwbeam.png');
+      const p=new Projectile(this.world,this.x+this.face*40,this.y-10,this.face,img,100);
+      p.vx=380*this.face;
+      this.world._skillBullets.push(p);
+      this.effects.addSpark(this.x,this.y-20,true);
+    }
+    this.vx=this.face*80;
+  }
+}
+
+/* =======================================================
+ * ステージ管理（Stage1 / Full）
+ * ======================================================= */
+class Stage1 {
+  constructor(game){
+    this.g=game;
+    this.section=1;
+    this.spawned=0;
+    this.goalKills=20;
+    this.bossSpawned=false;
+    this.timer=0;
+  }
+  start(){
+    GROUND_TOP_Y=437;
+    this.g.world.setBackground('ST1.png');
+    this.spawnWave(3);
+  }
+  spawnWave(n){
+    const min=100,max=2000;
+    for(let i=0;i<n;i++){
+      const x=min+Math.random()*(max-min);
+      const type=Math.floor(Math.random()*3);
+      let e=null;
+      if(type===0)e=new WaruMOB(this.g.world,this.g.effects,this.g.assets,x);
+      else if(type===1)e=new IceMini(this.g.world,this.g.effects,this.g.assets,x);
+      else e=new GolemRobo(this.g.world,this.g.effects,this.g.assets,x);
+      this.g.enemies.push(e);
+    }
+  }
+  update(dt){
+    this.timer+=dt;
+    const alive=this.g.enemies.filter(e=>!e.dead);
+    if(!this.bossSpawned && alive.length===0){
+      if(this.section===1){
+        this.section=2;
+        GROUND_TOP_Y=360;
+        this.g.world.setBackground('CS.png');
+        this.spawnWave(4);
+      }else if(this.section===2){
+        this.spawnBoss();
+      }
+    }
+  }
+  spawnBoss(){
+    this.bossSpawned=true;
+    const bx=1100+Math.random()*400;
+    const boss=new Screw(this.g.world,this.g.effects,this.g.assets,bx);
+    this.g.enemies.push(boss);
+    this.g.effects.addSpark(bx,GROUND_TOP_Y-50,true);
+  }
+}
+
+/* =======================================================
+ * Gameに登録
+ * ======================================================= */
+if(typeof window!=='undefined'){
+  window.WaruMOB=WaruMOB;
+  window.GolemRobo=GolemRobo;
+  window.IceRobo=IceRobo;
+  window.IceMini=IceMini;
+  window.GabKing=GabKing;
+  window.Giant=Giant;
+  window.Shield=Shield;
+  window.Screw=Screw;
+  window.Stage1=Stage1;
+}
+
+})();
