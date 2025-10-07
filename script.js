@@ -1,8 +1,7 @@
-// script_part1.js – Rev35b FULL (Start Fix / Input buffer / Skill1 4or8 / ULT Instant / No ground line / Pass-through fix)
+// script_part1.js – Rev35c SAFE (AutoStart + all previous fixes)
 (function(){
 'use strict';
 
-/* ===== 共有ユーティリティ ===== */
 window.$G = {
   STAGE_LEFT: 0,
   STAGE_RIGHT: 2200,
@@ -15,13 +14,10 @@ window.$G = {
   rectsOverlap:(a,b)=>Math.abs(a.x-b.x)*2<(a.w+b.w)&&Math.abs(a.y-b.y)*2<(a.h+b.h)
 };
 
-/* ===== HUD refs ===== */
 const $hpFill = ()=>document.getElementById('hpfill');
 const $hpNum  = ()=>document.getElementById('hpnum');
-const $lives  = ()=>document.getElementById('lives');
 const $time   = ()=>document.getElementById('time');
 
-/* ===== Effects ===== */
 class Effects{
   constructor(){ this.sparks=[]; this.shakeT=0; this.shakeAmp=0; this.hitstop=0; }
   addSpark(x,y,strong=false){
@@ -49,7 +45,6 @@ class Effects{
 }
 window.Effects = Effects;
 
-/* ===== Assets ===== */
 class Assets{
   constructor(){ this.images=new Map(); }
   load(list){ return Promise.all(list.map(src=>new Promise(res=>{ const i=new Image(); i.onload=()=>{this.images.set(src,i);res();}; i.onerror=()=>res(); i.src=src; }))); }
@@ -57,14 +52,13 @@ class Assets{
 }
 window.Assets = Assets;
 
-/* ===== Input ===== */
 class Input{
   constructor(){
     this.left=0; this.right=0; this.jump=false;
     this.btn={a1:false,a2:false,skill:false,skill2:false,ult:false};
     this.edge={};
     this.skillCharging=false; this.skillChargeT=0;
-    this.buffer = { a1:0, a2:0, jump:0 };
+    this.buffer = { a1:0, a2:0, jump:0, ult:0 };
     this._initKeys(); this._initTouch(); this._initStick();
   }
   _edgeDown(flag){ this.edge[flag]=true; }
@@ -78,7 +72,7 @@ class Input{
       if(k==='k'){ this.btn.a2=true; this._edgeDown('a2'); this.buffer.a2=0.15; }
       if(k==='l'&&!this.btn.skill){this.btn.skill=true;this._edgeDown('skillPress');this.skillCharging=true;this.skillChargeT=0;}
       if(k==='o'){ this._edgeDown('skill2'); this.btn.skill2=true; }
-      if(k==='u'&&!this.btn.ult){this.btn.ult=true;this._edgeDown('ult');}
+      if(k==='u'&&!this.btn.ult){this.btn.ult=true;this._edgeDown('ult'); this.buffer.ult=0.2; }
     });
     addEventListener('keyup',e=>{
       const k=e.key.toLowerCase();
@@ -103,7 +97,7 @@ class Input{
     bind('btnA2',()=>{this.btn.a2=true;this._edgeDown('a2');this.buffer.a2=0.15;},()=>this.btn.a2=false);
     bind('btnSK',()=>{this.btn.skill=true;this._edgeDown('skillPress');this.skillCharging=true;this.skillChargeT=0;},()=>{this.btn.skill=false;this.skillCharging=false;this._edgeDown('skillRelease');});
     bind('btnSK2',()=>{this._edgeDown('skill2');this.btn.skill2=true;},()=>this.btn.skill2=false);
-    bind('btnULT',()=>{this.btn.ult=true;this._edgeDown('ult');},()=>{this.btn.ult=false;});
+    bind('btnULT',()=>{this.btn.ult=true;this._edgeDown('ult'); this.buffer.ult=0.2;},()=>{this.btn.ult=false;});
     bind('btnJMP',()=>{this.jump=true; this.buffer.jump=0.15;},()=>{});
   }
   _initStick(){
@@ -143,11 +137,9 @@ class Input{
 }
 window.Input = Input;
 
-/* ===== Physics base ===== */
 class CharacterBase{
   constructor(w,h){this.w=w;this.h=h;this.x=0;this.y=0;this.vx=0;this.vy=0;this.face=1;this.hp=100;this.maxhp=100;this.dead=false;this.onGround=false;this.invulnT=0;}
   aabb(){return{x:this.x,y:this.y,w:this.w*0.6,h:this.h*0.8};}
-  center(){ return {x:this.x, y:this.y}; }
   hurt(amount,dir,opt,fx){
     if(this.invulnT>0||this.dead)return false;
     this.hp=Math.max(0,this.hp-amount);
@@ -172,40 +164,35 @@ class CharacterBase{
 }
 window.CharacterBase = CharacterBase;
 
-/* ===== Player ===== */
 class Player extends CharacterBase{
   constructor(a,w,fx,input){super(56,64);this.assets=a;this.world=w;this.effects=fx;this.input=input;this.hp=1000;this.maxhp=1000;this.lives=3;
     this.state='idle'; this.stateT=0; this.comboStep=0; this.a1CD=0; this.skillCD=0; this.ultCD=0;
   }
-  _enter(state){ this.state=state; this.stateT=0; }
-
+  _enter(s){ this.state=s; this.stateT=0; }
   update(dt){
     const I=this.input, G=$G;
     let ax=0; if(I.left)ax-=G.MOVE; if(I.right)ax+=G.MOVE;
     if(ax!==0)this.face=(ax>0?1:-1);
     I.tick(dt);
-    this.a1CD = Math.max(0,this.a1CD-dt);
-    this.skillCD = Math.max(0,this.skillCD-dt);
-    this.ultCD = Math.max(0,this.ultCD-dt);
+    this.a1CD=Math.max(0,this.a1CD-dt);
+    this.skillCD=Math.max(0,this.skillCD-dt);
+    this.ultCD=Math.max(0,this.ultCD-dt);
     if(I.skillCharging) this.effects.shake(0.05,1);
 
     switch(this.state){
       case 'idle':
       case 'run':
-        this.vx = ax;
+        this.vx=ax;
         if(I.consumeJump() && this.onGround){ this.vy=-G.JUMP_V; }
         if(Math.abs(this.vx)>1) this._enter('run'); else this._enter('idle');
-
-        if((I.consumeBuffered('a1')) && this.a1CD<=0){ this._startA1(); break; }
+        if(I.consumeBuffered('a1') && this.a1CD<=0){ this._startA1(); break; }
         if(I.edge.skillRelease && this.skillCD<=0){
-          const full = (I.skillChargeT>=1.0);
-          this._skill1(full);
+          this._skill1(I.skillChargeT>=1.0);
           I.skillChargeT=0; I.edge.skillRelease=false;
           break;
         }
         if(I.consumeBuffered('ult') && this.ultCD<=0){ this._ultMax(); break; }
       break;
-
       case 'a1':
         this.stateT+=dt;
         if(this.stateT>=this._a1Dur){
@@ -213,7 +200,6 @@ class Player extends CharacterBase{
           else{ this._enter('idle'); }
         }
       break;
-
       case 'skill':
       case 'ult':
         this.stateT+=dt;
@@ -222,146 +208,109 @@ class Player extends CharacterBase{
     }
     this.updatePhysics(dt);
   }
-
   _startA1(){
     this._enter('a1');
     this.comboStep=(this.state==='a1')? (this.comboStep+1)%3 : 0;
-    const pow = [18,22,28][this.comboStep];
-    this._a1Dur = [0.10,0.10,0.12][this.comboStep];
-    this.a1CD = 0.06;
-    this._spawnHitbox({
-      x:this.x+this.face*28, y:this.y-8, w:44, h:26,
-      dmg:pow, kb:1.0, kbu:0.8, strong:pow>=28
-    });
+    const pow=[18,22,28][this.comboStep];
+    this._a1Dur=[0.10,0.10,0.12][this.comboStep];
+    this.a1CD=0.06;
+    this._spawnHitbox({ x:this.x+this.face*28, y:this.y-8, w:44, h:26, dmg:pow, kb:1.0, kbu:0.8, strong:pow>=28 });
   }
-
   _skill1(full){
     this._enter('skill');
-    const spins = full?8:4;
-    const pow   = full?28:20;
-    const durPer= 0.08;
-    this._actDur = spins*durPer + 0.10;
-    this.skillCD = full? 0.6 : 0.45;
+    const spins=full?8:4, pow=full?28:20, durPer=0.08;
+    this._actDur=spins*durPer+0.10;
+    this.skillCD=full?0.6:0.45;
     for(let i=0;i<spins;i++){
-      const delay = i*durPer;
-      this.world.defer(delay, ()=>this._spawnHitbox({
-        x:this.x+this.face*(24+4*i), y:this.y-10, w:52, h:32,
-        dmg:pow, kb:1.1, kbu:0.9, strong:true
-      }));
+      const d=i*durPer;
+      this.world.defer(d,()=>this._spawnHitbox({ x:this.x+this.face*(24+4*i), y:this.y-10, w:52, h:32, dmg:pow, kb:1.1, kbu:0.9, strong:true }));
     }
     this.effects.addSpark(this.x,this.y-10,true);
   }
-
   _ultMax(){
     this._enter('ult');
-    this._actDur = 0.55;
-    this.ultCD = 2.2;
-    const pow = 120;
-    this._spawnHitbox({
-      x:this.x+this.face*80, y:this.y-14, w:160, h:44,
-      dmg:pow, kb:2.2, kbu:1.4, strong:true, inv:0.25
-    });
-    this.world.defer(0.20, ()=>this._spawnHitbox({
-      x:this.x+this.face*90, y:this.y-14, w:160, h:44,
-      dmg:90, kb:1.8, kbu:1.2, strong:true, inv:0.20
-    }));
+    this._actDur=0.55; this.ultCD=2.2;
+    this._spawnHitbox({ x:this.x+this.face*80, y:this.y-14, w:160, h:44, dmg:120, kb:2.2, kbu:1.4, strong:true, inv:0.25 });
+    this.world.defer(0.20,()=>this._spawnHitbox({ x:this.x+this.face*90, y:this.y-14, w:160, h:44, dmg:90, kb:1.8, kbu:1.2, strong:true, inv:0.20 }));
     this.effects.addSpark(this.x,this.y-12,true);
   }
-
   _spawnHitbox(opt){
-    this.world.spawnHitbox({
-      owner:'player', face:this.face,
-      x:opt.x, y:opt.y, w:opt.w, h:opt.h,
-      dmg:opt.dmg,
-      kbMul:opt.kb, kbuMul:opt.kbu,
-      inv:opt.inv??0.1,
-      strong:!!opt.strong
-    });
+    this.world.spawnHitbox({ owner:'player', face:this.face, x:opt.x, y:opt.y, w:opt.w, h:opt.h, dmg:opt.dmg, kbMul:opt.kb, kbuMul:opt.kbu, inv:opt.inv??0.1, strong:!!opt.strong });
   }
-
   draw(ctx){
     ctx.save();ctx.translate(this.x-this.world.camX,this.y-this.world.camY);
-    ctx.fillStyle='#7df';
-    ctx.fillRect(-10,-32,20,64);
+    ctx.fillStyle='#7df'; ctx.fillRect(-10,-32,20,64);
     ctx.restore();
   }
 }
 window.Player = Player;
 
-/* ===== World ===== */
 class World{
   constructor(a,cv,fx){
     this.assets=a; this.canvas=cv; this.ctx=cv.getContext('2d'); this.effects=fx;
     this.camX=0; this.camY=0;
     this.hitboxes=[]; this.deferTasks=[];
-    this.enemies=[];
-    this.bg='ST1.png';
+    this.enemies=[]; this.bg='ST1.png';
   }
-  setBackground(name){ this.bg=name; }
+  setBackground(n){ this.bg=n; }
   defer(delay,fn){ this.deferTasks.push({t:delay,fn}); }
   spawnHitbox(hb){ hb.t=0; hb.life=0.06; this.hitboxes.push(hb); }
-
-  update(dt, player){
+  update(dt,player){
     this.deferTasks.forEach(d=>d.t=Math.max(0,d.t-dt));
-    const run = this.deferTasks.filter(d=>d.t<=0);
-    this.deferTasks = this.deferTasks.filter(d=>d.t>0);
+    const run=this.deferTasks.filter(d=>d.t<=0);
+    this.deferTasks=this.deferTasks.filter(d=>d.t>0);
     for(const d of run) d.fn();
 
     for(const hb of this.hitboxes){ hb.t+=dt; }
-    this.hitboxes = this.hitboxes.filter(h=>h.t<h.life);
+    this.hitboxes=this.hitboxes.filter(h=>h.t<h.life);
 
     for(const hb of this.hitboxes){
       if(hb.owner==='player'){
         for(const e of this.enemies){
           if(e.dead) continue;
           if(overlapHB(hb,e)){
-            const dir = player.face;
-            const ok = e.hurt(hb.dmg, dir, {kbMul:220*hb.kbMul/100, kbuMul: hb.kbuMul, inv:hb.inv}, this.effects);
+            const ok=e.hurt(hb.dmg, player.face, {kbMul:220*hb.kbMul/100, kbuMul:hb.kbuMul, inv:hb.inv}, this.effects);
             if(ok) this.effects.addSpark(e.x, e.y-10, hb.strong);
           }
         }
       }
     }
 
-    // AABB分離
+    // すり抜け防止：水平分離
     for(const e of this.enemies){
       if(e.dead) continue;
-      const A = player.aabb(), B = e.aabb();
+      const A=player.aabb(), B=e.aabb();
       if($G.rectsOverlap(A,B)){
-        const dx = (A.x - B.x), overlapX = (A.w+B.w)/2 - Math.abs(dx);
+        const dx=(A.x-B.x), overlapX=(A.w+B.w)/2-Math.abs(dx);
         if(overlapX>0){
-          const push = overlapX*0.6;
-          if(dx>0){ player.x += push; e.x -= overlapX-push; }
-          else     { player.x -= push; e.x += overlapX-push; }
+          const push=overlapX*0.6;
+          if(dx>0){ player.x+=push; e.x-=overlapX-push; }
+          else     { player.x-=push; e.x+=overlapX-push; }
         }
       }
     }
 
-    const margin=120;
-    const target = $G.clamp(player.x - this.canvas.width/2, $G.STAGE_LEFT, $G.STAGE_RIGHT-this.canvas.width);
-    const shake = this.effects.getCamOffset();
-    this.camX = Math.floor(target + shake.x);
-    this.camY = Math.floor(0 + shake.y);
+    const target=$G.clamp(player.x-this.canvas.width/2, $G.STAGE_LEFT, $G.STAGE_RIGHT-this.canvas.width);
+    const shake=this.effects.getCamOffset();
+    this.camX=Math.floor(target+shake.x);
+    this.camY=Math.floor(0+shake.y);
   }
-
   draw(player){
     const ctx=this.ctx;
     ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
-    const img = this.assets.img(this.bg);
-    if(img) ctx.drawImage(img, -this.camX, 0, this.canvas.width, this.canvas.height);
+    const img=this.assets.img(this.bg);
+    if(img) ctx.drawImage(img,-this.camX,0,this.canvas.width,this.canvas.height);
     for(const e of this.enemies){ e.draw?.(ctx,this); }
     player.draw(ctx);
     this.effects.draw(ctx,this);
   }
 }
-function overlapHB(hb, enemy){
-  const A = { x:hb.x, y:hb.y, w:hb.w, h:hb.h };
-  const B = enemy.aabb();
+function overlapHB(hb,enemy){
+  const A={x:hb.x,y:hb.y,w:hb.w,h:hb.h}, B=enemy.aabb();
   return $G.rectsOverlap(A,B);
 }
 window.World = World;
 
-/* ===== Game（Start強化） ===== */
 class Game{
   constructor(){
     this.assets=new Assets();
@@ -371,78 +320,54 @@ class Game{
     this._started=false;
   }
   async boot(){
-    const list=['ST1.png'];
-    await this.assets.load(list);
+    // 画像が失敗しても続行（onerrorでresolve）
+    await this.assets.load(['ST1.png']);
     this.world=new World(this.assets,this.canvas,this.effects);
     this.player=new Player(this.assets,this.world,this.effects,this.input);
     this.world.setBackground('ST1.png');
-    this.player.x = 200;
-    this.player.y = Math.floor($G.GROUND_TOP_Y)-this.player.h/2+$G.FOOT_PAD;
+    this.player.x=200;
+    this.player.y=Math.floor($G.GROUND_TOP_Y)-this.player.h/2+$G.FOOT_PAD;
 
-    const overlay = document.getElementById('titleOverlay');
-    const startBtn = document.getElementById('startBtn');
+    // SAFE: 自動開始（STARTボタンはオーバーレイを閉じるだけ）
+    const startBtn=document.getElementById('startBtn');
+    const overlay=document.getElementById('titleOverlay');
+    startBtn?.addEventListener('click',()=>overlay?.classList.add('hidden'));
 
-    const startGame = ()=>{
-      if(this._started) return;
-      this._started=true;
-      overlay?.classList.add('hidden');
-      this.startStage1();
-      this._loop();
-    };
-
-    // クリック/タップ
-    startBtn?.addEventListener('click', (e)=>{ e.preventDefault(); startGame(); });
-    startBtn?.addEventListener('pointerdown', (e)=>{ e.preventDefault(); startGame(); });
-
-    // オーバーレイ全体タップでも開始できるように
-    overlay?.addEventListener('pointerdown', (e)=>{
-      // パネル外のタップで開始（誤タップ防止したい場合は削除可）
-      if(e.target===overlay) { e.preventDefault(); startGame(); }
-    });
-
-    // キー（Enter / Space）
-    window.addEventListener('keydown', (e)=>{
-      if(this._started) return;
-      if(e.key==='Enter' || e.key===' '){ e.preventDefault(); startGame(); }
-    });
-
-    // もし何らかの理由でoverlayが無い/ボタン取れない場合の保険
-    if(!overlay || !startBtn){
-      startGame();
-    }
+    this.startStage1();
+    this._started=true;
+    this._loop();
   }
   startStage1(){
     this.world.enemies = window.createEnemies?.(this.world,this.effects,this.assets) ?? [];
-    $hpNum().textContent = `${this.player.hp}`;
-    $hpFill().style.width = `100%`;
-    this.t0 = $G.now();
+    $hpNum().textContent=`${this.player.hp}`;
+    $hpFill().style.width=`100%`;
+    this.t0=$G.now();
   }
   _loop(){
     if(!this._started) return;
-    const t=$G.now(); let dt=this._lastT? (t-this._lastT)/1000 : 0; this._lastT=t; if(dt>0.05)dt=0.05;
+    const t=$G.now(); let dt=this._lastT? (t-this._lastT)/1000:0; this._lastT=t; if(dt>0.05)dt=0.05;
 
     this.player.update(dt);
     for(const e of this.world.enemies) e.update?.(dt,this.player);
     this.world.update(dt,this.player);
     this.effects.update(dt);
 
-    $hpNum().textContent = `${Math.max(0,Math.floor(this.player.hp))}`;
-    const hpP = Math.max(0, Math.min(1, this.player.hp/this.player.maxhp))*100;
-    $hpFill().style.width = `${hpP}%`;
-    const tm = Math.floor((t-this.t0)/1000); const mm=String(Math.floor(tm/60)).padStart(2,'0'); const ss=String(tm%60).padStart(2,'0');
-    document.getElementById('time').textContent = `${mm}:${ss}`;
+    $hpNum().textContent=`${Math.max(0,Math.floor(this.player.hp))}`;
+    const hpP=Math.max(0,Math.min(1,this.player.hp/this.player.maxhp))*100;
+    $hpFill().style.width=`${hpP}%`;
+    const tm=Math.floor((t-this.t0)/1000); const mm=String(Math.floor(tm/60)).padStart(2,'0'); const ss=String(tm%60).padStart(2,'0');
+    $time().textContent=`${mm}:${ss}`;
 
     requestAnimationFrame(()=>this._loop());
   }
 }
 window.Game = Game;
 })();
-// script_part2.js – Rev35b FULL (Enemies / Stage / Boot)
+// script_part2.js – Rev35c SAFE (Enemies / Stage / Boot)
 (function(){
 'use strict';
 const G = window.$G;
 
-/* ===== Enemy base ===== */
 class EnemyBase extends window.CharacterBase{
   constructor(w,h,world,fx,assets,x=600){ super(w,h); this.world=world; this.effects=fx; this.assets=assets; this.x=x; }
   draw(ctx,world){
@@ -466,7 +391,6 @@ class GiantMOB  extends EnemyBase{ constructor(w,fx,a,x){ super(90,100,w,fx,a,x)
 class Shield    extends EnemyBase{ constructor(w,fx,a,x){ super(60,64,w,fx,a,x); this.hp=600;  this.maxhp=600; } }
 class Screw     extends EnemyBase{ constructor(w,fx,a,x){ super(62,68,w,fx,a,x); this.hp=2000; this.maxhp=2000;} }
 
-/* ===== Enemy factory (No container) ===== */
 window.createEnemies = function(world,fx,assets){
   G.GROUND_TOP_Y = 437;
   return [
@@ -481,7 +405,7 @@ window.createEnemies = function(world,fx,assets){
   ];
 };
 
-/* ===== Boot ===== */
+// 起動（SAFE: 自動）
 new window.Game().boot();
 
 })();
