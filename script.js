@@ -1,12 +1,12 @@
-// script_part1.js – Rev35 FULL (Core, Input, Combat, Fixes)
+// script_part1.js – Rev35b FULL (Start Fix / Input buffer / Skill1 4or8 / ULT Instant / No ground line / Pass-through fix)
 (function(){
 'use strict';
 
-/* ===== グローバル共有（part2と共有） ===== */
+/* ===== 共有ユーティリティ ===== */
 window.$G = {
   STAGE_LEFT: 0,
   STAGE_RIGHT: 2200,
-  GROUND_TOP_Y: 437,              // ST1.png の赤帯上端
+  GROUND_TOP_Y: 437,
   GRAV: 2000, MOVE: 260, JUMP_V: 760, MAX_FALL: 1200,
   FOOT_PAD: 2,
   clamp:(v,min,max)=>Math.max(min,Math.min(max,v)),
@@ -15,15 +15,13 @@ window.$G = {
   rectsOverlap:(a,b)=>Math.abs(a.x-b.x)*2<(a.w+b.w)&&Math.abs(a.y-b.y)*2<(a.h+b.h)
 };
 
-/* ===== 画面/HUDフック ===== */
+/* ===== HUD refs ===== */
 const $hpFill = ()=>document.getElementById('hpfill');
 const $hpNum  = ()=>document.getElementById('hpnum');
 const $lives  = ()=>document.getElementById('lives');
 const $time   = ()=>document.getElementById('time');
-const $start  = ()=>document.getElementById('startBtn');
-const $title  = ()=>document.getElementById('titleOverlay');
 
-/* ===== エフェクト基礎 ===== */
+/* ===== Effects ===== */
 class Effects{
   constructor(){ this.sparks=[]; this.shakeT=0; this.shakeAmp=0; this.hitstop=0; }
   addSpark(x,y,strong=false){
@@ -51,7 +49,7 @@ class Effects{
 }
 window.Effects = Effects;
 
-/* ===== アセット ===== */
+/* ===== Assets ===== */
 class Assets{
   constructor(){ this.images=new Map(); }
   load(list){ return Promise.all(list.map(src=>new Promise(res=>{ const i=new Image(); i.onload=()=>{this.images.set(src,i);res();}; i.onerror=()=>res(); i.src=src; }))); }
@@ -59,15 +57,14 @@ class Assets{
 }
 window.Assets = Assets;
 
-/* ===== 入力 ===== */
+/* ===== Input ===== */
 class Input{
   constructor(){
     this.left=0; this.right=0; this.jump=false;
     this.btn={a1:false,a2:false,skill:false,skill2:false,ult:false};
     this.edge={};
-    this.skillCharging=false; this.skillChargeT=0; // ← Rev35: 実際に加算する
-    this.ultCharging=false; this.ultChargeT=0;
-    this.buffer = { a1:0, a2:0, jump:0 };         // 連打保険
+    this.skillCharging=false; this.skillChargeT=0;
+    this.buffer = { a1:0, a2:0, jump:0 };
     this._initKeys(); this._initTouch(); this._initStick();
   }
   _edgeDown(flag){ this.edge[flag]=true; }
@@ -81,7 +78,7 @@ class Input{
       if(k==='k'){ this.btn.a2=true; this._edgeDown('a2'); this.buffer.a2=0.15; }
       if(k==='l'&&!this.btn.skill){this.btn.skill=true;this._edgeDown('skillPress');this.skillCharging=true;this.skillChargeT=0;}
       if(k==='o'){ this._edgeDown('skill2'); this.btn.skill2=true; }
-      if(k==='u'&&!this.btn.ult){this.btn.ult=true;this._edgeDown('ultPress');/* 充電不要 */ }
+      if(k==='u'&&!this.btn.ult){this.btn.ult=true;this._edgeDown('ult');}
     });
     addEventListener('keyup',e=>{
       const k=e.key.toLowerCase();
@@ -91,7 +88,7 @@ class Input{
       if(k==='k')this.btn.a2=false;
       if(k==='l'){this.btn.skill=false;this.skillCharging=false;this._edgeDown('skillRelease');}
       if(k==='o')this.btn.skill2=false;
-      if(k==='u'){this.btn.ult=false;/* 即発動なのでrelease不要 */}
+      if(k==='u')this.btn.ult=false;
     });
   }
   _initTouch(){
@@ -106,11 +103,10 @@ class Input{
     bind('btnA2',()=>{this.btn.a2=true;this._edgeDown('a2');this.buffer.a2=0.15;},()=>this.btn.a2=false);
     bind('btnSK',()=>{this.btn.skill=true;this._edgeDown('skillPress');this.skillCharging=true;this.skillChargeT=0;},()=>{this.btn.skill=false;this.skillCharging=false;this._edgeDown('skillRelease');});
     bind('btnSK2',()=>{this._edgeDown('skill2');this.btn.skill2=true;},()=>this.btn.skill2=false);
-    bind('btnULT',()=>{this.btn.ult=true;this._edgeDown('ultPress');},()=>{this.btn.ult=false;});
+    bind('btnULT',()=>{this.btn.ult=true;this._edgeDown('ult');},()=>{this.btn.ult=false;});
     bind('btnJMP',()=>{this.jump=true; this.buffer.jump=0.15;},()=>{});
   }
   _initStick(){
-    // シンプルな仮想スティック（円内ドラッグ）
     const area=document.getElementById('stickArea');
     const thumb=document.getElementById('stickThumb');
     let active=false, cx=0, cy=0;
@@ -122,7 +118,8 @@ class Input{
       if(!active)return; const dx=e.clientX-cx, dy=e.clientY-cy;
       const len=Math.hypot(dx,dy), max=50;
       const nx = len>max? dx/len*max : dx;
-      thumb.style.transform=`translate(${nx}px, ${Math.abs(dy)>max? (dy/Math.abs(dy))*max:dy}px)`;
+      const ny = len>max? dy/len*max : dy;
+      thumb.style.transform=`translate(${nx}px, ${ny}px)`;
       this.left = nx<-8?1:0; this.right = nx>8?1:0;
     });
     const reset=()=>{active=false;thumb.style.transform='translate(-50%,-50%)'; this.left=0; this.right=0;};
@@ -131,15 +128,14 @@ class Input{
     area.addEventListener('pointerleave',reset);
   }
   tick(dt){
-    // 入力バッファを減衰（被弾後の取りこぼしを防止）
     for(const k of Object.keys(this.buffer)){
       if(this.buffer[k]>0) this.buffer[k]=Math.max(0,this.buffer[k]-dt);
     }
-    if(this.skillCharging) this.skillChargeT = Math.min(1.0, this.skillChargeT + dt); // ← Rev35: 実装
+    if(this.skillCharging) this.skillChargeT = Math.min(1.0, this.skillChargeT + dt);
   }
   consumeBuffered(name){
     if(this.edge[name]){ this.edge[name]=false; return true; }
-    const map = { a1:'a1', a2:'a2', jump:'jump' };
+    const map = { a1:'a1', a2:'a2', jump:'jump', ult:'ult' };
     if(map[name] && this.buffer[map[name]]>0){ this.buffer[map[name]]=0; return true; }
     return false;
   }
@@ -147,7 +143,7 @@ class Input{
 }
 window.Input = Input;
 
-/* ===== 物理基底 ===== */
+/* ===== Physics base ===== */
 class CharacterBase{
   constructor(w,h){this.w=w;this.h=h;this.x=0;this.y=0;this.vx=0;this.vy=0;this.face=1;this.hp=100;this.maxhp=100;this.dead=false;this.onGround=false;this.invulnT=0;}
   aabb(){return{x:this.x,y:this.y,w:this.w*0.6,h:this.h*0.8};}
@@ -167,19 +163,16 @@ class CharacterBase{
     const G=$G;
     this.vy=Math.min(this.vy+G.GRAV*dt,G.MAX_FALL);
     this.x+=this.vx*dt; this.y+=this.vy*dt;
-
     const top=Math.floor($G.GROUND_TOP_Y);
     if(this.y+this.h/2>=top){this.y=top-this.h/2;this.vy=0;this.onGround=true;}
     else this.onGround=false;
-
     if(this.invulnT>0)this.invulnT-=dt;
-    // 画面端制限
     this.x = $G.clamp(this.x, G.STAGE_LEFT+this.w*0.5, G.STAGE_RIGHT-this.w*0.5);
   }
 }
 window.CharacterBase = CharacterBase;
 
-/* ===== プレイヤー（攻撃①・スキル・ULT） ===== */
+/* ===== Player ===== */
 class Player extends CharacterBase{
   constructor(a,w,fx,input){super(56,64);this.assets=a;this.world=w;this.effects=fx;this.input=input;this.hp=1000;this.maxhp=1000;this.lives=3;
     this.state='idle'; this.stateT=0; this.comboStep=0; this.a1CD=0; this.skillCD=0; this.ultCD=0;
@@ -188,22 +181,14 @@ class Player extends CharacterBase{
 
   update(dt){
     const I=this.input, G=$G;
-    // 入力の毎フレーム処理
     let ax=0; if(I.left)ax-=G.MOVE; if(I.right)ax+=G.MOVE;
     if(ax!==0)this.face=(ax>0?1:-1);
-
-    // 連打/バッファ処理・被弾後も取りこぼさない
     I.tick(dt);
-
-    // クールダウン減衰
     this.a1CD = Math.max(0,this.a1CD-dt);
     this.skillCD = Math.max(0,this.skillCD-dt);
     this.ultCD = Math.max(0,this.ultCD-dt);
-
-    // スキル①チャージ演出（軽いカメラシェイク）
     if(I.skillCharging) this.effects.shake(0.05,1);
 
-    // 状態更新
     switch(this.state){
       case 'idle':
       case 'run':
@@ -211,66 +196,45 @@ class Player extends CharacterBase{
         if(I.consumeJump() && this.onGround){ this.vy=-G.JUMP_V; }
         if(Math.abs(this.vx)>1) this._enter('run'); else this._enter('idle');
 
-        // 攻撃①（高速化）
-        if((I.consumeBuffered('a1')) && this.a1CD<=0){
-          this._startA1();
-          break;
-        }
-        // スキル①（リリースで決定：4回転/8回転）
+        if((I.consumeBuffered('a1')) && this.a1CD<=0){ this._startA1(); break; }
         if(I.edge.skillRelease && this.skillCD<=0){
-          const t = I.skillChargeT; // 0〜1
-          this._skill1(t>=1.0);     // true=8回転, false=4回転
-          I.skillChargeT=0;
-          I.edge.skillRelease=false;
+          const full = (I.skillChargeT>=1.0);
+          this._skill1(full);
+          I.skillChargeT=0; I.edge.skillRelease=false;
           break;
         }
-        // ULT 即最大
-        if(I.consumeBuffered('ult') && this.ultCD<=0){
-          this._ultMax();
-          break;
-        }
+        if(I.consumeBuffered('ult') && this.ultCD<=0){ this._ultMax(); break; }
       break;
 
       case 'a1':
         this.stateT+=dt;
-        // 硬直を短くしてテンポUP（Rev35）
         if(this.stateT>=this._a1Dur){
-          if(this.onGround && this.input.btn.a1 && this.comboStep<3){
-            // 連打で自然に2撃目以降へ
-            this._startA1();
-          }else{
-            this._enter('idle');
-          }
+          if(this.onGround && this.input.btn.a1 && this.comboStep<3){ this._startA1(); }
+          else{ this._enter('idle'); }
         }
       break;
 
       case 'skill':
       case 'ult':
         this.stateT+=dt;
-        // シンプルに一定時間で終了
         if(this.stateT>=this._actDur) this._enter('idle');
       break;
     }
-
-    // 物理更新
     this.updatePhysics(dt);
   }
 
-  /* === 攻撃①（高速・3段まで） === */
   _startA1(){
     this._enter('a1');
     this.comboStep=(this.state==='a1')? (this.comboStep+1)%3 : 0;
     const pow = [18,22,28][this.comboStep];
-    this._a1Dur = [0.10,0.10,0.12][this.comboStep]; // ← 速度UP
-    this.a1CD = 0.06; // 連打クール短
-    // ヒットボックス生成
+    this._a1Dur = [0.10,0.10,0.12][this.comboStep];
+    this.a1CD = 0.06;
     this._spawnHitbox({
       x:this.x+this.face*28, y:this.y-8, w:44, h:26,
       dmg:pow, kb:1.0, kbu:0.8, strong:pow>=28
     });
   }
 
-  /* === スキル①：スピン（溜め無し4回、溜め有8回） === */
   _skill1(full){
     this._enter('skill');
     const spins = full?8:4;
@@ -278,7 +242,6 @@ class Player extends CharacterBase{
     const durPer= 0.08;
     this._actDur = spins*durPer + 0.10;
     this.skillCD = full? 0.6 : 0.45;
-    // 多段ヒット：回転ごとにヒットボックス
     for(let i=0;i<spins;i++){
       const delay = i*durPer;
       this.world.defer(delay, ()=>this._spawnHitbox({
@@ -289,18 +252,15 @@ class Player extends CharacterBase{
     this.effects.addSpark(this.x,this.y-10,true);
   }
 
-  /* === ULT：即最大チャージ === */
   _ultMax(){
     this._enter('ult');
     this._actDur = 0.55;
     this.ultCD = 2.2;
     const pow = 120;
-    // 前方広範囲・強ノックバック
     this._spawnHitbox({
       x:this.x+this.face*80, y:this.y-14, w:160, h:44,
       dmg:pow, kb:2.2, kbu:1.4, strong:true, inv:0.25
     });
-    // 追加の追い打ち→抜け防止
     this.world.defer(0.20, ()=>this._spawnHitbox({
       x:this.x+this.face*90, y:this.y-14, w:160, h:44,
       dmg:90, kb:1.8, kbu:1.2, strong:true, inv:0.20
@@ -308,7 +268,6 @@ class Player extends CharacterBase{
     this.effects.addSpark(this.x,this.y-12,true);
   }
 
-  /* === 共通ヒットボックス生成 === */
   _spawnHitbox(opt){
     this.world.spawnHitbox({
       owner:'player', face:this.face,
@@ -322,7 +281,6 @@ class Player extends CharacterBase{
 
   draw(ctx){
     ctx.save();ctx.translate(this.x-this.world.camX,this.y-this.world.camY);
-    // 仮表示（長方形）
     ctx.fillStyle='#7df';
     ctx.fillRect(-10,-32,20,64);
     ctx.restore();
@@ -330,30 +288,28 @@ class Player extends CharacterBase{
 }
 window.Player = Player;
 
-/* ===== ワールド（描画・当たり・分離解決） ===== */
+/* ===== World ===== */
 class World{
   constructor(a,cv,fx){
     this.assets=a; this.canvas=cv; this.ctx=cv.getContext('2d'); this.effects=fx;
     this.camX=0; this.camY=0;
     this.hitboxes=[]; this.deferTasks=[];
     this.enemies=[];
+    this.bg='ST1.png';
   }
   setBackground(name){ this.bg=name; }
   defer(delay,fn){ this.deferTasks.push({t:delay,fn}); }
   spawnHitbox(hb){ hb.t=0; hb.life=0.06; this.hitboxes.push(hb); }
 
   update(dt, player){
-    // デファー実行
     this.deferTasks.forEach(d=>d.t=Math.max(0,d.t-dt));
     const run = this.deferTasks.filter(d=>d.t<=0);
     this.deferTasks = this.deferTasks.filter(d=>d.t>0);
     for(const d of run) d.fn();
 
-    // ヒットボックス更新 & 当たり
     for(const hb of this.hitboxes){ hb.t+=dt; }
     this.hitboxes = this.hitboxes.filter(h=>h.t<h.life);
 
-    // プレイヤー→敵 ヒット
     for(const hb of this.hitboxes){
       if(hb.owner==='player'){
         for(const e of this.enemies){
@@ -367,7 +323,7 @@ class World{
       }
     }
 
-    // すり抜け対策：AABB分離（水平プッシュ） ← Rev35: 新規
+    // AABB分離
     for(const e of this.enemies){
       if(e.dead) continue;
       const A = player.aabb(), B = e.aabb();
@@ -381,7 +337,6 @@ class World{
       }
     }
 
-    // カメラ：プレイヤー中心
     const margin=120;
     const target = $G.clamp(player.x - this.canvas.width/2, $G.STAGE_LEFT, $G.STAGE_RIGHT-this.canvas.width);
     const shake = this.effects.getCamOffset();
@@ -392,18 +347,10 @@ class World{
   draw(player){
     const ctx=this.ctx;
     ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
-    // 背景のみ（地面の黒ラインは描画しない）
-    const img = this.assets.img(this.bg||'ST1.png');
+    const img = this.assets.img(this.bg);
     if(img) ctx.drawImage(img, -this.camX, 0, this.canvas.width, this.canvas.height);
-
-    // 敵
     for(const e of this.enemies){ e.draw?.(ctx,this); }
-    // プレイヤー
     player.draw(ctx);
-    // ヒットボックス表示（デバッグしたい時は解除）
-    // for(const hb of this.hitboxes){ ctx.strokeStyle='#fff'; ctx.strokeRect(hb.x-this.camX-hb.w/2, hb.y-this.camY-hb.h/2, hb.w, hb.h); }
-
-    // エフェクト
     this.effects.draw(ctx,this);
   }
 }
@@ -414,14 +361,13 @@ function overlapHB(hb, enemy){
 }
 window.World = World;
 
-/* ===== Game（起動/ループ/HUD） ===== */
+/* ===== Game（Start強化） ===== */
 class Game{
   constructor(){
     this.assets=new Assets();
     this.canvas=document.getElementById('game');
     this.effects=new Effects();
     this.input=new Input();
-    this.enemies=[];
     this._started=false;
   }
   async boot(){
@@ -432,19 +378,41 @@ class Game{
     this.world.setBackground('ST1.png');
     this.player.x = 200;
     this.player.y = Math.floor($G.GROUND_TOP_Y)-this.player.h/2+$G.FOOT_PAD;
-    // タイトル
-    document.getElementById('startBtn').onclick=()=>{
-      if(this._started)return;
+
+    const overlay = document.getElementById('titleOverlay');
+    const startBtn = document.getElementById('startBtn');
+
+    const startGame = ()=>{
+      if(this._started) return;
       this._started=true;
-      document.getElementById('titleOverlay').classList.add('hidden');
+      overlay?.classList.add('hidden');
       this.startStage1();
       this._loop();
     };
+
+    // クリック/タップ
+    startBtn?.addEventListener('click', (e)=>{ e.preventDefault(); startGame(); });
+    startBtn?.addEventListener('pointerdown', (e)=>{ e.preventDefault(); startGame(); });
+
+    // オーバーレイ全体タップでも開始できるように
+    overlay?.addEventListener('pointerdown', (e)=>{
+      // パネル外のタップで開始（誤タップ防止したい場合は削除可）
+      if(e.target===overlay) { e.preventDefault(); startGame(); }
+    });
+
+    // キー（Enter / Space）
+    window.addEventListener('keydown', (e)=>{
+      if(this._started) return;
+      if(e.key==='Enter' || e.key===' '){ e.preventDefault(); startGame(); }
+    });
+
+    // もし何らかの理由でoverlayが無い/ボタン取れない場合の保険
+    if(!overlay || !startBtn){
+      startGame();
+    }
   }
   startStage1(){
-    // 敵出現（コンテナ無し）
     this.world.enemies = window.createEnemies?.(this.world,this.effects,this.assets) ?? [];
-    // HUD 初期
     $hpNum().textContent = `${this.player.hp}`;
     $hpFill().style.width = `100%`;
     this.t0 = $G.now();
@@ -453,35 +421,28 @@ class Game{
     if(!this._started) return;
     const t=$G.now(); let dt=this._lastT? (t-this._lastT)/1000 : 0; this._lastT=t; if(dt>0.05)dt=0.05;
 
-    // Update
     this.player.update(dt);
     for(const e of this.world.enemies) e.update?.(dt,this.player);
     this.world.update(dt,this.player);
     this.effects.update(dt);
 
-    // HUD
     $hpNum().textContent = `${Math.max(0,Math.floor(this.player.hp))}`;
     const hpP = Math.max(0, Math.min(1, this.player.hp/this.player.maxhp))*100;
     $hpFill().style.width = `${hpP}%`;
     const tm = Math.floor((t-this.t0)/1000); const mm=String(Math.floor(tm/60)).padStart(2,'0'); const ss=String(tm%60).padStart(2,'0');
-    $time().textContent = `${mm}:${ss}`;
-
-    // Draw
-    this.world.draw(this.player);
+    document.getElementById('time').textContent = `${mm}:${ss}`;
 
     requestAnimationFrame(()=>this._loop());
   }
 }
 window.Game = Game;
-
-// 起動予約（part2で new Game().boot() します）
 })();
-// script_part2.js – Rev35 FULL (Enemies / Stage / Glue)
+// script_part2.js – Rev35b FULL (Enemies / Stage / Boot)
 (function(){
 'use strict';
 const G = window.$G;
 
-/* ===== 敵定義（挙動は軽め：今回の主題はプレイヤー修正） ===== */
+/* ===== Enemy base ===== */
 class EnemyBase extends window.CharacterBase{
   constructor(w,h,world,fx,assets,x=600){ super(w,h); this.world=world; this.effects=fx; this.assets=assets; this.x=x; }
   draw(ctx,world){
@@ -490,10 +451,8 @@ class EnemyBase extends window.CharacterBase{
     ctx.restore();
   }
   update(dt,player){
-    // 簡易AI：近づく
     const dir = Math.sign(player.x - this.x);
     this.vx = dir * 120;
-    // 近すぎたら減速
     if(Math.abs(player.x - this.x)<40) this.vx *= 0.2;
     this.updatePhysics(dt);
   }
@@ -507,9 +466,9 @@ class GiantMOB  extends EnemyBase{ constructor(w,fx,a,x){ super(90,100,w,fx,a,x)
 class Shield    extends EnemyBase{ constructor(w,fx,a,x){ super(60,64,w,fx,a,x); this.hp=600;  this.maxhp=600; } }
 class Screw     extends EnemyBase{ constructor(w,fx,a,x){ super(62,68,w,fx,a,x); this.hp=2000; this.maxhp=2000;} }
 
-/* ===== 敵をまとめて生成（コンテナ無し） ===== */
+/* ===== Enemy factory (No container) ===== */
 window.createEnemies = function(world,fx,assets){
-  G.GROUND_TOP_Y = 437; // 念のため再設定
+  G.GROUND_TOP_Y = 437;
   return [
     new WaruMOB(world,fx,assets,600),
     new GolemRobo(world,fx,assets,900),
