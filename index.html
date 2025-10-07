@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-  <title>MOB Side Action – Rev33 FULL (Stable Restore)</title>
+  <title>MOB Side Action – Rev32 FULL (MOBA stage + GabuKing/Screw + Edge Walls + ULT test)</title>
   <meta name="theme-color" content="#0b0c10" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -18,39 +18,25 @@
           <div class="chip name">MOBYOKI</div>
           <div class="chip timer">Time <strong id="time">00:00</strong></div>
         </header>
-
         <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
-
-        <div class="layer banner hidden" id="banner"></div>
-
-        <div class="layer overlay" id="titleOverlay">
-          <div class="panel">
-            <h1>MOB SIDE ACTION</h1>
-            <h2>Stage 1 (Stable Rev33)</h2>
-            <button id="startBtn" class="start">START</button>
-            <p class="hint">操作：左スティック / ■(J) ▲(K) ●(L) ◎(O) U / ×(Space)</p>
-          </div>
-        </div>
       </div>
-
       <div class="controls">
-        <div class="stickArea" id="stickArea">
+        <div class="stickArea" id="stickArea" aria-label="Move Stick">
           <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
         </div>
         <div class="buttons">
-          <button class="btn attack1" id="btnA1">■</button>
-          <button class="btn attack2" id="btnA2">▲</button>
-          <button class="btn skill1" id="btnSK">●</button>
-          <button class="btn skill2" id="btnSK2">◎</button>
-          <button class="btn ult" id="btnULT">U</button>
-          <button class="btn jump" id="btnJMP">×</button>
+          <button class="btn attack1" id="btnA1"  aria-label="攻撃① ■">■</button>
+          <button class="btn attack2" id="btnA2"  aria-label="攻撃② ▲">▲</button>
+          <button class="btn skill1"  id="btnSK"  aria-label="スキル① ●">●</button>
+          <button class="btn skill2"  id="btnSK2" aria-label="スキル② ◎">◎</button>
+          <button class="btn ult"     id="btnULT" aria-label="ULT U">U</button>
+          <button class="btn jump"    id="btnJMP" aria-label="ジャンプ ×">×</button>
         </div>
       </div>
     </div>
   </div>
 </div>
 
-<script src="script_part1.js"></script>
-<script src="script_part2.js"></script>
+<script src="script.js"></script>
 </body>
 </html>
