@@ -37,9 +37,17 @@
   </div>
 </div>
 
-<!-- 分割スクリプト（読み込み順が重要） -->
+<!-- 読み込み順が超重要： -->
+<!-- 1) 共通コア（ユーティリティ・基底クラス） -->
 <script src="script-core.js"></script>
+
+<!-- 2) 既存の敵（WaruMOB / IceRobo / …）※そのまま -->
 <script src="actors.js"></script>
+
+<!-- 3) 新プレイヤー（ここで Player だけ上書き差し替え） -->
+<script src="actors-player.js"></script>
+
+<!-- 4) World / Game / メインループ -->
 <script src="game.js"></script>
 </body>
 </html>
