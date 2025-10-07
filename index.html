@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-  <title>MOB Side Action – Rev35c SAFE (AutoStart / No Ground Line / No Container)</title>
+  <title>MOB Side Action – Rev35 FULL (No Container / Skill1 4-8 Spin)</title>
   <meta name="theme-color" content="#0b0c10" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -23,12 +23,11 @@
 
         <div class="layer banner hidden" id="banner"></div>
 
-        <!-- SAFE: ゲームは自動開始。ボタンはオーバーレイを閉じるだけ -->
-        <div class="layer overlay" id="titleOverlay" aria-label="Title Overlay">
+        <div class="layer overlay" id="titleOverlay">
           <div class="panel">
             <h1>MOB SIDE ACTION</h1>
             <h2>Stage 1</h2>
-            <button id="startBtn" class="start" type="button">START</button>
+            <button id="startBtn" class="start">START</button>
             <p class="hint">操作：左スティック / ■ ▲ ● ◎ U / ×</p>
           </div>
         </div>
@@ -51,6 +50,7 @@
   </div>
 </div>
 
+<!-- ※ script_part1.js は空でもOK。STARTの安定化や将来分割用に読み込みを維持 -->
 <script src="script_part1.js"></script>
 <script src="script_part2.js"></script>
 </body>
