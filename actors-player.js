@@ -1,4 +1,4 @@
-// actors-player.js — Player only (ULT not cancellable on hit + S1 fast 8 spins + S2 big persistent)
+// actors-player.js — ULT完走＆A1反応改善 + S1=8回転高速 + S2煙持続大
 // 依存: script-core.js（__GamePieces__）
 
 (function(){
@@ -34,19 +34,26 @@ class Player extends CharacterBase{
 
     this.maxJumps=2; this.jumpsLeft=this.maxJumps;
 
-    this.comboStep=0; this.comboGraceT=0; this.comboGraceMax=0.24;
-    this.bufferA1=false; this.a2LockoutT=0;
+    // 入力・コンボ
+    this.comboStep=0;
+    this.comboGraceT=0;            // 次段に繋げられる猶予
+    this.comboGraceMax=0.24;       // 猶予長
+    this.bufferA1=false;
+    this.a2LockoutT=0;
+
+    // クールダウン
     this.skillCDT=0; this.skill2CDT=0; this.ultCDT=0;
 
+    // スーパーアーマ
     this.saT=0;
 
-    // ULTラッシュ管理
+    // ULT
     this._inULT=false;
-    this._ultQueue=null;     // ['A1R','S1','S2']
-    this._ultSpeed=2.2;      // 再生速度倍率
+    this._ultQueue=null;           // ['A1R','S1','S2']
+    this._ultSpeed=2.2;            // アクションの進行倍率（高速化）
     this._ultPhase='';
-    this._ultTimer=0;        // ウォッチドッグ
-    this._ultTimeLimit=2.5;  // フェイルセーフ
+    this._ultTimer=0;              // フェイルセーフ用
+    this._ultTimeLimit=8.0;        // ★十分長く（異常時のみ作動）
     this._ultLockInput=false;
 
     this.frames={
@@ -121,10 +128,18 @@ class Player extends CharacterBase{
   update(dt,input,world,enemies){
     input.beginFrame(); this._posOverhead();
     if(this.saT>0) this.saT=Math.max(0,this.saT-dt);
-
-    if(this.state!=='atk' && this.state!=='skill' && this.state!=='skill2' && this.state!=='ult' && this._actionSeq){ this._actionSeq=null; }
     if(this.a2LockoutT>0) this.a2LockoutT=Math.max(0,this.a2LockoutT-dt);
 
+    // ★コンボ猶予の減衰
+    if(this.comboGraceT>0){
+      this.comboGraceT = Math.max(0, this.comboGraceT - dt);
+      if(this.comboGraceT===0 && this.state==='idle'){ this.comboStep=0; }
+    }
+
+    // 進行中の残骸掃除
+    if(this.state!=='atk' && this.state!=='skill' && this.state!=='skill2' && this.state!=='ult' && this._actionSeq){ this._actionSeq=null; }
+
+    // CD UI
     const skBtn=document.getElementById('btnSK'); const sk2Btn=document.getElementById('btnSK2'); const ultBtn=document.getElementById('btnULT');
     if(this.skillCDT>0){ this.skillCDT=Math.max(0,this.skillCDT-dt); skBtn.setAttribute('disabled',''); } else skBtn.removeAttribute('disabled');
     if(this.skill2CDT>0){ this.skill2CDT=Math.max(0,this.skill2CDT-dt); sk2Btn.setAttribute('disabled',''); } else sk2Btn.removeAttribute('disabled');
@@ -137,15 +152,15 @@ class Player extends CharacterBase{
       return;
     }
 
-    /* ===== Skill1：常に8回転＋高速 ===== */
+    /* ===== S1：常に8回転＋高速 ===== */
     if(!this._inULT){
       if(input.edge.skillRelease && this.skillCDT<=0){
         input.edge.skillRelease=false;
-        this._startSkill1FixedTurns(8, {speed:1.5}); // 8回転・高速
+        this._startSkill1FixedTurns(8, {speed:1.5});
       }
     } else {
       this._showGauge(false);
-      // 入力ロック
+      // ULT中は入力を食べない
       input.edge.a1=input.edge.a2Press=input.edge.skillRelease=input.edge.skill2=input.edge.ultPress=input.edge.ultRelease=false;
       input.btn.a1=input.btn.a2=input.btn.skill=input.btn.skill2=input.btn.ult=false;
     }
@@ -172,7 +187,7 @@ class Player extends CharacterBase{
         }
       }
 
-      const dt2 = (this._inULT ? dt*this._ultSpeed : dt); // ULT中は高速再生
+      const dt2 = (this._inULT ? dt*this._ultSpeed : dt); // ULT中高速
       this._updateAction(dt2,world,input);
 
       if(this._inULT) this._tickULT(dt);
@@ -181,15 +196,28 @@ class Player extends CharacterBase{
       return;
     }
 
-    // 入力（通常時のみ）
+    // === 入力（通常時のみ） ===
+    // A1は最優先で処理（バッファ利用＋コンボ猶予を考慮）
     if(!this._inULT){
-      if(input.edge.a1) this.bufferA1=true;
-      if(input.edge.skill2 && this.skill2CDT<=0){ input.edge.skill2=false; this.bufferA1=false; this._startSkill2_BiggerDust_Persistent(); return; }
-      if(input.edge.a2Press && this.a2LockoutT<=0){ input.edge.a2Press=false; this.bufferA1=false; this._startA2(); return; }
-      if(this.bufferA1 && this.comboStep<3){ this.bufferA1=false; this._startA1(); return; }
+      // 1) エッジ → バッファON
+      if(input.edge.a1) this.bufferA1 = true;
+
+      // 2) S2/A2より前にA1を消化（グレース中 or 素の起動）
+      if(this.bufferA1){
+        // コンボ続行可能なら続行、無理なら新規始動
+        if(this.comboStep<3 || this.comboGraceT>0){
+          this.bufferA1=false;
+          this._startA1();
+          return;
+        }
+      }
+
+      // 3) 他の入力
+      if(input.edge.skill2 && this.skill2CDT<=0){ input.edge.skill2=false; this._startSkill2_BiggerDust_Persistent(); return; }
+      if(input.edge.a2Press && this.a2LockoutT<=0){ input.edge.a2Press=false; this._startA2(); return; }
     }
 
-    // 移動（ULT中は停止）
+    // 移動
     if(!this._inULT){
       let ax=0; if(input.left){ ax-=MOVE; this.face=-1; } if(input.right){ ax+=MOVE; this.face=1; }
       this.vx = ax!==0 ? (ax>0?MOVE:-MOVE) : 0;
@@ -235,15 +263,15 @@ class Player extends CharacterBase{
     this.a2LockoutT=0.6;
   }
 
-  // Skill1：回転数固定（8回転）＋スピード倍率
+  // S1：8回転＋スピード倍率
   _startSkill1FixedTurns(turns=8, opts={speed:1.0}){
     this.state='skill'; this.animT=0; this.skillCDT=5.0;
     const frames=this.frames.spin;
     const base=26;
-    const kbm = 1.8; // 少し強化
+    const kbm = 1.8;
     const kbum= 1.4;
     const speed = Math.max(0.5, opts.speed||1.0);
-    const step = 0.06 / speed; // 高速化
+    const step = 0.06 / speed; // 高速
 
     const seq=[];
     for(let r=0;r<turns;r++){
@@ -256,7 +284,7 @@ class Player extends CharacterBase{
     this._showGauge(false);
   }
 
-  // Skill2：大きい煙 + 持続（敵に当たっても消えない）
+  // S2：大きい煙・持続（接触で消えない）
   _startSkill2_BiggerDust_Persistent(){
     if(this.skill2CDT>0) return;
     this.state='skill2'; this.animT=0; this.skill2CDT=10.0;
@@ -306,7 +334,7 @@ class Player extends CharacterBase{
     if(!next){ this._finishULT(); return; }
 
     if(next==='A1R'){
-      this._startA1RushSequence();   // 専用シーケンス
+      this._startA1RushSequence();
     } else if(next==='S1'){
       this._startSkill1FixedTurns(8, {speed:1.5});
     } else if(next==='S2'){
@@ -327,10 +355,10 @@ class Player extends CharacterBase{
   }
 
   _tickULT(dt){
-    // SAを維持（薄く上書き）
+    // SAを薄く維持
     this.saT = Math.max(this.saT, 0.1);
 
-    // ウォッチドッグ
+    // ★ウォッチドッグ（異常時だけ）
     this._ultTimer += dt;
     if(this._ultTimer >= this._ultTimeLimit){
       this._finishULT();
@@ -383,6 +411,10 @@ class Player extends CharacterBase{
       if(this._actionTime>=cur.dur){
         this._actionIndex++; this._actionTime=0;
         if(this._actionIndex>=this._actionSeq.length){
+          // ★A1/A2等の攻撃終了時にコンボ猶予を付与
+          if(this.state==='atk' && this.comboStep>0){
+            this.comboGraceT=this.comboGraceMax;
+          }
           if(this.state==='skill2'){ this._activeSpikes=null; }
           this.state='idle'; this._actionSeq=null; // busy解除
         }
@@ -428,27 +460,22 @@ class Player extends CharacterBase{
     ctx.restore();
   }
 
-  // 被弾：ULT中は絶対にキャンセルされない
+  // 被弾：ULT中はキャンセルされない
   hurt(amount,dir,opts,effects){
     if(this._inULT){
-      // ダメージは受けるが、ノックバックは完全無効化
       const safeOpts = {...(opts||{}), kbMul:0, kbuMul:0};
-      const prevState='ult';
       const hit = CharacterBase.prototype.hurt.call(this,amount,dir,safeOpts,effects);
       if(hit && !this.dead){
-        // すぐにULT状態へ強制復帰（親が'state=hurt'にしても上書き）
-        this.state=prevState;
-        // アクション継続（_actionSeqは触らない）
-        // 再被弾連打のブレを抑えるため短い無敵
+        this.state='ult';
         this.invulnT = Math.max(this.invulnT, 0.08);
       }
-      // HP UI更新
+      // HP UI
       const fill=document.getElementById('hpfill'); const num=document.getElementById('hpnum');
       if(fill&&num){ num.textContent=this.hp; fill.style.width=Math.max(0,Math.min(100,(this.hp/this.maxhp)*100))+'%'; }
       return hit;
     }
 
-    // 通常時：スキル2やSA中は軽減
+    // 通常時：S2/SA中はKB軽減
     if(this.state==='skill2' || this.saT>0){
       opts = {...(opts||{}), kbMul:0.2, kbuMul:0.2};
     }
@@ -458,9 +485,8 @@ class Player extends CharacterBase{
       if(fill&&num){ num.textContent=this.hp; fill.style.width=Math.max(0,Math.min(100,(this.hp/this.maxhp)*100))+'%'; }
 
       if(this.state!=='skill2'){
-        // アクション残骸で固まらないよう初期化
+        // 残骸防止
         this._actionSeq=null; this._actionIndex=0; this._actionTime=0;
-        this.bufferA1=false; this.comboStep=0; this.comboGraceT=0; this.a2LockoutT=0;
         this.overhead?.root && (this.overhead.root.style.display='none');
         this.jumpsLeft=this.maxJumps;
         this.state='idle';
