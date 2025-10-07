@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-  <title>MOB Side Action – New Enemies First</title>
+  <title>MOB Side Action – Rev32 FULL (MOBA stage + GabuKing/Screw + Edge Walls + ULT test)</title>
   <meta name="theme-color" content="#0b0c10" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -37,11 +37,9 @@
   </div>
 </div>
 
-<!-- 読み込み順が超重要！ -->
-<script src="script-core.js"></script>        <!-- Utils/World/Effectsなど -->
-<script src="actors-player.js"></script>      <!-- プレイヤー（復帰ポイント版） -->
-<script src="actors-enemies.js"></script>     <!-- 既存の敵 -->
-<script src="actors-extra.js"></script>       <!-- ★新キャラ群（今回追加） -->
-<script src="script-game.js"></script>        <!-- ゲーム起動（新キャラ優先ウェーブ） -->
+<!-- ▼JS分割版（順序厳守） -->
+<script src="script-core.js"></script>
+<script src="actors.js"></script>
+<script src="game.js"></script>
 </body>
 </html>
