@@ -1,4 +1,4 @@
-// game.js — World / Game / Boot
+// game.js — World / Game / Boot（新キャラ対応）
 (function(){
 'use strict';
 
@@ -11,7 +11,9 @@ const {
 
 const {
   Player,
-  WaruMOB, IceRobo, IceRoboMini, Kozou, MOBGiant, GabuKing, Screw
+  WaruMOB, IceRobo, IceRoboMini, Kozou, MOBGiant, GabuKing, Screw,
+  // ▼新規
+  Nebyu, GureMOB, MOBFighter, MOBHyado, Danball
 } = window.__Actors__;
 
 /* ================================
@@ -86,7 +88,13 @@ class Game{
       'I1.png','I2.png','I3.png','I4.png','I5.png','I6.png','I7.png','I8.png',
       'P1.png','P2.png','P3.png','P4.png','P5.png','P6.png','P7.png','P10.png',
       't1.png','t2.png','t3.png','t4.png','t5.png','t6.png','t7.png','t8.png','t9.png','t10.png','t11.png',
-      'B1.png','B2.png','B3.png','B4.png','B5.png','B6.png','B7.png','B8.png','B9.png','B10.png','B11.png','B12.png','B13.png','B14.png'
+      'B1.png','B2.png','B3.png','B4.png','B5.png','B6.png','B7.png','B8.png','B9.png','B10.png','B11.png','B12.png','B13.png','B14.png',
+      // ▼新規敵（Nebyu / Gure / Fighter / Hyado / Danball）
+      'MN.png','MN1.png','MN2.png','MN3.png','M3.png','MN4.png','MN5.png','MN6.png','MN.6','MN7.png','MN8.png','MN9.png','MN10.png','MN11.png','GD.png',
+      'tek1.png','tek2.png','tek3.png',
+      'EN1-1.png','EN1-2.png','EN1-3.png','EN1-4.png','EN1-5.png','EN1-6.png',
+      'MY.png','MY1.png','MY2.png','MY3.png','MY4.png','MY5.png','MY6.png','MY7.png',
+      'C1.png','C2.png','C3.png','C4.png'
     ];
     await this.assets.load(imgs);
     this.world=new World(this.assets,this.canvas,this.effects);
@@ -103,28 +111,45 @@ class Game{
       return arr;
     };
 
-    // ウェーブ構成（原作準拠）
+    // ========= ウェーブ構成（新旧ミックス） =========
     this.enemyOrder = [
+      // 序盤：新規・弱め
+      group(GureMOB,   5, spawnX, 58),
+      group(Danball,   6, spawnX, 46),
+      group(MOBFighter,4, spawnX, 64),
+
+      // 既存の序盤
       group(IceRoboMini, 5, spawnX, 48),
       group(Kozou,       5, spawnX, 55),
       group(WaruMOB,     5, spawnX, 60),
 
-      // 中盤：弱5 + ボス2
+      // 中盤：混成 + ミニボス級
       ()=>[
-        ...group(IceRoboMini, 5, spawnX, 48)(),
-        new GabuKing(this.world,this.effects,this.assets,spawnX+220),
+        ...group(MOBHyado,   3, spawnX, 70)(),
+        ...group(MOBFighter, 2, spawnX+160, 70)(),
+        new GabuKing(this.world,this.effects,this.assets,spawnX+260)
+      ],
+
+      // 中盤：弱5 + Screw
+      ()=>[
+        ...group(GureMOB, 5, spawnX, 56)(),
         new Screw(this.world,this.effects,this.assets,spawnX+320)
       ],
 
-      // 後半：弱5 + アイスロボ
+      // 後半：新・旧混成 + IceRobo
       ()=>[
-        ...group(Kozou, 5, spawnX, 50)(),
+        ...group(Kozou, 3, spawnX, 60)(),
+        ...group(MOBHyado, 2, spawnX+180, 70)(),
         new IceRobo(this.world,this.effects,this.assets,spawnX+360)
       ],
 
-      // 終盤：弱5 + 巨神
+      // 終盤手前：Nebyu（新キャラ）単体テスト
+      ()=>[ new Nebyu(this.world,this.effects,this.assets, spawnX+300) ],
+
+      // 終盤：取り巻き＋巨神
       ()=>[
-        ...group(WaruMOB, 5, spawnX, 60)(),
+        ...group(WaruMOB,   3, spawnX, 60)(),
+        ...group(MOBFighter,2, spawnX+180, 68)(),
         new MOBGiant(this.world,this.effects,this.assets,spawnX+420)
       ]
     ];
@@ -149,7 +174,7 @@ class Game{
       for(const e of this.enemies){
         e.update(dt,this.player);
 
-        // WaruMOB の弾
+        // 既存：WaruMOB の弾
         if(e.constructor && e.constructor.name==='WaruMOB'){
           for(const p of e.projectiles){
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
@@ -158,7 +183,7 @@ class Game{
             }
           }
         }
-        // IceRobo のダッシュ & 玉
+        // 既存：IceRobo ダッシュ & 玉
         if(e.constructor && e.constructor.name==='IceRobo'){
           if(e.state==='dash'){
             const hb = {x:e.x + e.face*22, y:e.y, w:e.w*0.9, h:e.h*0.9};
@@ -174,7 +199,7 @@ class Game{
             }
           }
         }
-        // Kozou の石
+        // 既存：Kozou の石
         if(e.constructor && e.constructor.name==='Kozou'){
           for(const p of e.projectiles){
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
@@ -183,7 +208,7 @@ class Game{
             }
           }
         }
-        // GabuKing の弾（もう各クラス内で当たり取ってるけど保険で）
+        // 既存：GabuKing の弾
         if(e.constructor && e.constructor.name==='GabuKing'){
           for(const b of e.bullets){
             if(!b.dead && this.player.invulnT<=0 && rectsOverlap(b.aabb(), this.player.aabb())){
@@ -192,7 +217,7 @@ class Game{
             }
           }
         }
-        // 巨神のダッシュ & 玉
+        // 既存：巨神のダッシュ & 玉
         if(e.constructor && e.constructor.name==='MOBGiant'){
           if(e.state==='dash'){
             const hb = {x:e.x + e.face*30, y:e.y, w: e.w*0.96, h: e.h*0.96};
@@ -208,6 +233,7 @@ class Game{
             }
           }
         }
+        // 新規の弾当たりは各クラス内で処理済み（Nebyu など）
       }
 
       // プレイヤーの弾・スパイク（敵へ）
