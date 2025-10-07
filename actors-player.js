@@ -1,6 +1,6 @@
 // actors-player.js — Player only (drop-in)
 // 既存の script-core.js が提供する __GamePieces__ に依存します。
-// 他の敵は別ファイル（actors-enemies-*.js）でOK。最後に window.__Actors__ をマージ追加。
+// 他の敵は別ファイル（actors.js など）。最後に window.__Actors__ をマージ追加。
 
 (function(){
 'use strict';
@@ -11,6 +11,23 @@ const {
   constants:{ MOVE, JUMP_V, GROUND_TOP_Y, FOOT_PAD },
   utils:{ clamp, lerp, rectsOverlap }
 } = window.__GamePieces__;
+
+/* =============== helper: persistent wrapper for spikes =============== */
+/** 当たり判定で p.dead = true にされても無視して、寿命(life)でのみ消えるようにする */
+function makePersistentHitbox(obj){
+  obj.persistent = true;
+  // dead をアクセサで覆って「true」への変更を無視
+  let _dead = false;
+  Object.defineProperty(obj, 'dead', {
+    get(){ return _dead; },
+    set(v){
+      // 当たりによる true は無視。false は許可。
+      if (obj.persistent && v === true) return;
+      _dead = v;
+    },
+    configurable: true
+  });
+}
 
 /* ================================
  * Player
@@ -111,7 +128,6 @@ class Player extends CharacterBase{
     }
 
     /* ===== ULT：チャージ廃止、即時最大 ===== */
-    // 押した瞬間に最大パラメータで発動（ゲージ非表示）
     if(this.ultCDT<=0 && (input.edge.ultPress || input.edge.ultRelease)){
       input.edge.ultPress=false; input.edge.ultRelease=false; input.btn.ult=false;
       this._releaseULT(3.0); // 最大扱い
@@ -120,7 +136,7 @@ class Player extends CharacterBase{
     // スキル① / release
     if(input.edge.skillRelease && this.skillCDT<=0){
       const charged = (this._s1T||0) > 0.01;
-      this._startSkill1FixedTurns(charged ? 8 : 4); // ★ここがリクエスト反映
+      this._startSkill1FixedTurns(charged ? 8 : 4);
       input.edge.skillRelease=false; this._s1T=0;
     }
 
@@ -148,7 +164,7 @@ class Player extends CharacterBase{
     if(input.edge.a1) this.bufferA1=true;
 
     // 起動優先
-    if(input.edge.skill2 && this.skill2CDT<=0){ input.edge.skill2=false; this.bufferA1=false; this._startSkill2_BiggerDust(); return; }
+    if(input.edge.skill2 && this.skill2CDT<=0){ input.edge.skill2=false; this.bufferA1=false; this._startSkill2_BiggerDust_Persistent(); return; }
     if(input.edge.a2Press && this.a2LockoutT<=0){ input.edge.a2Press=false; this.bufferA1=false; this._startA2(); return; }
     if(this.bufferA1 && this.comboStep<3){ this.bufferA1=false; this._startA1(); return; }
 
@@ -160,7 +176,6 @@ class Player extends CharacterBase{
     if(this.onGround) this.jumpsLeft=this.maxJumps;
     this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
 
-    // ULTゲージはもう使わないので常時非表示、スキル①だけ表示
     if(!(input.skillCharging)) this._showGauge(false);
     world.updateTimer(dt);
   }
@@ -199,8 +214,8 @@ class Player extends CharacterBase{
   _startSkill1FixedTurns(turns){
     this.state='skill'; this.animT=0; this.skillCDT=5.0;
     const frames=this.frames.spin;
-    const base=26;         // もとの威力基準は維持
-    const kbm = 1.6 + (turns>=8?0.2:0.0);    // 8回転はちょい強KB
+    const base=26;
+    const kbm = 1.6 + (turns>=8?0.2:0.0);
     const kbum= 1.3 + (turns>=8?0.1:0.0);
 
     const seq=[];
@@ -214,8 +229,8 @@ class Player extends CharacterBase{
     this._showGauge(false);
   }
 
-  // ★スキル②：煙/砂塵を大きく（スパイクのサイズを上書き）
-  _startSkill2_BiggerDust(){
+  // ★スキル②：煙/砂塵を大きく + 敵に当たっても消えない（persistent）
+  _startSkill2_BiggerDust_Persistent(){
     if(this.skill2CDT>0) return;
     this.state='skill2'; this.animT=0; this.skill2CDT=10.0;
     this._skill2SAT = 1.6;
@@ -230,14 +245,14 @@ class Player extends CharacterBase{
 
     const kem=this.world.assets.img('kem.png');
     if(kem){
-      const off=72; // 少し広げる
+      const off=72; // 広げる
       const L=new GroundSpike(this.world, this.x - off, -1, kem);
       const R=new GroundSpike(this.world, this.x + off,  1, kem);
-      // ここでサイズを強制的に拡大
       [L,R].forEach(sp=>{
         sp.w = 68;          // 幅アップ（既存42）
         sp.maxH = 140;      // 高さアップ（既存90）
-        sp.life = 1.15;     // ちょい長く見せる
+        sp.life = 1.15;     // 少し長め
+        makePersistentHitbox(sp); // ★当たっても消えない
       });
       (this.world._skillBullets||(this.world._skillBullets=[])).push(L,R);
       this._activeSpikes=[L,R];
@@ -255,12 +270,11 @@ class Player extends CharacterBase{
     ];
     this._actionIndex=0; this._actionTime=0;
 
-    this.ultCDT=3.0; // CTは据え置き
+    this.ultCDT=3.0; // CT据え置き
 
     const img=this.world.assets.img(this.frames.ul3);
     const ox=this.face*30, oy=-12;
-    // 最大サイズ相当：内部のUltBlastは chargeSec でサイズ決定 → 3.0固定で渡す
-    const blast=new UltBlast(this.world, this.x+ox, this.y+oy, this.face, img, 3.0);
+    const blast=new UltBlast(this.world, this.x+ox, this.y+oy, this.face, img, 3.0); // 常に最大
     (this.world._skillBullets||(this.world._skillBullets=[])).push(blast);
     this.saT=0;
     this._showGauge(false);
@@ -340,7 +354,7 @@ class Player extends CharacterBase{
     ctx.restore();
   }
 
-  // 被弾時（既存仕様を踏襲）
+  // 被弾時（既存仕様）
   hurt(amount,dir,opts,effects){
     if(this.state==='skill2'){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
     else if(this.saT>0){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
