@@ -1,4 +1,4 @@
-// script.js – Rev34a FULL (No Start / Skill1 4or8 Spin / No Container)
+// script_part2.js – Rev34 FULL (No Ground Line / No Container / Skill1 8Spin)
 (function(){
 'use strict';
 
@@ -10,7 +10,6 @@ const STAGE_RIGHT = 2200;
 let GROUND_TOP_Y = 437;  // 赤帯上端に合わせた地面
 const GRAV = 2000, MOVE = 260, JUMP_V = 760, MAX_FALL = 1200;
 const FOOT_PAD = 2;
-const SKILL1_CHARGE_SEC = 1.0; // 1秒で最大チャージ（=8回転）
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
 const now=()=>performance.now();
@@ -72,11 +71,11 @@ class Input{
       if(k==='arrowleft'||k==='a')this.left=1;
       if(k==='arrowright'||k==='d')this.right=1;
       if(k===' '||k==='w'||k==='arrowup')this.jump=true;
-      if(k==='j'){ this.edge.a1=!this.btn.a1; this.btn.a1=true; }
-      if(k==='k'){ this.edge.a2=!this.btn.a2; this.btn.a2=true; }
-      if(k==='l'&&!this.btn.skill){ this.btn.skill=true; this.edge.skillPress=true; this.skillCharging=true; /* start charge */ }
-      if(k==='o'){ this.edge.skill2=true; this.btn.skill2=true; }
-      if(k==='u'&&!this.btn.ult){ this.btn.ult=true; this.edge.ultPress=true; this.ultCharging=true; /* start charge */ }
+      if(k==='j')this.edge.a1=!this.btn.a1; this.btn.a1=true;
+      if(k==='k')this.edge.a2=!this.btn.a2; this.btn.a2=true;
+      if(k==='l'&&!this.btn.skill){this.btn.skill=true;this.edge.skillPress=true;this.skillCharging=true;this.skillChargeT=0;}
+      if(k==='o')this.edge.skill2=true; this.btn.skill2=true;
+      if(k==='u'&&!this.btn.ult){this.btn.ult=true;this.edge.ultPress=true;this.ultCharging=true;this.ultChargeT=0;}
     });
     addEventListener('keyup',e=>{
       const k=e.key.toLowerCase();
@@ -84,9 +83,9 @@ class Input{
       if(k==='arrowright'||k==='d')this.right=0;
       if(k==='j')this.btn.a1=false;
       if(k==='k')this.btn.a2=false;
-      if(k==='l'){ this.btn.skill=false; this.edge.skillRelease=true; this.skillCharging=false; }
+      if(k==='l'){this.btn.skill=false;this.skillCharging=false;this.edge.skillRelease=true;}
       if(k==='o')this.btn.skill2=false;
-      if(k==='u'){ this.btn.ult=false; this.edge.ultRelease=true; this.ultCharging=false; }
+      if(k==='u'){this.btn.ult=false;this.ultCharging=false;this.edge.ultRelease=true;}
     });
   }
   _initTouch(){
@@ -94,27 +93,15 @@ class Input{
       const el=document.getElementById(id);
       el.addEventListener('pointerdown',e=>{e.preventDefault();onDown();});
       el.addEventListener('pointerup',e=>{e.preventDefault();onUp();});
-      el.addEventListener('pointercancel',e=>{e.preventDefault();onUp();});
-      el.addEventListener('pointerleave',e=>{e.preventDefault();onUp();});
     };
     bind('btnA1',()=>{this.btn.a1=true;this.edge.a1=true;},()=>this.btn.a1=false);
     bind('btnA2',()=>{this.btn.a2=true;this.edge.a2=true;},()=>this.btn.a2=false);
-    bind('btnSK',()=>{this.btn.skill=true;this.edge.skillPress=true;this.skillCharging=true;},()=>{this.btn.skill=false;this.edge.skillRelease=true;this.skillCharging=false;});
+    bind('btnSK',()=>{this.btn.skill=true;this.edge.skillPress=true;this.skillCharging=true;this.skillChargeT=0;},()=>{this.btn.skill=false;this.skillCharging=false;this.edge.skillRelease=true;});
     bind('btnSK2',()=>{this.edge.skill2=true;this.btn.skill2=true;},()=>this.btn.skill2=false);
-    bind('btnULT',()=>{this.btn.ult=true;this.edge.ultPress=true;this.ultCharging=true;},()=>{this.btn.ult=false;this.edge.ultRelease=true;this.ultCharging=false;});
+    bind('btnULT',()=>{this.btn.ult=true;this.edge.ultPress=true;this.ultCharging=true;this.ultChargeT=0;},()=>{this.btn.ult=false;this.ultCharging=false;this.edge.ultRelease=true;});
     bind('btnJMP',()=>this.jump=true,()=>{});
   }
-  update(dt){
-    // スキル①のチャージ時間を蓄積（最大1.0に正規化）
-    if(this.skillCharging){
-      this.skillChargeT = clamp(this.skillChargeT + dt / SKILL1_CHARGE_SEC, 0, 1);
-    }else{
-      // ボタンを離した直後に使い切るため、ここではリセットしない
-    }
-    //（ULTは今回の対応対象外。後で最大チャージ常時に）
-  }
   consumeJump(){const j=this.jump;this.jump=false;return j;}
-  consumeEdge(tag){ const v=!!this.edge[tag]; this.edge[tag]=false; return v; }
 }
 
 /* ================================
@@ -147,43 +134,23 @@ class CharacterBase{
  * プレイヤー
  * ================================ */
 class Player extends CharacterBase{
-  constructor(a,w,fx){super(56,64);this.assets=a;this.world=w;this.effects=fx;this.hp=1000;this.maxhp=1000;this.lives=3;this.skillCDT=0;this.ultCDT=0;
-    this.state='idle';this.seq=[];this.idx=0;this.t=0;
-  }
+  constructor(a,w,fx){super(56,64);this.assets=a;this.world=w;this.effects=fx;this.hp=1000;this.maxhp=1000;this.lives=3;this.skillCDT=0;this.ultCDT=0;}
   update(dt,input){
     if(this.dead){this.updatePhysics(dt);return;}
-
-    // 入力更新（チャージ時間の蓄積）
-    input.update(dt);
-
-    // スキル①：ボタン離しで発動（溜め無し＝4回転、溜め有＝8回転）
-    if(input.consumeEdge('skillRelease')){
-      const t = clamp(input.skillChargeT,0,1);
-      this._skill1(t>=1.0); // 1秒到達でフル
-      input.skillChargeT = 0; // 使い切り
-    }
-
-    // ふつうの移動
+    // スキル①チャージ
+    if(input.skillCharging)this.effects.shake(0.05,1);
+    // リリース
+    if(input.edge.skillRelease){const c=clamp(input.skillChargeT,0,1);this._skill1(c);input.skillChargeT=0;input.edge.skillRelease=false;}
+    if(input.edge.ultRelease){input.ultChargeT=0;input.edge.ultRelease=false;}
     let ax=0;if(input.left)ax-=MOVE;if(input.right)ax+=MOVE;this.vx=ax; 
     if(input.consumeJump()&&this.onGround){this.vy=-JUMP_V;}
     this.updatePhysics(dt);
-
-    // シーケンス進行（スキル演出の簡易タイムライン）
-    if(this.state==='skill'){
-      this.t += dt;
-      const cur = this.seq[this.idx];
-      if(cur && this.t >= cur.dur){
-        this.t = 0; this.idx++;
-        if(this.idx>=this.seq.length){ this.state='idle'; }
-      }
-    }
   }
-  _skill1(fullCharge){
-    const spinCount = fullCharge ? 8 : 4;
-    const powBase = fullCharge ? 28 : 20;
-    // 回転1つあたりの短い区切り
-    this.seq = Array.from({length:spinCount},()=>({dur:0.08,pow:powBase,tag:'skill'}));
-    this.idx = 0; this.t = 0; this.state='skill';
+  _skill1(t){
+    const full=t>=1.0; const spinCount=full?8:4;
+    const powBase=full?28:20; const list=[];
+    for(let i=0;i<spinCount;i++){list.push({dur:0.08,pow:powBase,tag:'skill'});}
+    this._seq=list;this._idx=0;this._t=0;this.state='skill';
     this.effects.addSpark(this.x,this.y-10,true);
   }
   draw(ctx){
@@ -226,9 +193,8 @@ class Stage1{
   constructor(g){this.g=g;}
   start(){
     GROUND_TOP_Y=437;
-    this.g.player.x=120; // 初期位置
+    this.g.world.setBackground?.('ST1.png');
     this.g.player.y=Math.floor(GROUND_TOP_Y)-this.g.player.h/2+FOOT_PAD;
-    // コンテナ（障害物）は無し。敵だけ配置。
     this.g.enemies=[
       new WaruMOB(this.g.world,this.g.effects,this.g.assets,600),
       new GolemRobo(this.g.world,this.g.effects,this.g.assets,900),
@@ -253,45 +219,23 @@ class Game{
     this.effects=new Effects();
     this.input=new Input();
     this.enemies=[];
-    this.ui={
-      hpFill:document.getElementById('hpfill'),
-      hpNum:document.getElementById('hpnum'),
-      lives:document.getElementById('lives'),
-      time:document.getElementById('time')
-    };
   }
   async start(){
-    const list=['ST1.png']; // 背景のみ。コンテナ画像は読み込みません
+    const list=['ST1.png'];
     await this.assets.load(list);
     this.world=new World(this.assets,this.canvas,this.effects);
     this.player=new Player(this.assets,this.world,this.effects);
     this.stage=new Stage1(this);
     this.stage.start();
-    this.startTime=now();
     this.lastT=now();
     requestAnimationFrame(()=>this.loop());
   }
   loop(){
     const t=now();let dt=(t-this.lastT)/1000;this.lastT=t;if(dt>0.05)dt=0.05;
-
-    // ヒットストップ考慮（簡易）
-    const slow = this.effects.hitstop>0 ? 0 : dt;
-
-    this.player.update(slow,this.input);
-    for(const e of this.enemies)e.update(slow,this.player);
-    this.effects.update(dt); // 視覚効果は実時間で
-
-    // UI
-    this.ui.hpFill.style.width = `${(this.player.hp/this.player.maxhp)*100|0}%`;
-    this.ui.hpNum.textContent = `${this.player.hp|0}`;
-    const elapsed = Math.floor((t - this.startTime)/1000);
-    const mm = String((elapsed/60)|0).padStart(2,'0');
-    const ss = String(elapsed%60).padStart(2,'0');
-    this.ui.time.textContent = `${mm}:${ss}`;
-
-    // 描画
+    this.player.update(dt,this.input);
+    for(const e of this.enemies)e.update(dt,this.player);
+    this.effects.update(dt);
     this.world.draw(this.player,this.enemies);
-
     requestAnimationFrame(()=>this.loop());
   }
 }
