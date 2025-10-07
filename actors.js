@@ -1,4 +1,4 @@
-// actors.js — Player & Enemies
+// actors.js — Player & Enemies (＋新規5体: Nebyu / GureMOB / MOBFighter / MOBHyado / Danball)
 (function(){
 'use strict';
 
@@ -10,7 +10,7 @@ const {
 } = window.__GamePieces__;
 
 /* ================================
- * Player
+ * Player （既存：そのまま）
  * ================================ */
 class Player extends CharacterBase{
   constructor(assets, world, effects){
@@ -1073,14 +1073,452 @@ class MOBGiant extends CharacterBase{
   }
 }
 
+/* =========================================================
+ * ★ 新規 1: MOBネビュ（Nebyu） — ミニスーパーアーマー 30%
+ * ========================================================= */
+class NebyuBullet extends Projectile{
+  constructor(world,x,y,dir,img,power,w=56,h=40,vx=300){
+    super(world,x,y,dir,img,power); this.w=w; this.h=h; this.vx=vx*dir; this.life=2.5;
+  }
+}
+class Nebyu extends CharacterBase{
+  constructor(world,effects,assets,x=1000){
+    super(70,82);
+    this.world=world; this.effects=effects; this.assets=assets;
+    this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
+
+    this.maxhp=800; this.hp=800;
+    this.cool=0; this.state='idle'; this.animT=0; this._seq=null; this._idx=0; this._t=0;
+    this.bullets=[];
+    this.idleT=0;
+  }
+  aabb(){ return {x:this.x, y:this.y, w:this.w*0.7, h:this.h*0.95}; }
+  _pick(...names){ for(const n of names){ if(this.assets.has(n)) return this.assets.img(n); } return this.assets.img(names[0]); }
+  img(key){
+    // タイポ吸収：MN3.png / M3.png、MN6.png / "MN.6"
+    const map={
+      idle:'MN.png',
+      w1: this.assets.has('MN1.png')?'MN1.png':'MN.png',
+      w2: this.assets.has('MN2.png')?'MN2.png':'MN.png',
+      w3: this.assets.has('MN3.png')?'MN3.png': (this.assets.has('M3.png')?'M3.png':'MN2.png'),
+      a1:'MN4.png', a2:'MN5.png', a3: (this.assets.has('MN6.png')?'MN6.png': (this.assets.has('MN.6')?'MN.6':'MN5.png')),
+      jump:'MN8.png', tremble:'MN7.png',
+      uJump:'MN9.png', uFall:'MN10.png', uRush:'MN11.png',
+      bullet:'GD.png', // 大小ともGD.pngを使用指示
+    };
+    return this.assets.img(map[key]||'MN.png');
+  }
+  // ミニスーパーアーマー 30%：被弾時たまに大幅のけ反り軽減
+  hurt(amount, dir, opts={}, effects){
+    const proc = Math.random() < 0.30;
+    const kbm = proc ? Math.min(0.35, (opts.kbMul||1)*0.35) : (opts.kbMul||1);
+    const kbum= proc ? Math.min(0.35, (opts.kbuMul||1)*0.35) : (opts.kbuMul||1);
+    return super.hurt(amount, dir, {...opts, kbMul:kbm, kbuMul:kbum}, effects);
+  }
+  _startSeq(seq, cd){ this._seq=seq; this._idx=0; this._t=0; this.cool=cd; this.idleT=0; }
+  addBullet(power=50, big=true){
+    const img=this.img('bullet');
+    const offX=this.face*34, offY=-18;
+    const w = big? 56:28, h= big? 40:22, sp= big? 300: 260;
+    this.bullets.push(new NebyuBullet(this.world, this.x+offX, this.y+offY, this.face, img, power, w,h, sp));
+  }
+  update(dt, player){
+    if(this.dead){ this.updatePhysics(dt); return; }
+    if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
+    this.idleT += dt;
+
+    // 弾更新 & 当たり
+    for(const b of this.bullets){
+      b.update(dt);
+      if(!b.dead && player.invulnT<=0 && rectsOverlap(b.aabb(), player.aabb())){
+        b.dead=true;
+        // ライフル弾：威力50 吹き飛び強め
+        const strong = b.power>=50;
+        const hit = player.hurt(b.power, b.dir, {lift:strong?0.9:0.3, kbMul: strong?1.25:0.8, kbuMul: strong?1.25:0.8}, this.effects);
+        if(hit){
+          const fill=document.getElementById('hpfill'); const num=document.getElementById('hpnum');
+          if(fill&&num){ num.textContent=player.hp; fill.style.width=Math.max(0,Math.min(100,(player.hp/player.maxhp)*100))+'%'; }
+        }
+      }
+    }
+    this.bullets = this.bullets.filter(b=>!b.dead);
+
+    // 進行中
+    if(this._seq){
+      this.updatePhysics(dt); this._t+=dt; const cur=this._seq[this._idx];
+      if(cur?.fx){ this.x += this.face * cur.fx * dt; }
+      if(cur?.jump && this.onGround){ this.vy = -JUMP_V*cur.jump; }
+      if(cur?.fire && !cur._fired){ cur._fired=true; if(cur.fire.type==='big'){ this.addBullet(50,true); } }
+      if(cur?.spray){
+        // 左右に10発ずつ（合計20）、小さめ、威力5、吹っ飛び弱
+        const every = 0.045; cur._sprT=(cur._sprT||0)+dt;
+        while(cur._sprT>=every && (cur._sprCount||0)<20){
+          cur._sprT -= every;
+          const idx = (cur._sprCount||0);
+          const dir = (idx%2===0)? -1 : 1;
+          const b = new NebyuBullet(this.world, this.x + dir*10, this.y-16, dir, this.img('bullet'), 5, 22,16, 280);
+          this.bullets.push(b);
+          cur._sprCount = idx+1;
+        }
+      }
+      // 震え演出用の軽い揺れ
+      if(cur?.shake){ this.x += (Math.random()*2-1)*1.0; }
+
+      if(this._t>=cur.dur){ this._idx++; this._t=0; if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; this.vx=0; } }
+      this.animT+=dt; return;
+    }
+
+    // 行動選択
+    const dx=player.x-this.x, adx=Math.abs(dx); this.face = dx>=0?1:-1;
+    // ゆっくり目
+    const walk=60;
+    if(adx>180) this.vx = (dx>0? walk : -walk);
+    else this.vx = 0;
+
+    const canAct = (this.cool<=0) || (this.idleT>=1.4);
+    if(canAct){
+      if(adx<220 && Math.random()<0.6){
+        // 攻撃① ライフル構え→発射
+        this.state='atk';
+        this._startSeq([
+          {dur:0.18, key:'a1', fx:0},
+          {dur:0.20, key:'a2', fx:0},
+          {dur:0.22, key:'a3', fx:0, fire:{type:'big'}}
+        ], 1.4);
+        return;
+      }
+      if(adx<360 && Math.random()<0.35){
+        // スキル① 乱射：MN8ジャンプ→MN7小跳ねしつつ震え＆左右に小弾を合計20発
+        this.state='skill';
+        this._startSeq([
+          {dur:0.12, key:'jump', fx:0, jump:0.95},
+          {dur:0.95, key:'tremble', fx:0, shake:true, spray:true}
+        ], 3.2);
+        return;
+      }
+      // ULT：uJump→uFall→uRush
+      if(Math.random()<0.18){
+        this.state='ult';
+        this._startSeq([
+          {dur:0.26, key:'uJump', fx:0, jump:1.6},
+          {dur:0.32, key:'uFall', fx:0}, // 高速落下は重力任せ
+          {dur:0.34, key:'uRush', fx:620, hit:true, hx:26, hw:60, hh:50, power:120, lift:1.2, kbm:1.25, kbum:1.25}
+        ], 8.0);
+        return;
+      }
+      this.idleT=0;
+    }
+
+    this.updatePhysics(dt);
+    this.state = !this.onGround? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
+    this.animT+=dt;
+  }
+  draw(ctx,world){
+    ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY); if(this.face<0 && !this.dead) ctx.scale(-1,1);
+    let img=null;
+    if(this._seq){ const cur=this._seq[this._idx]; const k=cur.key;
+      const map={a1:'a1',a2:'a2',a3:'a3',jump:'jump',tremble:'tremble',uJump:'uJump',uFall:'uFall',uRush:'uRush'};
+      img=this.img(map[k]||'idle');
+    } else if(!this.onGround){ img=this.img('w2'); }
+    else if(this.state==='run'){ const f=Math.floor(this.animT*4)%3; img=[this.img('w1'),this.img('w2'),this.img('w3')][f]; }
+    else img=this.img('idle');
+
+    if(img){
+      const scale=this.h/img.height, w=img.width*scale, h=this.h;
+      ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
+    }
+    ctx.restore(); this.drawHPBar(ctx,world);
+    // 弾
+    for(const b of this.bullets) b.draw(ctx);
+  }
+}
+
+/* =========================================================
+ * ★ 新規 2: グレMOB（GureMOB） HP100 / 普通頻度
+ * ========================================================= */
+class GureMOB extends CharacterBase{
+  constructor(world,effects,assets,x=900){
+    super(46,56); this.world=world; this.effects=effects; this.assets=assets;
+    this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
+    this.maxhp=100; this.hp=100; this.cool=0; this.idleT=0; this.animT=0; this._seq=null; this._idx=0; this._t=0;
+  }
+  img(key){ const map={ idle:'tek1.png', w1:'tek1.png', w2:'tek2.png', atk1:'tek3.png' }; return this.assets.img(map[key]||'tek1.png'); }
+  // 軽量寄り：やや吹っ飛びやすい
+  hurt(amount,dir,opts={},effects){
+    const o={...opts, kbMul:(opts.kbMul||1)*1.2, kbuMul:(opts.kbuMul||1)*1.15};
+    return super.hurt(amount,dir,o,effects);
+  }
+  _start(seq,cd){ this._seq=seq; this._idx=0; this._t=0; this.cool=cd; this.idleT=0; this.state='atk'; }
+  update(dt,player){
+    if(this.dead){ this.updatePhysics(dt); return; }
+    if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
+    this.idleT += dt;
+
+    if(this._seq){
+      this.updatePhysics(dt); this._t+=dt; const cur=this._seq[this._idx];
+      if(cur?.fx) this.x += this.face*cur.fx*dt;
+      if(cur?.hit){
+        const hb={x:this.x+this.face*22,y:this.y,w:42,h:32};
+        if(player.invulnT<=0 && rectsOverlap(hb,player.aabb())){
+          const hit=player.hurt(10,this.face,{lift:0.2,kbMul:0.8,kbuMul:0.8},this.effects);
+          if(hit){ const fill=document.getElementById('hpfill'); const num=document.getElementById('hpnum'); if(fill&&num){ num.textContent=player.hp; fill.style.width=Math.max(0,Math.min(100,(player.hp/player.maxhp)*100))+'%'; } }
+        }
+      }
+      if(this._t>=cur.dur){ this._idx++; this._t=0; if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; this.vx=0; } }
+      this.animT+=dt; return;
+    }
+
+    const dx=player.x-this.x, adx=Math.abs(dx); this.face=dx>=0?1:-1;
+    const walk=90;
+    if(adx>140) this.vx=(dx>0?walk:-walk); else this.vx=0;
+
+    if(this.cool<=0 && (this.idleT>=1.2 || adx<140)){
+      this._start([
+        {dur:0.14, key:'idle', fx:120},
+        {dur:0.18, key:'atk1', fx:160, hit:true}
+      ], 1.2);
+      return;
+    }
+
+    this.updatePhysics(dt);
+    this.state = !this.onGround? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
+    this.animT+=dt;
+  }
+  draw(ctx,world){
+    ctx.save(); ctx.translate(this.x-world.camX,this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
+    let img=null;
+    if(this._seq){ const cur=this._seq[this._idx]; img=this.img(cur.key==='atk1'?'atk1':'idle'); }
+    else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.img(f?'w1':'w2'); }
+    else img=this.img('idle');
+    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));}
+    ctx.restore(); this.drawHPBar(ctx,world);
+  }
+}
+
+/* =========================================================
+ * ★ 新規 3: MOBファイター — ミニマムSA 10%
+ * ========================================================= */
+class MOBFighter extends CharacterBase{
+  constructor(world,effects,assets,x=1050){
+    super(54,62); this.world=world; this.effects=effects; this.assets=assets;
+    this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
+    this.maxhp=200; this.hp=200; this.cool=0; this.animT=0; this.idleT=0; this._seq=null; this._idx=0; this._t=0;
+    this.skillCD=0;
+  }
+  img(key){ const map={ idle:'EN1-1.png', w1:'EN1-2.png', w2:'EN1-3.png', dash:'EN1-4.png', fin:'EN1-5.png', skill:'EN1-6.png' }; return this.assets.img(map[key]||'EN1-1.png'); }
+  // ミニマムSA 10%
+  hurt(amount,dir,opts={},effects){
+    const proc=Math.random()<0.10; const kbm=proc? Math.min(0.6,(opts.kbMul||1)*0.6):(opts.kbMul||1); const kbum=proc? Math.min(0.6,(opts.kbuMul||1)*0.6):(opts.kbuMul||1);
+    return super.hurt(amount,dir,{...opts,kbMul:kbm,kbuMul:kbum},effects);
+  }
+  _start(seq,cd){ this._seq=seq; this._idx=0; this._t=0; this.cool=cd; this.idleT=0; this.state='atk'; }
+  update(dt,player){
+    if(this.dead){ this.updatePhysics(dt); return; }
+    if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
+    if(this.skillCD>0) this.skillCD=Math.max(0,this.skillCD-dt);
+    this.idleT += dt;
+
+    if(this._seq){
+      this.updatePhysics(dt); this._t+=dt; const cur=this._seq[this._idx];
+      if(cur?.fx) this.x+=this.face*cur.fx*dt;
+      if(cur?.jump && this.onGround) this.vy=-JUMP_V*cur.jump;
+      if(cur?.hit){
+        const hb={x:this.x+this.face*24,y:this.y,w:48,h:36};
+        if(player.invulnT<=0 && rectsOverlap(hb,player.aabb())){
+          const hit=player.hurt(cur.pow||30, this.face, {lift:cur.lift||0.6, kbMul:1.0, kbuMul:1.0}, this.effects);
+          if(hit){ const fill=document.getElementById('hpfill'); const num=document.getElementById('hpnum'); if(fill&&num){ num.textContent=player.hp; fill.style.width=Math.max(0,Math.min(100,(player.hp/player.maxhp)*100))+'%'; } }
+        }
+      }
+      if(this._t>=cur.dur){ this._idx++; this._t=0; if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; this.vx=0; } }
+      this.animT+=dt; return;
+    }
+
+    const dx=player.x-this.x, adx=Math.abs(dx); this.face=dx>=0?1:-1;
+    const walk=100; // 移動速度普通
+    if(adx>140) this.vx=(dx>0?walk:-walk); else this.vx=0;
+
+    // スキル優先（CT5秒）
+    if(this.skillCD<=0 && adx<220 && Math.random()<0.35){
+      this.state='skill'; this.skillCD=5.0;
+      this._start([
+        {dur:2.0, key:'dash', fx:0, shake:true}, // 2秒震える（見た目はdashフレーム）
+        {dur:0.14, key:'dash', fx:0, jump:0.5},
+        {dur:0.24, key:'skill', fx:280, hit:true, pow:50, lift:0.9}
+      ], 2.2);
+      return;
+    }
+
+    // 通常攻撃（普通頻度）
+    if(this.cool<=0 && (this.idleT>=1.2 || adx<140)){
+      this._start([
+        {dur:0.18, key:'dash', fx:220},
+        {dur:0.18, key:'fin',  fx:160, hit:true, pow:30, lift:0.6}
+      ], 1.4);
+      return;
+    }
+
+    this.updatePhysics(dt);
+    this.state = !this.onGround? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
+    this.animT+=dt;
+  }
+  draw(ctx,world){
+    ctx.save(); ctx.translate(this.x-world.camX,this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
+    let img=null;
+    if(this._seq){ const cur=this._seq[this._idx]; img=this.img(cur.key==='skill'?'skill': (cur.key==='fin'?'fin': (cur.key==='dash'?'dash':'idle'))); }
+    else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.img(f?'w1':'w2'); }
+    else img=this.img('idle');
+    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));}
+    ctx.restore(); this.drawHPBar(ctx,world);
+  }
+}
+
+/* =========================================================
+ * ★ 新規 4: MOBヒャド — ミニマムSA 10% / 遅め
+ * ========================================================= */
+class MOBHyado extends CharacterBase{
+  constructor(world,effects,assets,x=1150){
+    super(52,60); this.world=world; this.effects=effects; this.assets=assets;
+    this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
+    this.maxhp=350; this.hp=350; this.cool=0; this.skillCD=0; this.idleT=0; this.animT=0; this._seq=null; this._idx=0; this._t=0;
+  }
+  img(key){ const map={ idle:'MY.png', w1:'MY1.png', w2:'MY2.png', a1:'MY3.png', a2:'MY4.png', s1:'MY5.png', s2:'MY6.png', s3:'MY7.png' }; return this.assets.img(map[key]||'MY.png'); }
+  hurt(amount,dir,opts={},effects){
+    const proc=Math.random()<0.10; const o={...opts, kbMul: proc? Math.min(0.6,(opts.kbMul||1)*0.6):(opts.kbMul||1), kbuMul: proc? Math.min(0.6,(opts.kbuMul||1)*0.6):(opts.kbuMul||1)};
+    return super.hurt(amount,dir,o,effects);
+  }
+  _start(seq,cd){ this._seq=seq; this._idx=0; this._t=0; this.cool=cd; this.idleT=0; this.state='atk'; }
+  update(dt,player){
+    if(this.dead){ this.updatePhysics(dt); return; }
+    if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
+    if(this.skillCD>0) this.skillCD=Math.max(0,this.skillCD-dt);
+    this.idleT += dt;
+
+    if(this._seq){
+      this.updatePhysics(dt); this._t+=dt; const cur=this._seq[this._idx];
+      if(cur?.fx) this.x+=this.face*cur.fx*dt;
+      if(cur?.jump && this.onGround) this.vy = -JUMP_V*cur.jump;
+      if(cur?.hit){
+        const hb={x:this.x+this.face*22,y:this.y,w:44,h:34};
+        if(player.invulnT<=0 && rectsOverlap(hb,player.aabb())){
+          const hit=player.hurt(cur.pow||33, this.face, {lift:0.6, kbMul:1.0, kbuMul:1.0}, this.effects);
+          if(hit){ const fill=document.getElementById('hpfill'); const num=document.getElementById('hpnum'); if(fill&&num){ num.textContent=player.hp; fill.style.width=Math.max(0,Math.min(100,(player.hp/player.maxhp)*100))+'%'; } }
+        }
+      }
+      if(this._t>=cur.dur){ this._idx++; this._t=0; if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; this.vx=0; } }
+      this.animT+=dt; return;
+    }
+
+    const dx=player.x-this.x, adx=Math.abs(dx); this.face=dx>=0?1:-1;
+    const slow=70; // 遅め
+    if(adx>140) this.vx=(dx>0?slow:-slow); else this.vx=0;
+
+    // スキル（CT5秒）：MY5で2秒震える→小ジャンプしながらMY6（→MY7）威力38 吹き強
+    if(this.skillCD<=0 && adx<220 && Math.random()<0.35){
+      this.state='skill'; this.skillCD=5.0;
+      this._start([
+        {dur:2.0, key:'s1', fx:0, shake:true},
+        {dur:0.12, key:'s2', fx:0, jump:0.5},
+        {dur:0.26, key:'s3', fx:260, hit:true, pow:38}
+      ], 2.4);
+      return;
+    }
+
+    // 通常攻撃（普通頻度）：MY3小ジャンプ→MY4ヒット 威力33
+    if(this.cool<=0 && (this.idleT>=1.2 || adx<140)){
+      this._start([
+        {dur:0.12, key:'a1', fx:0, jump:0.4},
+        {dur:0.22, key:'a2', fx:200, hit:true, pow:33}
+      ], 1.6);
+      return;
+    }
+
+    this.updatePhysics(dt);
+    this.state = !this.onGround? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
+    this.animT+=dt;
+  }
+  draw(ctx,world){
+    ctx.save(); ctx.translate(this.x-world.camX,this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
+    let img=null;
+    if(this._seq){ const cur=this._seq[this._idx]; const map={a1:'a1',a2:'a2',s1:'s1',s2:'s2',s3:'s3'}; img=this.img(map[cur.key]||'idle'); }
+    else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.img(f?'w1':'w2'); }
+    else if(!this.onGround) img=this.img('w2'); else img=this.img('idle');
+    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));}
+    ctx.restore(); this.drawHPBar(ctx,world);
+  }
+}
+
+/* =========================================================
+ * ★ 新規 5: MOB段ボール — 超吹き飛ぶ軽量ボディ
+ * ========================================================= */
+class Danball extends CharacterBase{
+  constructor(world,effects,assets,x=950){
+    super(46,54); this.world=world; this.effects=effects; this.assets=assets;
+    this.x=x; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.face=-1;
+    this.maxhp=50; this.hp=50; this.cool=0; this.idleT=0; this.animT=0; this._seq=null; this._idx=0; this._t=0;
+  }
+  img(key){ const map={ idle:'C1.png', w1:'C2.png', w2:'C3.png', atk:'C4.png' }; return this.assets.img(map[key]||'C1.png'); }
+  // 超吹き飛ぶ
+  hurt(amount,dir,opts={},effects){
+    const o={...opts, kbMul:(opts.kbMul||1)*2.3, kbuMul:(opts.kbuMul||1)*2.1};
+    return super.hurt(amount,dir,o,effects);
+  }
+  _start(seq,cd){ this._seq=seq; this._idx=0; this._t=0; this.cool=cd; this.idleT=0; this.state='atk'; }
+  update(dt,player){
+    if(this.dead){ this.updatePhysics(dt); return; }
+    if(this.cool>0) this.cool=Math.max(0,this.cool-dt);
+    this.idleT += dt;
+
+    if(this._seq){
+      this.updatePhysics(dt); this._t+=dt; const cur=this._seq[this._idx];
+      if(cur?.fx) this.x += this.face*cur.fx*dt;
+      if(cur?.hit){
+        const hb={x:this.x+this.face*18,y:this.y,w:36,h:28};
+        if(player.invulnT<=0 && rectsOverlap(hb,player.aabb())){
+          const hit=player.hurt(20,this.face,{lift:0.4,kbMul:0.8,kbuMul:0.8},this.effects);
+          if(hit){ const fill=document.getElementById('hpfill'); const num=document.getElementById('hpnum'); if(fill&&num){ num.textContent=player.hp; fill.style.width=Math.max(0,Math.min(100,(player.hp/player.maxhp)*100))+'%'; } }
+        }
+      }
+      if(this._t>=cur.dur){ this._idx++; this._t=0; if(this._idx>=this._seq.length){ this._seq=null; this.state='idle'; this.vx=0; } }
+      this.animT+=dt; return;
+    }
+
+    const dx=player.x-this.x, adx=Math.abs(dx); this.face=dx>=0?1:-1;
+    const slow=60; // 移動遅い
+    if(adx>140) this.vx=(dx>0?slow:-slow); else this.vx=0;
+
+    if(this.cool<=0 && (this.idleT>=1.1 || adx<130)){
+      this._start([
+        {dur:0.12, key:'idle', fx:90},
+        {dur:0.16, key:'atk',  fx:140, hit:true}
+      ], 1.0);
+      return;
+    }
+
+    this.updatePhysics(dt);
+    this.state = !this.onGround? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
+    this.animT+=dt;
+  }
+  draw(ctx,world){
+    ctx.save(); ctx.translate(this.x-world.camX,this.y-world.camY); if(this.face<0) ctx.scale(-1,1);
+    let img=null;
+    if(this._seq){ const cur=this._seq[this._idx]; img=this.img(cur.key==='atk'?'atk':'idle'); }
+    else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; img=this.img(f?'w1':'w2'); }
+    else img=this.img('idle');
+    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));}
+    ctx.restore(); this.drawHPBar(ctx,world);
+  }
+}
+
 /* ================================
  * Export
  * ================================ */
 window.__Actors__ = {
   Player,
   WaruMOB, IceRobo, IceRoboMini, Kozou, MOBGiant, GabuKing, Screw,
-  // optional subclasses if直参照したい場合
-  KozouStone, GabuUltShot
+  // 新規
+  Nebyu, GureMOB, MOBFighter, MOBHyado, Danball,
+  // optional subclasses
+  KozouStone, GabuUltShot, NebyuBullet
 };
 
 })();
