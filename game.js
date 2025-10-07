@@ -1,18 +1,18 @@
-// game.js — World, Game loop, Boot
+// game.js — World / Game / Boot
 (function(){
 'use strict';
 
 const {
   Effects, Assets, Input, CharacterBase,
   Projectile, EnergyBall, UltBlast, GroundSpike,
-  Player,
-  enemies,
   constants:{ STAGE_LEFT, STAGE_RIGHT, WALL_PAD, GRAV, MOVE, JUMP_V, MAX_FALL, GROUND_TOP_Y, FOOT_PAD },
   utils:{ clamp, lerp, now, rectsOverlap }
-} = (()=>{
-  const gp = window.__GamePieces__;
-  return { ...gp, Player: gp.Player, enemies: gp.enemies };
-})();
+} = window.__GamePieces__;
+
+const {
+  Player,
+  WaruMOB, IceRobo, IceRoboMini, Kozou, MOBGiant, GabuKing, Screw
+} = window.__Actors__;
 
 /* ================================
  * World
@@ -54,11 +54,7 @@ class World{
   }
 }
 
-/* ================================
- * UI helper（グローバル化：actorsから呼べるように）
- * ================================ */
 const updateHPUI=(hp,maxhp)=>{ const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=hp; fill.style.width=Math.max(0,Math.min(100,(hp/maxhp)*100))+'%'; };
-window.updateHPUI = updateHPUI;
 
 /* ================================
  * Game
@@ -98,7 +94,7 @@ class Game{
 
     const spawnX = 680;
 
-    // 同時に count 体のグループ生成
+    // グループ生成ヘルパ
     const group = (Ctor, count, baseX, gap)=>()=> {
       const arr=[];
       for(let i=0;i<count;i++){
@@ -107,25 +103,26 @@ class Game{
       return arr;
     };
 
-    const { WaruMOB, IceRobo, IceRoboMini, Kozou, GabuKing, Screw, MOBGiant } = enemies;
-
-    // 弱5体→弱5+ボス→…のウェーブ
+    // ウェーブ構成（原作準拠）
     this.enemyOrder = [
       group(IceRoboMini, 5, spawnX, 48),
       group(Kozou,       5, spawnX, 55),
       group(WaruMOB,     5, spawnX, 60),
 
+      // 中盤：弱5 + ボス2
       ()=>[
         ...group(IceRoboMini, 5, spawnX, 48)(),
         new GabuKing(this.world,this.effects,this.assets,spawnX+220),
         new Screw(this.world,this.effects,this.assets,spawnX+320)
       ],
 
+      // 後半：弱5 + アイスロボ
       ()=>[
         ...group(Kozou, 5, spawnX, 50)(),
         new IceRobo(this.world,this.effects,this.assets,spawnX+360)
       ],
 
+      // 終盤：弱5 + 巨神
       ()=>[
         ...group(WaruMOB, 5, spawnX, 60)(),
         new MOBGiant(this.world,this.effects,this.assets,spawnX+420)
@@ -153,7 +150,7 @@ class Game{
         e.update(dt,this.player);
 
         // WaruMOB の弾
-        if(e.constructor.name==='WaruMOB'){
+        if(e.constructor && e.constructor.name==='WaruMOB'){
           for(const p of e.projectiles){
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
               p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0, kbMul:0.55, kbuMul:0.5}, this.effects);
@@ -162,7 +159,7 @@ class Game{
           }
         }
         // IceRobo のダッシュ & 玉
-        if(e.constructor.name==='IceRobo'){
+        if(e.constructor && e.constructor.name==='IceRobo'){
           if(e.state==='dash'){
             const hb = {x:e.x + e.face*22, y:e.y, w:e.w*0.9, h:e.h*0.9};
             if(this.player.invulnT<=0 && rectsOverlap(hb, this.player.aabb())){
@@ -178,7 +175,7 @@ class Game{
           }
         }
         // Kozou の石
-        if(e.constructor.name==='Kozou'){
+        if(e.constructor && e.constructor.name==='Kozou'){
           for(const p of e.projectiles){
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
               p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0.15, kbMul:0.7, kbuMul:0.7}, this.effects);
@@ -186,8 +183,17 @@ class Game{
             }
           }
         }
+        // GabuKing の弾（もう各クラス内で当たり取ってるけど保険で）
+        if(e.constructor && e.constructor.name==='GabuKing'){
+          for(const b of e.bullets){
+            if(!b.dead && this.player.invulnT<=0 && rectsOverlap(b.aabb(), this.player.aabb())){
+              b.dead=true; const hit=this.player.hurt(b.power, b.dir, {lift:1.3, kbMul:1.2, kbuMul:1.2}, this.effects);
+              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
+            }
+          }
+        }
         // 巨神のダッシュ & 玉
-        if(e.constructor.name==='MOBGiant'){
+        if(e.constructor && e.constructor.name==='MOBGiant'){
           if(e.state==='dash'){
             const hb = {x:e.x + e.face*30, y:e.y, w: e.w*0.96, h: e.h*0.96};
             if(this.player.invulnT<=0 && rectsOverlap(hb, this.player.aabb())){
@@ -220,7 +226,7 @@ class Game{
         this.world._skillBullets = this.world._skillBullets.filter(p=>!p.dead && p.life>0);
       }
 
-      // 撃破整理（死体を消したくない場合はこの行を外す）
+      // 撃破整理
       this.enemies=this.enemies.filter(e=>!(e.dead && e.fade<=0));
 
       // 次ウェーブ
@@ -258,27 +264,6 @@ class Game{
     requestAnimationFrame(loop);
   }
 }
-
-/* ================================
- * Player custom hurt
- * ================================ */
-Player.prototype.hurt = function(amount,dir,opts,effects){
-  if(this.state==='skill2'){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
-  else if(this.saT>0){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
-
-  const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
-  if(hit){
-    const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=this.hp; fill.style.width=Math.max(0,Math.min(100,(this.hp/this.maxhp)*100))+'%';
-    if(this.state!=='skill2'){
-      this._actionSeq = null; this._actionIndex = 0; this._actionTime = 0;
-      this.bufferA1 = false; this.comboStep = 0; this.comboGraceT = 0; this.a2LockoutT = 0;
-      this.overhead?.root && (this.overhead.root.style.display='none');
-      this.jumpsLeft=this.maxJumps;
-      this.isUltCharging=false;
-    }
-  }
-  return hit;
-};
 
 /* ================================
  * Boot
