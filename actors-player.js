@@ -1,6 +1,5 @@
-// actors-player.js — Player only (ULT Rush fixed + S1=8 spins faster)
+// actors-player.js — Player only (ULT not cancellable on hit + S1 fast 8 spins + S2 big persistent)
 // 依存: script-core.js（__GamePieces__）
-// 他の敵は別ファイル（actors.js 等）。最後に window.__Actors__ に Player をマージ追加。
 
 (function(){
 'use strict';
@@ -47,7 +46,7 @@ class Player extends CharacterBase{
     this._ultSpeed=2.2;      // 再生速度倍率
     this._ultPhase='';
     this._ultTimer=0;        // ウォッチドッグ
-    this._ultTimeLimit=2.5;  // 2.5秒で強制終了
+    this._ultTimeLimit=2.5;  // フェイルセーフ
     this._ultLockInput=false;
 
     this.frames={
@@ -104,7 +103,6 @@ class Player extends CharacterBase{
 
   /* ---------- failsafe / cleanup ---------- */
   _abortAllActions(){
-    // どんな途中状態でも完全初期化して操作可能に戻す
     this._inULT=false;
     this._ultQueue=null;
     this._ultPhase='';
@@ -114,7 +112,7 @@ class Player extends CharacterBase{
     this._actionSeq=null; this._actionIndex=0; this._actionTime=0;
     this.bufferA1=false; this.comboStep=0; this.comboGraceT=0; this.a2LockoutT=0;
     this.saT=0;
-    this.vx=0; // 予期せぬ移動を止める
+    this.vx=0;
     this.state='idle';
     this._showGauge(false);
   }
@@ -140,15 +138,14 @@ class Player extends CharacterBase{
     }
 
     /* ===== Skill1：常に8回転＋高速 ===== */
-    // もうチャージ差は扱わない（UIも出さない）
     if(!this._inULT){
       if(input.edge.skillRelease && this.skillCDT<=0){
         input.edge.skillRelease=false;
-        this._startSkill1FixedTurns(8, {speed:1.5}); // ★8回転固定＋1.5倍速
+        this._startSkill1FixedTurns(8, {speed:1.5}); // 8回転・高速
       }
     } else {
       this._showGauge(false);
-      // 入力ロック（押下を無効化）
+      // 入力ロック
       input.edge.a1=input.edge.a2Press=input.edge.skillRelease=input.edge.skill2=input.edge.ultPress=input.edge.ultRelease=false;
       input.btn.a1=input.btn.a2=input.btn.skill=input.btn.skill2=input.btn.ult=false;
     }
@@ -246,7 +243,7 @@ class Player extends CharacterBase{
     const kbm = 1.8; // 少し強化
     const kbum= 1.4;
     const speed = Math.max(0.5, opts.speed||1.0);
-    const step = 0.06 / speed; // ★高速化：デフォは0.06
+    const step = 0.06 / speed; // 高速化
 
     const seq=[];
     for(let r=0;r<turns;r++){
@@ -309,18 +306,17 @@ class Player extends CharacterBase{
     if(!next){ this._finishULT(); return; }
 
     if(next==='A1R'){
-      this._startA1RushSequence();   // ★専用シーケンス（1本で3段出し切り）
+      this._startA1RushSequence();   // 専用シーケンス
     } else if(next==='S1'){
-      this._startSkill1FixedTurns(8, {speed:1.5}); // ★ULTでも8回転高速
+      this._startSkill1FixedTurns(8, {speed:1.5});
     } else if(next==='S2'){
       this._startSkill2_BiggerDust_Persistent();
     }
   }
 
-  // ★ULT専用：A1三段を1本のシーケンスで高速再生（無限ループ防止）
+  // ULT専用：A1三段を1本のシーケンスで高速再生
   _startA1RushSequence(){
     this.state='atk'; this.animT=0;
-
     const seq=[
       {kind:'prep',dur:0.06,frame:'k1prep',fx:140,power:0},
       {kind:'hit', dur:0.12,frame:'k1a',  fx:220,power:12, kbMul:1.0, kbuMul:1.0},
@@ -331,7 +327,7 @@ class Player extends CharacterBase{
   }
 
   _tickULT(dt){
-    // SAを薄く維持
+    // SAを維持（薄く上書き）
     this.saT = Math.max(this.saT, 0.1);
 
     // ウォッチドッグ
@@ -432,10 +428,28 @@ class Player extends CharacterBase{
     ctx.restore();
   }
 
-  // 被弾：キャンセル時も操作不能にならないように完全復旧
+  // 被弾：ULT中は絶対にキャンセルされない
   hurt(amount,dir,opts,effects){
-    // 被弾中断によるスタックを避けるため、ノックバックは控えめ
-    if(this.state==='skill2' || this.saT>0 || this._inULT){
+    if(this._inULT){
+      // ダメージは受けるが、ノックバックは完全無効化
+      const safeOpts = {...(opts||{}), kbMul:0, kbuMul:0};
+      const prevState='ult';
+      const hit = CharacterBase.prototype.hurt.call(this,amount,dir,safeOpts,effects);
+      if(hit && !this.dead){
+        // すぐにULT状態へ強制復帰（親が'state=hurt'にしても上書き）
+        this.state=prevState;
+        // アクション継続（_actionSeqは触らない）
+        // 再被弾連打のブレを抑えるため短い無敵
+        this.invulnT = Math.max(this.invulnT, 0.08);
+      }
+      // HP UI更新
+      const fill=document.getElementById('hpfill'); const num=document.getElementById('hpnum');
+      if(fill&&num){ num.textContent=this.hp; fill.style.width=Math.max(0,Math.min(100,(this.hp/this.maxhp)*100))+'%'; }
+      return hit;
+    }
+
+    // 通常時：スキル2やSA中は軽減
+    if(this.state==='skill2' || this.saT>0){
       opts = {...(opts||{}), kbMul:0.2, kbuMul:0.2};
     }
     const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
@@ -443,12 +457,8 @@ class Player extends CharacterBase{
       const fill=document.getElementById('hpfill'); const num=document.getElementById('hpnum');
       if(fill&&num){ num.textContent=this.hp; fill.style.width=Math.max(0,Math.min(100,(this.hp/this.maxhp)*100))+'%'; }
 
-      // ULT中に被弾でキャンセルされた／想定外の中断が発生した場合でも
-      // 必ず完全復旧させる
-      if(this._inULT){
-        this._finishULT(); // 強制終了（内部でidleへ）
-      } else if(this.state!=='skill2'){
-        // 通常時の被弾でも、アクション残骸で固まらないよう念のため初期化
+      if(this.state!=='skill2'){
+        // アクション残骸で固まらないよう初期化
         this._actionSeq=null; this._actionIndex=0; this._actionTime=0;
         this.bufferA1=false; this.comboStep=0; this.comboGraceT=0; this.a2LockoutT=0;
         this.overhead?.root && (this.overhead.root.style.display='none');
