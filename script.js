@@ -1,26 +1,16 @@
-// script_part2.js – Rev35 FULL (No Container / Skill1 4-8 Spin / Start-safe)
+// script_part2.js – Rev35 FULL (No Start / No Container / Skill1 4-8 Spin)
 (function(){
 'use strict';
-
-/* ================================
- * DOM: タイトルオーバーレイを確実に閉じる
- * ================================ */
-const titleOverlay = document.getElementById('titleOverlay');
-const startBtn = document.getElementById('startBtn');
-const safeCloseTitle = () => titleOverlay?.classList.add('hidden');
-startBtn?.addEventListener('click', safeCloseTitle, {passive:true});
-titleOverlay?.addEventListener('pointerdown', safeCloseTitle, {passive:true});
-addEventListener('keydown', () => { if (!titleOverlay?.classList.contains('hidden')) safeCloseTitle(); }, {passive:true});
 
 /* ================================
  * 基本設定・ユーティリティ
  * ================================ */
 const STAGE_LEFT = 0;
 const STAGE_RIGHT = 2200;
-let GROUND_TOP_Y = 437;  // 赤帯上端に合わせた地面（ST1基準）
+let GROUND_TOP_Y = 437;  // 復帰ポイント：赤帯上端
 const GRAV = 2000, MOVE = 260, JUMP_V = 760, MAX_FALL = 1200;
 const FOOT_PAD = 2;
-const SKILL1_CHARGE_SEC = 0.8;     // ← この時間以上ホールドで「溜め有」(8回転)
+const SKILL1_CHARGE_SEC = 0.8; // これ以上ホールドで満充電＝8回転
 const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
 const now=()=>performance.now();
 
@@ -69,7 +59,7 @@ class Input{
     this.left=0; this.right=0; this.jump=false;
     this.btn={a1:false,a2:false,skill:false,skill2:false,ult:false};
     this.edge={};
-    this.skillCharging=false; this.skillChargeT=0; // 0.0〜1.0 正規化
+    this.skillCharging=false; this.skillChargeT=0; // 0〜1に正規化
     this.ultCharging=false; this.ultChargeT=0;
     this._initKeys(); this._initTouch();
   }
@@ -99,10 +89,11 @@ class Input{
   _initTouch(){
     const bind=(id,onDown,onUp)=>{
       const el=document.getElementById(id);
-      el?.addEventListener('pointerdown',e=>{e.preventDefault();onDown();});
-      el?.addEventListener('pointerup',e=>{e.preventDefault();onUp();});
-      el?.addEventListener('pointercancel',e=>{e.preventDefault();onUp();});
-      el?.addEventListener('pointerleave',e=>{e.preventDefault();onUp();});
+      if(!el) return;
+      el.addEventListener('pointerdown',e=>{e.preventDefault();onDown();});
+      el.addEventListener('pointerup',e=>{e.preventDefault();onUp();});
+      el.addEventListener('pointercancel',e=>{e.preventDefault();onUp();});
+      el.addEventListener('pointerleave',e=>{e.preventDefault();onUp();});
     };
     bind('btnA1',()=>{this.btn.a1=true;this.edge.a1=true;},()=>this.btn.a1=false);
     bind('btnA2',()=>{this.btn.a2=true;this.edge.a2=true;},()=>this.btn.a2=false);
@@ -148,37 +139,29 @@ class Player extends CharacterBase{
   update(dt,input){
     if(this.dead){this.updatePhysics(dt);return;}
 
-    // ---- Skill1 充電（0〜1に正規化） ----
+    // スキル①チャージ（0〜1に正規化）
     if(input.skillCharging){
       input.skillChargeT = clamp(input.skillChargeT + dt / SKILL1_CHARGE_SEC, 0, 1);
       this.effects.shake(0.03, 0.8);
     }
 
-    // スキル解放：溜め無し→4回転、溜め有→8回転
+    // リリース：溜め無し→4回転、溜め有→8回転
     if(input.edge.skillRelease){
-      const charge = clamp(input.skillChargeT, 0, 1);
-      this._skill1(charge);
+      const c = clamp(input.skillChargeT, 0, 1);
+      this._skill1(c);
       input.skillChargeT = 0;
       input.edge.skillRelease = false;
     }
 
-    // ULT：今回は仕様②のみ対応なので処理は据え置き（将来③で最大チャージ挙動へ拡張）
+    // ULT（③で仕様変更予定。現時点はそのまま）
     if(input.edge.ultRelease){ input.ultChargeT=0; input.edge.ultRelease=false; }
 
-    // スキル動作中は移動を軽く減速（ふらつき防止）
-    let ax=0;
-    if(this.state!=='skill'){
-      if(input.left)ax-=MOVE; if(input.right)ax+=MOVE;
-    }else{
-      // 回転中は微移動：顔向き方向にわずかに滑る
-      ax = this.face * 120;
-    }
-    this.vx=ax;
+    // 通常移動
+    let ax=0;if(input.left)ax-=MOVE;if(input.right)ax+=MOVE;this.vx=ax;
 
-    // ジャンプはスキル中でも可（要望次第でロック可能）
     if(input.consumeJump()&&this.onGround){this.vy=-JUMP_V;}
 
-    // 回転シーケンスの進行
+    // スキル中の簡易進行（回転の手応え用）
     if(this.state==='skill' && this._seq){
       const cur=this._seq[this._idx];
       if(cur){
@@ -194,22 +177,18 @@ class Player extends CharacterBase{
 
     this.updatePhysics(dt);
   }
-
   _skill1(charge01){
-    const full = (charge01>=1.0);           // 0.8秒以上の長押しで満充電扱い
-    const spinCount = full ? 8 : 4;         // ←ご要望どおり
+    const full = (charge01>=1.0);
+    const spinCount = full ? 8 : 4; // ご要望どおり
     const powBase   = full ? 28 : 20;
     const list=[];
     for(let i=0;i<spinCount;i++){ list.push({dur:0.08,pow:powBase,tag:'skill'}); }
     this._seq=list; this._idx=0; this._t=0; this.state='skill';
     this.effects.addSpark(this.x,this.y-10,true);
   }
-
   draw(ctx){
     ctx.save();ctx.translate(this.x-this.world.camX,this.y-this.world.camY);
-    // 仮の矩形表示（アセット導入前提）
     ctx.fillStyle='#7df';ctx.fillRect(-10,-32,20,64);
-    // 簡易：スキル回転中のビジュアル補助（円弧）
     if(this.state==='skill'){
       ctx.beginPath(); ctx.arc(0,-8,28,0,Math.PI*2); ctx.strokeStyle='#aef'; ctx.lineWidth=2; ctx.stroke();
     }
@@ -218,7 +197,7 @@ class Player extends CharacterBase{
 }
 
 /* ================================
- * 敵キャラ定義（全員）— コンテナ等は使わない
+ * 敵キャラ（コンテナ等は使用しない）
  * ================================ */
 class WaruMOB extends CharacterBase{constructor(w,fx,a,x=520){super(52,60);this.world=w;this.effects=fx;this.assets=a;this.x=x;this.hp=100;this.maxhp=100;}update(dt,p){this.updatePhysics(dt);}}
 class GolemRobo extends CharacterBase{constructor(w,fx,a,x=720){super(60,68);this.world=w;this.effects=fx;this.assets=a;this.x=x;this.hp=800;this.maxhp=800;}update(dt,p){this.updatePhysics(dt);}}
@@ -236,7 +215,6 @@ class World{
   constructor(a,cv,fx){this.assets=a;this.canvas=cv;this.ctx=cv.getContext('2d');this.effects=fx;this.camX=0;this.camY=0;}
   draw(p,es){
     const ctx=this.ctx;ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
-    // 背景（ST1.png）— グラウンドラインは描画していない（画像側にあってもゲーム側では線を引かない）
     if(this.assets.img('ST1.png'))ctx.drawImage(this.assets.img('ST1.png'),-this.camX,0,this.canvas.width,this.canvas.height);
     for(const e of es)e.draw?.(ctx,this);
     p.draw(ctx);
@@ -250,9 +228,9 @@ class World{
 class Stage1{
   constructor(g){this.g=g;}
   start(){
-    GROUND_TOP_Y=437; // 復帰ポイントに合わせる
+    GROUND_TOP_Y=437;
     this.g.player.y=Math.floor(GROUND_TOP_Y)-this.g.player.h/2+FOOT_PAD;
-    // コンテナ類は一切使用しない（＝①対応完了）
+    // コンテナは一切使わない
     this.g.enemies=[
       new WaruMOB(this.g.world,this.g.effects,this.g.assets,600),
       new GolemRobo(this.g.world,this.g.effects,this.g.assets,900),
@@ -268,7 +246,7 @@ class Stage1{
 }
 
 /* ================================
- * ゲーム管理
+ * ゲーム管理（起動即スタート）
  * ================================ */
 class Game{
   constructor(){
@@ -282,7 +260,6 @@ class Game{
     const list=['ST1.png'];
     await this.assets.load(list);
     this.world=new World(this.assets,this.canvas,this.effects);
-    this.world.game=this; // 参照を持たせる（将来の当たり判定等で使用）
     this.player=new Player(this.assets,this.world,this.effects);
     this.stage=new Stage1(this);
     this.stage.start();
@@ -291,22 +268,14 @@ class Game{
   }
   loop(){
     const t=now();let dt=(t-this.lastT)/1000;this.lastT=t;if(dt>0.05)dt=0.05;
-
-    // ヒットストップ中は時間を凍結（START不発の誤検知を避けるため、ここでのみ制御）
-    const effSlow = this.effects.hitstop>0 ? 0 : 1;
-    dt *= effSlow;
-
     this.player.update(dt,this.input);
     for(const e of this.enemies)e.update(dt,this.player);
     this.effects.update(dt);
-
-    // 簡易カメラ（プレイヤー追従）
+    // 簡易カメラ
     this.world.camX = clamp(this.player.x - this.canvas.width*0.45, STAGE_LEFT, STAGE_RIGHT - this.canvas.width);
-
     this.world.draw(this.player,this.enemies);
     requestAnimationFrame(()=>this.loop());
   }
 }
 new Game().start();
-
 })();
