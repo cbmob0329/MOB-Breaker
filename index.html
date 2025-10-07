@@ -3,45 +3,110 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-  <title>MOB Side Action – New Enemies First</title>
+  <title>MOB Side Action – Rev34 FULL (core + actors + extra + game)</title>
   <meta name="theme-color" content="#0b0c10" />
-  <link rel="stylesheet" href="style.css" />
+  <style>
+    html,body {
+      margin:0; padding:0; background:#000; color:#fff;
+      height:100%; overflow:hidden;
+      overscroll-behavior:none; touch-action:none;
+      font-family:sans-serif;
+    }
+    .gamewrap {
+      position:relative; width:100%; height:100%;
+      display:flex; align-items:center; justify-content:center;
+      background:#000;
+    }
+    canvas#game {
+      background:#000; image-rendering:pixelated;
+      width:100%; height:100%; touch-action:none;
+    }
+    .hud {
+      position:absolute; top:0; left:0; right:0; height:60px;
+      display:flex; align-items:center; justify-content:space-between;
+      padding:4px 8px; box-sizing:border-box;
+      background:rgba(10,15,25,0.4); font-size:12px;
+    }
+    .hpbar {
+      position:relative; width:180px; height:12px;
+      background:#162032; border:1px solid #2a364f;
+    }
+    .hpbar i {
+      position:absolute; left:0; top:0; bottom:0;
+      width:100%; background:#6cf; transition:width .15s linear;
+    }
+    .hud span#hpnum { font-size:12px; margin-left:6px; color:#9cd2ff; }
+    .hud .timer { font-size:14px; color:#9cd2ff; margin-right:8px; }
+
+    /* virtual pad */
+    .ctrls {
+      position:absolute; bottom:14px; left:14px; right:14px; height:120px;
+      display:flex; justify-content:space-between; align-items:center;
+      pointer-events:none;
+    }
+    #stickArea {
+      width:140px; height:140px;
+      border-radius:50%; background:rgba(60,70,90,0.25);
+      position:relative; pointer-events:auto;
+    }
+    #stickThumb {
+      position:absolute; left:50%; top:50%;
+      width:60px; height:60px; border-radius:50%;
+      transform:translate(-50%,-50%);
+      background:rgba(180,200,255,0.4);
+    }
+    .buttons { display:flex; flex-wrap:wrap; width:220px; gap:8px; justify-content:flex-end; pointer-events:auto; }
+    .buttons button {
+      width:64px; height:64px; border-radius:50%;
+      border:none; background:rgba(80,100,160,0.35);
+      color:#fff; font-size:11px; font-weight:bold;
+      touch-action:none;
+    }
+    .buttons button:active { background:rgba(160,200,255,0.6); }
+
+    /* overhead gauge */
+    .overhead {
+      position:absolute; display:none;
+      flex-direction:column; align-items:center;
+      pointer-events:none;
+    }
+    .overhead .gauge {
+      position:relative; width:80px; height:6px;
+      background:#14203a; border:1px solid #2a3e63;
+      margin-bottom:2px;
+    }
+    .overhead .gauge i {
+      display:block; position:absolute; left:0; top:0; bottom:0;
+      background:#7dd3fc; width:0%;
+    }
+  </style>
 </head>
 <body>
-<div id="root">
-  <div id="phone">
-    <div class="grid">
-      <div class="gamewrap">
-        <header class="hud">
-          <div class="chip">残機 <strong id="lives">3</strong></div>
-          <div class="chip">HP <span class="bar"><i id="hpfill" style="width:100%"></i></span> <strong id="hpnum">1000</strong></div>
-          <div class="chip name">MOBYOKI</div>
-          <div class="chip timer">Time <strong id="time">00:00</strong></div>
-        </header>
-        <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
-      </div>
-      <div class="controls">
-        <div class="stickArea" id="stickArea" aria-label="Move Stick">
-          <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
-        </div>
-        <div class="buttons">
-          <button class="btn attack1" id="btnA1"  aria-label="攻撃① ■">■</button>
-          <button class="btn attack2" id="btnA2"  aria-label="攻撃② ▲">▲</button>
-          <button class="btn skill1"  id="btnSK"  aria-label="スキル① ●">●</button>
-          <button class="btn skill2"  id="btnSK2" aria-label="スキル② ◎">◎</button>
-          <button class="btn ult"     id="btnULT" aria-label="ULT U">U</button>
-          <button class="btn jump"    id="btnJMP" aria-label="ジャンプ ×">×</button>
-        </div>
+  <div class="gamewrap">
+    <canvas id="game" width="420" height="720"></canvas>
+    <div class="hud">
+      <div class="hpbar"><i id="hpfill"></i></div>
+      <span id="hpnum">1000</span>
+      <div class="timer"><span id="time">00:00</span></div>
+    </div>
+    <div class="ctrls">
+      <div id="stickArea"><div id="stickThumb"></div></div>
+      <div class="buttons">
+        <button id="btnA1">A1</button>
+        <button id="btnA2">A2</button>
+        <button id="btnSK">S1</button>
+        <button id="btnSK2">S2</button>
+        <button id="btnULT">ULT</button>
+        <button id="btnJMP">JMP</button>
       </div>
     </div>
   </div>
-</div>
 
-<!-- 読み込み順が超重要！ -->
-<script src="script-core.js"></script>        <!-- Utils/World/Effectsなど -->
-<script src="actors-player.js"></script>      <!-- プレイヤー（復帰ポイント版） -->
-<script src="actors-enemies.js"></script>     <!-- 既存の敵 -->
-<script src="actors-extra.js"></script>       <!-- ★新キャラ群（今回追加） -->
-<script src="script-game.js"></script>        <!-- ゲーム起動（新キャラ優先ウェーブ） -->
+  <!-- JSファイルの読み込み順を厳守 -->
+  <script src="script-core.js"></script>
+  <script src="actors-player.js"></script>
+  <script src="actors-enemies.js"></script>
+  <script src="actors-extra.js"></script>
+  <script src="game.js"></script>
 </body>
 </html>
