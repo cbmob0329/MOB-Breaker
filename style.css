@@ -1,4 +1,4 @@
-/* style.css – Rev35b FULL */
+/* style.css – Rev35c SAFE */
 :root{ --stage-w:420px; --stage-h:720px; --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px; }
 html,body{height:100%;margin:0;padding:0;overflow:hidden;background:#0a0d13;color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;overscroll-behavior:none;-webkit-user-select:none;-webkit-touch-callout:none;user-select:none}
 #root{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:10px}
