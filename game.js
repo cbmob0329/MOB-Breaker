@@ -1,7 +1,7 @@
-// game.js — World / Game / Boot (FULL)
-// - Melee AI: 基本前進／稀にだけ短く後退（内蔵）
-// - IceRoboMini 削除済み
-// - IceRobo draw() hotfix 継続
+// game.js — World / Game / Boot (FULL, HARD ENGAGE OVERRIDE)
+// ・近接は「基本前進 / ほぼ後退なし」にメインループで強制適用
+// ・IceRoboMini なし
+// ・IceRobo draw() hotfix 継続
 (function(){
 'use strict';
 
@@ -123,73 +123,6 @@ const updateHPUI=(hp,maxhp)=>{
 })();
 
 /* ================================
- * Melee Engage（簡易版）
- * 基本は詰める。ごく稀にだけ短く後退。
- * 対象：Gardi / GardiElite / Screw / GabuKing / MOBVR / MOBGiant
- * ================================ */
-(function patchMeleeAI(){
-  function steerSimple(self, player, cfg, dt){
-    const dx = player.x - self.x;
-    const adx = Math.abs(dx);
-    const dir = dx>=0? 1 : -1;
-    self.face = dir;
-
-    // 攻撃や特殊中は触らない
-    if(['atk','skill','ult','dash','charge','recover','post','hurt'].includes(self.state)) return;
-
-    // 基本は前進：遠ければ run、少し遠ければ walk
-    if(adx > cfg.near){
-      self.vx = dir * (adx > cfg.far ? cfg.run : cfg.walk);
-      if(self.onGround && Math.random() < cfg.hopRate){ self.vy = -JUMP_V * cfg.hopV; }
-    } else {
-      // 近距離帯：基本は押し続け、稀にだけ短いバクステ
-      if(!self._bkT && Math.random() < cfg.bkRate){ self._bkT = cfg.bkDur; }
-      if(self._bkT){
-        self._bkT = Math.max(0, self._bkT - dt);
-        self.vx = -dir * cfg.bkSpd;
-        if(self.onGround && Math.random() < 0.05){ self.vy = -JUMP_V*0.3; }
-      } else {
-        self.vx = dir * cfg.stick; // ほんの少し押す
-      }
-    }
-
-    // 表示用 state
-    if(!['atk','skill','ult','dash','charge','recover','post','hurt'].includes(self.state)){
-      if(self.onGround) self.state = (Math.abs(self.vx)>1? 'run':'idle'); else self.state='jump';
-    }
-  }
-
-  // 離れすぎない控えめ設定
-  const PRESETS = {
-    slow: { walk:90,  run:210, near:115, far:260, stick:55, hopRate:0.04, hopV:0.32, bkRate:0.035, bkDur:0.12, bkSpd:170 },
-    mid:  { walk:120, run:280, near:120, far:300, stick:70, hopRate:0.05, hopV:0.36, bkRate:0.040, bkDur:0.12, bkSpd:185 },
-    fast: { walk:150, run:340, near:125, far:330, stick:85, hopRate:0.06, hopV:0.40, bkRate:0.045, bkDur:0.12, bkSpd:200 }
-  };
-
-  function wrapUpdate(Ctor, pick){
-    if(!Ctor || !Ctor.prototype || !Ctor.prototype.update) return;
-    const orig = Ctor.prototype.update;
-    Ctor.prototype.update = function(dt, player){
-      // まず元の挙動（攻撃選択など）
-      orig.call(this, dt, player);
-      // ステアだけ後段で補正
-      const cfg = pick(this);
-      steerSimple(this, player, cfg, dt);
-    };
-  }
-
-  wrapUpdate(Gardi,       ()=>PRESETS.slow);
-  wrapUpdate(GardiElite,  ()=>PRESETS.slow);
-  wrapUpdate(Screw,       ()=>PRESETS.fast);
-  wrapUpdate(GabuKing,    ()=>PRESETS.mid);
-  wrapUpdate(MOBGiant,    ()=>PRESETS.mid);
-  wrapUpdate(MOBVR,       (self)=>{
-    const evolved = (self._evolved===true || self.state==='evolved');
-    return evolved ? PRESETS.fast : PRESETS.mid;
-  });
-})();
-
-/* ================================
  * Game
  * ================================ */
 class Game{
@@ -264,6 +197,24 @@ class Game{
     updateHP();
     this.lastT=now();
 
+    // 近接対象リスト
+    const isMelee = (e)=>{
+      const n = e?.constructor?.name;
+      return n==='Gardi' || n==='GardiElite' || n==='Screw' || n==='GabuKing' || n==='MOBVR' || n==='MOBGiant' || n==='Kozou';
+    };
+
+    // HARD ENGAGE 設定（必要ならここを上げ下げ）
+    const ENGAGE = {
+      FAR: 140,     // これより遠いと全力で詰める
+      NEAR: 90,     // ここまで来たら押し維持
+      RUN: MOVE,    // 遠距離の接近速度
+      WALK: 140,    // 中距離の接近速度
+      STICK: 70,    // 近距離の押し速度（0にしない）
+      BK_RATE: 0.02,// 後退の発生確率（かなり低い）
+      BK_DUR: 0.10, // 後退時間
+      BK_SPD: 180   // 後退速度
+    };
+
     const loop=()=>{
       const t=now(); let dt=(t-this.lastT)/1000; if(dt>0.05) dt=0.05; this.lastT=t;
 
@@ -293,6 +244,34 @@ class Game{
         if(e.x > STAGE_RIGHT + 200) e.x = STAGE_RIGHT - 40;
 
         e.update(dt,this.player);
+
+        // ======== HARD ENGAGE OVERRIDE（ここがキモ）========
+        if(isMelee(e) && !['atk','skill','ult','dash','charge','recover','post','hurt'].includes(e.state)){
+          const dx  = this.player.x - e.x;
+          const adx = Math.abs(dx);
+          const dir = dx>=0? 1 : -1;
+          e.face = dir;
+
+          // 超低確率・極短の後退（デフォではほぼ発生しない）
+          if(!e._hardBkT && Math.random() < ENGAGE.BK_RATE && adx < ENGAGE.NEAR){
+            e._hardBkT = ENGAGE.BK_DUR;
+          }
+          if(e._hardBkT){
+            e._hardBkT = Math.max(0, e._hardBkT - dt);
+            e.vx = -dir * ENGAGE.BK_SPD;
+          } else {
+            if(adx > ENGAGE.FAR){
+              e.vx = dir * ENGAGE.RUN;   // 遠距離：全力前進
+            } else if(adx > ENGAGE.NEAR){
+              e.vx = dir * ENGAGE.WALK;  // 中距離：じわ寄り
+            } else {
+              e.vx = dir * ENGAGE.STICK; // 近距離：押し維持
+            }
+          }
+          // 表示stateだけ調整
+          if(e.onGround) e.state = (Math.abs(e.vx)>1? 'run':'idle'); else e.state='jump';
+        }
+        // ================================================
 
         // WaruMOB: 弾
         if(e.constructor && e.constructor.name==='WaruMOB' && e.projectiles){
