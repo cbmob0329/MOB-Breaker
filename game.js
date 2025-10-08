@@ -1,4 +1,4 @@
-// game.js — World / Game / Boot (part 1/2)
+// game.js — World / Game / Boot (FULL)
 (function(){
 'use strict';
 
@@ -10,13 +10,12 @@ const {
 } = window.__GamePieces__;
 
 const {
+  // Player は actors-player.js 側
   Player,
-  // 既存
-  WaruMOB, IceRobo, IceRoboMini, Kozou, MOBGiant, GabuKing, Screw,
-  // 追加（前回）
-  Danball, GureMOB, MOBFighter, MOBHyado, Nebyu,
-  // 追加（今回）
-  Gardi, GardiElite, MOBVR
+  // 既存の弱〜中ボス
+  WaruMOB, IceRobo, IceRoboMini, Kozou, MOBGiant,
+  // 直近で追加・改修した面子
+  GabuKing, Screw, Gardi, GardiElite, Nebyu, NebyuBullet, MOBVR
 } = window.__Actors__;
 
 /* ================================
@@ -27,106 +26,156 @@ class World{
     this.assets=assets; this.effects=effects; this.canvas=canvas;
     this.ctx=canvas.getContext('2d',{alpha:true}); this.ctx.imageSmoothingEnabled=false;
     this.gameW=canvas.width; this.gameH=canvas.height; this.camX=0; this.camY=0; this.time=0; this._timerAcc=0;
-    const r=this.canvas.getBoundingClientRect();
-    this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
+    const r=this.canvas.getBoundingClientRect(); this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
 
+    // 背景：MOBA.png > back1.png > 単色グラデ
     this.bgImg = this.assets.has('MOBA.png') ? this.assets.img('MOBA.png')
                : (this.assets.has('back1.png') ? this.assets.img('back1.png') : null);
     if(this.bgImg){ this.bgScale = this.gameH / this.bgImg.height; this.bgDW = this.bgImg.width*this.bgScale; this.bgDH = this.bgImg.height*this.bgScale; }
     this.bgSpeed=1.0;
+
+    // フィールド系のオブジェクト（弾・設置物）
+    this._skillBullets=[];
   }
-  resize(){ const r=this.canvas.getBoundingClientRect(); this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH; }
-  updateCam(p){ const offs=this.effects.getCamOffset(); const target=clamp(p.x - this.gameW*0.35 + offs.x, 0, Math.max(0, STAGE_RIGHT - this.gameW)); this.camX=lerp(this.camX,target,0.12); this.camY=offs.y; }
+  resize(){
+    const r=this.canvas.getBoundingClientRect();
+    this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
+  }
+  updateCam(p){
+    const offs=this.effects.getCamOffset();
+    const target=clamp(p.x - this.gameW*0.35 + offs.x, 0, Math.max(0, STAGE_RIGHT - this.gameW));
+    this.camX=lerp(this.camX,target,0.12);
+    this.camY=offs.y;
+  }
   updateTimer(dt){
-    this._timerAcc+=dt; if(this._timerAcc>=0.2){ this.time+=this._timerAcc; this._timerAcc=0;
-      const t=Math.floor(this.time); const mm=String(Math.floor(t/60)).padStart(2,'0'); const ss=String(t%60).padStart(2,'0'); document.getElementById('time').textContent=`${mm}:${ss}`; }
+    this._timerAcc+=dt;
+    if(this._timerAcc>=0.2){
+      this.time+=this._timerAcc; this._timerAcc=0;
+      const t=Math.floor(this.time);
+      const mm=String(Math.floor(t/60)).padStart(2,'0');
+      const ss=String(t%60).padStart(2,'0');
+      const el=document.getElementById('time'); if(el) el.textContent=`${mm}:${ss}`;
+    }
   }
   draw(player, enemies){
-    const ctx=this.ctx; ctx.clearRect(0,0,this.gameW,this.gameH);
+    const ctx=this.ctx;
+    ctx.clearRect(0,0,this.gameW,this.gameH);
     if(this.bgImg){
-      const w=Math.round(this.bgDW), h=Math.round(this.bgDH); const step=Math.max(1, w - 1);
+      const w=Math.round(this.bgDW), h=Math.round(this.bgDH);
+      const step=Math.max(1, w - 1);
       const startX = Math.floor((this.camX*this.bgSpeed - this.gameW*0.2)/step)*step;
       const endX = this.camX*this.bgSpeed + this.gameW*1.2 + w;
-      for(let x=startX; x<=endX; x+=step){ ctx.drawImage(this.bgImg, 0,0,this.bgImg.width,this.bgImg.height, Math.round(x - this.camX*this.bgSpeed), 0, w, h); }
+      for(let x=startX; x<=endX; x+=step){
+        ctx.drawImage(this.bgImg, 0,0,this.bgImg.width,this.bgImg.height, Math.round(x - this.camX*this.bgSpeed), 0, w, h);
+      }
     } else {
-      const g=ctx.createLinearGradient(0,0,0,this.gameH); g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18'); ctx.fillStyle=g; ctx.fillRect(0,0,this.gameW,this.gameH);
+      const g=ctx.createLinearGradient(0,0,0,this.gameH);
+      g.addColorStop(0,'#0a1230'); g.addColorStop(1,'#0a0f18');
+      ctx.fillStyle=g; ctx.fillRect(0,0,this.gameW,this.gameH);
     }
     ctx.fillStyle='#0b0f17'; const yTop=Math.floor(GROUND_TOP_Y); ctx.fillRect(0,yTop-1,this.gameW,1);
 
+    // 先に設置物（プレイヤーのスパイクなど）
     if(this._skillBullets){ for(const p of this._skillBullets) p.draw(ctx); }
+
+    // 敵
     for(const e of enemies) e.draw(ctx,this);
+
+    // プレイヤー
     player.draw(ctx,this);
+
+    // 演出
     this.effects.draw(ctx,this);
   }
 }
 
-const updateHPUI=(hp,maxhp)=>{ const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=hp; fill.style.width=Math.max(0,Math.min(100,(hp/maxhp)*100))+'%'; };
+const updateHPUI=(hp,maxhp)=>{
+  const fill=document.getElementById('hpfill');
+  const num =document.getElementById('hpnum');
+  if(!fill||!num) return;
+  num.textContent=hp;
+  fill.style.width=Math.max(0,Math.min(100,(hp/maxhp)*100))+'%';
+};
 
 /* ================================
  * Game
  * ================================ */
 class Game{
   constructor(){
-    this.assets=new Assets(); this.canvas=document.getElementById('game'); this.input=new Input(); this.effects=new Effects();
+    this.assets=new Assets();
+    this.canvas=document.getElementById('game');
+    this.input=new Input();
+    this.effects=new Effects();
+
     this.player=null; this.enemies=[]; this.world=null; this.lastT=0;
     this.enemyOrder=[]; this.enemyIndex=0;
+
     addEventListener('resize',()=>this.world?.resize());
   }
+
   async start(){
+    // 画像アセット：従来 + 追加（Gardi/GardiElite/Nebyu/VR）
     const imgs=[
       // 背景
       'MOBA.png','back1.png',
+
       // Player
       'M1-1.png','M1-2.png','M1-3.png','M1-4.png',
       'K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png',
       'h1.png','h2.png','h3.png','h4.png',
-      'J.png','Y1.png','Y2.png','Y3.png','Y4.png','UL1.PNG','UL2.PNG','UL3.png','kem.png',
+      'J.png',
+      'Y1.png','Y2.png','Y3.png','Y4.png',
+      'UL1.PNG','UL2.PNG','UL3.png',
+      'kem.png',
+
       // 既存弱〜中
       'teki1.png','teki2.png','teki3.png','teki7.png',
       'IC.png','IC2.png','IC3.png','IC4.png',
       'SL.png','SL2.png','SL3.png','SL4.png','SL5.png','SL6.png','SL7.png','SL8.png',
-      // 既存ボス系
+
+      // ボス群
       'I1.png','I2.png','I3.png','I4.png','I5.png','I6.png','I7.png','I8.png',
       'P1.png','P2.png','P3.png','P4.png','P5.png','P6.png','P7.png','P10.png',
       't1.png','t2.png','t3.png','t4.png','t5.png','t6.png','t7.png','t8.png','t9.png','t10.png','t11.png',
       'B1.png','B2.png','B3.png','B4.png','B5.png','B6.png','B7.png','B8.png','B9.png','B10.png','B11.png','B12.png','B13.png','B14.png',
-      // 新顔（前回）
-      'C1.png','C2.png','C3.png','C4.png',                    // Danball
-      'tek1.png','tek2.png','tek3.png',                      // Gure
-      'EN1-1.png','EN1-2.png','EN1-3.png','EN1-4.png','EN1-5.png','EN1-6.png', // Fighter
-      'MY.png','MY1.png','MY2.png','MY3.png','MY4.png','MY5.png','MY6.png','MY7.png', // Hyado
-      'MN.png','MN1.png','MN2.png','MN3.png','MN4.png','MN5.png','MN.6','MN7.png','MN8.png','MN9.png','MN10.png','MN11.png','GD.png', // Nebyu（MN.6 注意）
-      // 新顔（今回）
-      'th1.png','th2.png','th3.png','th4.png','th5.png','th6.png','th7.png','th8.png','th9.png', // Gardi
-      'thb1.png','thb2.png','thb3.png','thb4.png','thb5.png','thb6.png','thb7.png','thb8.png','thb9.png', // GardiElite
-      'VR.png','VR1.png','VR2.png','VR3.png','VR4.png','VR5.png','VR6.png','VR7.png','VR8.png','VR.9','VR.10','VR.11','VR12.png','VR13.png','VR14.png','VR15.png','VR16.png' // MOBVR
+
+      // ★ 追加：Gardi / GardiElite
+      'th1.png','th2.png','th3.png','th4.png','th5.png','th6.png','th7.png','th8.png','th9.png',
+      'thb1.png','thb2.png','thb3.png','thb4.png','thb5.png','thb6.png','thb7.png','thb8.png','thb9.png',
+
+      // ★ 追加：Nebyu
+      'MN.png','MN1.png','MN2.png','MN3.png','MN4.png','MN5.png','MN.6','MN7.png','MN8.png','MN9.png','MN10.png','MN11.png',
+      'GD.png',
+
+      // ★ 追加：VR（前後形態）
+      'VR.png','VR1.png','VR2.png','VR3.png','VR4.png','VR5.png','VR6.png','VR7.png',
+      'VR8.png','VR.9','VR.10','VR.11','VR12.png','VR13.png','VR14.png','VR15.png','VR16.png'
     ];
     await this.assets.load(imgs);
+
     this.world=new World(this.assets,this.canvas,this.effects);
     this.player=new Player(this.assets,this.world,this.effects);
 
-    const spawnX = 720;
+    // ====== スポーン位置
+    const spawnX = 760;
 
-    // 1体スポーンのヘルパ
-    const one = (Ctor, x=spawnX)=>()=>[ new Ctor(this.world,this.effects,this.assets,x) ];
-
-    // 弱い順に1体ずつ（HP目安ベース）
+    // ====== 1体ずつ・弱→強（目安）
+    // 既存（弱）: WaruMOB, IceRoboMini, Kozou
+    // 新規: Gardi, GardiElite
+    // 中ボス: Screw, GabuKing, Nebyu
+    // 強ボス: IceRobo, MOBVR, MOBGiant
     this.enemyOrder = [
-      one(Danball),
-      one(IceRoboMini),
-      one(Kozou),
-      one(GureMOB),
-      one(WaruMOB),
-      one(MOBFighter),
-      one(MOBHyado),
-      one(Gardi),
-      one(GabuKing),
-      one(Screw),
-      one(GardiElite),
-      one(Nebyu),
-      one(IceRobo),
-      one(MOBVR),
-      one(MOBGiant)
+      ()=>[ new WaruMOB(this.world,this.effects,this.assets,spawnX) ],
+      ()=>[ new IceRoboMini(this.world,this.effects,this.assets,spawnX) ],
+      ()=>[ new Kozou(this.world,this.effects,this.assets,spawnX) ],
+      ()=>[ new Gardi(this.world,this.effects,this.assets,spawnX) ],
+      ()=>[ new GardiElite(this.world,this.effects,this.assets,spawnX) ],
+      ()=>[ new Screw(this.world,this.effects,this.assets,spawnX) ],
+      ()=>[ new GabuKing(this.world,this.effects,this.assets,spawnX) ],
+      ()=>[ new Nebyu(this.world,this.effects,this.assets,spawnX) ],
+      ()=>[ new IceRobo(this.world,this.effects,this.assets,spawnX) ],
+      ()=>[ new MOBVR(this.world,this.effects,this.assets,spawnX) ],
+      ()=>[ new MOBGiant(this.world,this.effects,this.assets,spawnX) ]
     ];
 
     this.enemyIndex = 0;
@@ -138,26 +187,57 @@ class Game{
     const loop=()=>{
       const t=now(); let dt=(t-this.lastT)/1000; if(dt>0.05) dt=0.05; this.lastT=t;
 
-      if(this.effects.hitstop>0){ this.effects.update(dt); this.world.updateCam(this.player); this.world.draw(this.player,this.enemies); requestAnimationFrame(loop); return; }
+      // ヒットストップ中は演出とカメラだけ
+      if(this.effects.hitstop>0){
+        this.effects.update(dt);
+        this.world.updateCam(this.player);
+        this.world.draw(this.player,this.enemies);
+        requestAnimationFrame(loop);
+        return;
+      }
 
+      // === 入力パイプ（プレイヤー用）
       const input=this.input;
       window._inputUltT = input.ultChargeT || 0;
 
+      // === プレイヤー更新
       this.player.update(dt,this.input,this.world,this.enemies);
-// game.js — World / Game / Boot (part 2/2)
-      // 敵更新 & 当たり
+
+      // === 敵更新＆当たり
       for(const e of this.enemies){
+        if(!e) continue;
+
+        // 「たまに消える」対策：ステージ外へ弾かれた時の保険クランプ
+        // （各 CharacterBase.updatePhysics で基本は守られているが、超高速移動の時に念のため）
+        if(e.x < STAGE_LEFT - 200)  e.x = STAGE_LEFT + 40;
+        if(e.x > STAGE_RIGHT + 200) e.x = STAGE_RIGHT - 40;
+
         e.update(dt,this.player);
 
+        // === 個別の弾・当たり ===
+
         // WaruMOB の弾
-        if(e.constructor && e.constructor.name==='WaruMOB'){
+        if(e.constructor && e.constructor.name==='WaruMOB' && e.projectiles){
           for(const p of e.projectiles){
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
-              p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0, kbMul:0.55, kbuMul:0.5}, this.effects);
+              p.dead=true;
+              const hit=this.player.hurt(p.power, p.dir, {lift:0, kbMul:0.55, kbuMul:0.5}, this.effects);
               if(hit) updateHPUI(this.player.hp,this.player.maxhp);
             }
           }
         }
+
+        // Kozou の石
+        if(e.constructor && e.constructor.name==='Kozou' && e.projectiles){
+          for(const p of e.projectiles){
+            if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
+              p.dead=true;
+              const hit=this.player.hurt(p.power, p.dir, {lift:0.15, kbMul:0.7, kbuMul:0.7}, this.effects);
+              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
+            }
+          }
+        }
+
         // IceRobo のダッシュ & 玉
         if(e.constructor && e.constructor.name==='IceRobo'){
           if(e.state==='dash'){
@@ -167,32 +247,27 @@ class Game{
               if(hit) updateHPUI(this.player.hp,this.player.maxhp);
             }
           }
-          for(const p of e.energyOrbs){
+          for(const p of e.energyOrbs||[]){
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
-              p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0.2, kbMul:0.8, kbuMul:0.8}, this.effects);
+              p.dead=true;
+              const hit=this.player.hurt(p.power, p.dir, {lift:0.2, kbMul:0.8, kbuMul:0.8}, this.effects);
               if(hit) updateHPUI(this.player.hp,this.player.maxhp);
             }
           }
         }
-        // Kozou の石
-        if(e.constructor && e.constructor.name==='Kozou'){
-          for(const p of e.projectiles){
-            if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
-              p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0.15, kbMul:0.7, kbuMul:0.7}, this.effects);
-              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
-            }
-          }
-        }
-        // GabuKing の弾
-        if(e.constructor && e.constructor.name==='GabuKing'){
+
+        // GabuKing の弾（クラス内でも判定しているが二重ヒット防止込みの保険）
+        if(e.constructor && e.constructor.name==='GabuKing' && e.bullets){
           for(const b of e.bullets){
             if(!b.dead && this.player.invulnT<=0 && rectsOverlap(b.aabb(), this.player.aabb())){
-              b.dead=true; const hit=this.player.hurt(b.power, b.dir, {lift:1.3, kbMul:1.2, kbuMul:1.2}, this.effects);
+              b.dead=true;
+              const hit=this.player.hurt(b.power, b.dir, {lift:1.3, kbMul:1.2, kbuMul:1.2}, this.effects);
               if(hit) updateHPUI(this.player.hp,this.player.maxhp);
             }
           }
         }
-        // 巨神のダッシュ & 玉
+
+        // MOBGiant のダッシュ & 玉
         if(e.constructor && e.constructor.name==='MOBGiant'){
           if(e.state==='dash'){
             const hb = {x:e.x + e.face*30, y:e.y, w: e.w*0.96, h: e.h*0.96};
@@ -201,39 +276,40 @@ class Game{
               if(hit) updateHPUI(this.player.hp,this.player.maxhp);
             }
           }
-          for(const p of e.energyOrbs){
+          for(const p of e.energyOrbs||[]){
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
-              p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0.25, kbMul:0.85, kbuMul:0.85}, this.effects);
+              p.dead=true;
+              const hit=this.player.hurt(p.power, p.dir, {lift:0.25, kbMul:0.85, kbuMul:0.85}, this.effects);
               if(hit) updateHPUI(this.player.hp,this.player.maxhp);
             }
           }
         }
-        // ★ 追加：Nebyu の弾（大/小）
-        if(e.constructor && e.constructor.name==='Nebyu'){
-          for(const b of e.projectiles){
-            if(!b.dead && this.player.invulnT<=0 && rectsOverlap(b.aabb(), this.player.aabb())){
-              b.dead=true; const hit=this.player.hurt(b.power, b.dir, {lift:(b.power>=50?0.8:0.2), kbMul:(b.power>=50?1.2:0.8), kbuMul:(b.power>=50?1.2:0.8)}, this.effects);
-              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
-            }
-          }
-        }
-        // ★ 追加：MOBVR の弾（VRBlast）
-        if(e.constructor && e.constructor.name==='MOBVR'){
-          for(const b of e.bullets){
-            if(!b.dead && this.player.invulnT<=0 && rectsOverlap(b.aabb(), this.player.aabb())){
-              b.dead=true; const hit=this.player.hurt(b.power, b.dir, {lift:1.1, kbMul:1.2, kbuMul:1.2}, this.effects);
-              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
-            }
-          }
-        }
-      }
 
-      // プレイヤーの弾・スパイク（敵へ）
+        // ★ Nebyu の弾（tag:'nebyu'）：ヒット時にハイジャンプ＆バクステを強制
+        if(e.constructor && e.constructor.name==='Nebyu' && e.projectiles){
+          for(const p of e.projectiles){
+            if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
+              p.dead=true;
+              // 通常ダメージに加えて、強制的に上&後ろへ逃がす
+              const dir = p.dir; // 弾の飛来方向
+              const hit=this.player.hurt(p.power, dir, {lift:0.9, kbMul:1.15, kbuMul:1.25}, this.effects);
+              // 追加モーション（ハイジャンプ＋バクステ）
+              this.player.vy = -JUMP_V*1.2;
+              this.player.vx = -dir * 360;
+              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
+            }
+          }
+        }
+
+      } // end enemies loop
+
+      // === プレイヤーの設置物/弾（敵へ）
       if(this.world._skillBullets){
         for(const p of this.world._skillBullets){
           p.update(dt);
           for(const e of this.enemies){
-            if(!p.dead && !e.dead && rectsOverlap(p.aabb(), e.aabb())){
+            if(!e || e.dead) continue;
+            if(!p.dead && rectsOverlap(p.aabb(), e.aabb())){
               p.dead=true;
               const dir = (e.x>=p.x)? 1 : -1;
               const hit=e.hurt(p.power, dir, {lift:0.3,kbMul:0.9,kbuMul:0.9}, this.effects);
@@ -244,24 +320,26 @@ class Game{
         this.world._skillBullets = this.world._skillBullets.filter(p=>!p.dead && p.life>0);
       }
 
-      // 撃破整理
+      // === 撃破整理（fade まで終わったものを除去）
       this.enemies=this.enemies.filter(e=>!(e.dead && e.fade<=0));
 
-      // 次ウェーブ（1匹ずつ）
+      // === 次ウェーブ（1体ずつ）
       if(this.enemies.length===0 && this.enemyIndex < this.enemyOrder.length-1){
         this.enemyIndex++;
         this.enemies.push(...this.enemyOrder[this.enemyIndex]());
       }
 
-      // めり込み解消（プレイヤーと敵）
+      // === めり込み解消（プレイヤーと各敵）
       for(const e of this.enemies){
         if(e.dead || this.player.dead) continue;
         const a=this.player.aabb(), b=e.aabb();
         if(!rectsOverlap(a,b)) continue;
+
         const dx = (this.player.x - e.x);
         const dy = (this.player.y - e.y);
         const overlapX = (a.w + b.w)/2 - Math.abs(dx);
         const overlapY = (a.h + b.h)/2 - Math.abs(dy);
+
         if(overlapY < overlapX){
           const dirY = dy>=0? 1 : -1;
           this.player.y += dirY * overlapY * 0.9;
@@ -276,9 +354,15 @@ class Game{
         }
       }
 
-      this.effects.update(dt); this.world.updateCam(this.player); this.world.updateTimer(dt); this.world.draw(this.player, this.enemies);
+      // === 最終描画
+      this.effects.update(dt);
+      this.world.updateCam(this.player);
+      this.world.updateTimer(dt);
+      this.world.draw(this.player, this.enemies);
+
       requestAnimationFrame(loop);
     };
+
     requestAnimationFrame(loop);
   }
 }
