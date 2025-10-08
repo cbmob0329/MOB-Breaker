@@ -1,4 +1,4 @@
-// game.js — World / Game / Boot (FULL, IceRoboMini removed)
+// game.js — World / Game / Boot (FULL, Melee AI engage-band patch + IceRobo draw hotfix)
 (function(){
 'use strict';
 
@@ -11,7 +11,7 @@ const {
 
 const {
   Player,
-  WaruMOB, /* IceRoboMini 削除 */ IceRobo, Kozou, MOBGiant,
+  WaruMOB, IceRobo, Kozou, MOBGiant,
   GabuKing, Screw, Gardi, GardiElite, Nebyu, MOBVR
 } = window.__Actors__;
 
@@ -83,7 +83,7 @@ const updateHPUI=(hp,maxhp)=>{
 };
 
 /* ================================
- * IceRobo draw() hotfix（描画では進行させない）
+ * IceRobo draw() hotfix（描画で状態を進めない）
  * ================================ */
 (function patchIceRoboDraw(){
   if(!IceRobo) return;
@@ -91,9 +91,7 @@ const updateHPUI=(hp,maxhp)=>{
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
     if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
     if(this.face<0 && !this.dead) ctx.scale(-1,1);
-
     const pick=(k)=>this.assets.img(({ idle:'I1.png', walk1:'I1.png', walk2:'I2.png', jump1:'I1.png', jump2:'I2.png', jump3:'I3.png', charge:'I4.png', release:'I5.png', dashPrep:'I6.png', dashAtk:'I7.png', orb:'I8.png' })[k]||'I1.png');
-
     let imgEl=null, ox=0;
     if(this.state==='charge'){ imgEl=pick('charge'); ox=Math.sin(performance.now()/25)*1.5; }
     else if(this.state==='dash' || (this.state==='atk' && this._seq && this._seq[this._idx] && this._seq[this._idx].key==='dashAtk')){ imgEl=pick('dashAtk'); }
@@ -102,7 +100,6 @@ const updateHPUI=(hp,maxhp)=>{
     else if(this.state==='run'){ const f=Math.floor(this.animT*6)%2; imgEl=pick(f? 'walk1':'walk2'); }
     else if(this.state==='jump'){ const f=Math.floor(this.animT*8)%3; imgEl=pick(['jump1','jump2','jump3'][f]); }
     else { imgEl=pick('idle'); }
-
     if(imgEl){
       const scale=this.h/imgEl.height, w=imgEl.width*scale, h=this.h;
       ctx.imageSmoothingEnabled=false; ctx.drawImage(imgEl, Math.round(-w/2+ox), Math.round(-h/2), Math.round(w), Math.round(h));
@@ -116,6 +113,104 @@ const updateHPUI=(hp,maxhp)=>{
     this.drawHPBar(ctx,world);
     for(const p of this.energyOrbs) p.draw(ctx);
   };
+})();
+
+/* ================================
+ * Melee Engage-Band Patch
+ * 「0 or 100」ではなく“間合い帯”で寄る/離れる/維持
+ * 適用先：Gardi / GardiElite / Screw / GabuKing / MOBVR / MOBGiant
+ * ================================ */
+(function patchMeleeAI(){
+  // 共通ヘルパ：間合いバンドに基づくVX・小行動生成
+  function steerToEngage(self, player, cfg, dt){
+    const dx = player.x - self.x;
+    const adx = Math.abs(dx);
+    const dir = dx>=0? 1 : -1;
+    self.face = dir;
+
+    // 近距離で“揺さぶり”を入れて単調にならないように
+    self._aiT = (self._aiT||0) + dt;
+
+    // 状態の既存制御が優先（攻撃/スキル/ult/ダッシュ中は触らない）
+    if(['atk','skill','ult','dash','charge','recover','post','hurt'].includes(self.state)) return;
+
+    // 超遠距離 → 走って接近
+    if(adx > cfg.engageFar){
+      self.vx = dir * cfg.run;
+      return;
+    }
+    // 少し遠い → じわじわ接近
+    if(adx > cfg.engageNear){
+      // ときどき小ジャンプを混ぜる
+      self.vx = dir * cfg.walk;
+      if(self.onGround && Math.random() < cfg.smallHopRate){ self.vy = -JUMP_V * cfg.smallHopV; }
+      return;
+    }
+    // 近距離帯（ここでインファイト維持）
+    // ときどき微後退→再接近、軽い横揺さぶり
+    if(adx <= cfg.engageNear){
+      // ほんの少し引いて間合いを作る（後退）
+      if(!self._backstepT && Math.random()<cfg.backstepRate){
+        self._backstepT = cfg.backstepDur; // 後退時間
+      }
+      if(self._backstepT){
+        self._backstepT = Math.max(0, self._backstepT - dt);
+        self.vx = -dir * cfg.backstepSpd;
+        // ミニジャンプ混ぜて“下がる”感じ
+        if(self.onGround && Math.random()<0.15){ self.vy = -JUMP_V * 0.35; }
+      } else {
+        // じり寄り（ゼロにしない）
+        self.vx = dir * cfg.stickSpd;
+        // 左右ブレ
+        if(Math.sin(self._aiT*cfg.lateralOsc) > 0.7) self.vx *= 1.15;
+      }
+    }
+  }
+
+  // キャラごとの味付け（スピードや帯）
+  const PRESETS = {
+    slow:   { walk:90,  run:220, stickSpd:65, engageNear:110, engageFar:260, smallHopRate:0.12, smallHopV:0.35, backstepRate:0.18, backstepDur:0.22, backstepSpd:180, lateralOsc:2.4 },
+    mid:    { walk:120, run:300, stickSpd:85, engageNear:120, engageFar:300, smallHopRate:0.16, smallHopV:0.42, backstepRate:0.20, backstepDur:0.24, backstepSpd:210, lateralOsc:2.8 },
+    fast:   { walk:150, run:360, stickSpd:110,engageNear:130, engageFar:340, smallHopRate:0.18, smallHopV:0.48, backstepRate:0.22, backstepDur:0.26, backstepSpd:240, lateralOsc:3.2 }
+  };
+
+  // パッチ共通ロジック
+  function wrapUpdate(Ctor, picker){
+    if(!Ctor || !Ctor.prototype || !Ctor.prototype.update) return;
+    const orig = Ctor.prototype.update;
+    Ctor.prototype.update = function(dt, player){
+      // 既存updateの前に“消失保険”
+      if(this.x < STAGE_LEFT - 200)  this.x = STAGE_LEFT + 40;
+      if(this.x > STAGE_RIGHT + 200) this.x = STAGE_RIGHT - 40;
+
+      // まず元のupdate実行（攻撃選択や弾の処理を壊さない）
+      orig.call(this, dt, player);
+
+      // 元updateで攻撃中/特殊中ならスキップ
+      if(['atk','skill','ult','dash','charge','recover','post','hurt'].includes(this.state)) return;
+
+      // ここでステアのみ上書き（vx/vyの“寄り”を補正）
+      const cfg = picker(this);
+      steerToEngage(this, player, cfg, dt);
+
+      // 通常状態のstate再設定（描画切替のため）
+      if(this.onGround) this.state = (Math.abs(this.vx)>1? 'run':'idle');
+      else this.state = 'jump';
+    };
+  }
+
+  // 各キャラにプリセットを割当
+  wrapUpdate(Gardi,       ()=>PRESETS.slow);
+  wrapUpdate(GardiElite,  ()=>PRESETS.slow);
+  wrapUpdate(Screw,       ()=>PRESETS.fast);
+  wrapUpdate(GabuKing,    ()=>PRESETS.mid);
+  wrapUpdate(MOBGiant,    ()=>PRESETS.mid);
+  wrapUpdate(MOBVR,       (self)=>{
+    // 変身後は少し早め
+    const evolved = (self._evolved===true || self.state==='evolved');
+    return evolved ? PRESETS.fast : PRESETS.mid;
+  });
+
 })();
 
 /* ================================
@@ -144,7 +239,7 @@ class Game{
       'Y1.png','Y2.png','Y3.png','Y4.png',
       'UL1.PNG','UL2.PNG','UL3.png','kem.png',
 
-      // 既存弱〜中（※ IceRoboMini 用の IC*.png は削除）
+      // 既存弱〜中
       'teki1.png','teki2.png','teki3.png','teki7.png',
       'SL.png','SL2.png','SL3.png','SL4.png','SL5.png','SL6.png','SL7.png','SL8.png',
 
@@ -172,7 +267,7 @@ class Game{
 
     const spawnX = 760;
 
-    // 弱→強、1体ずつ（IceRoboMini は削除）
+    // 弱→強、1体ずつ
     this.enemyOrder = [
       ()=>[ new WaruMOB(this.world,this.effects,this.assets,spawnX) ],
       ()=>[ new Kozou(this.world,this.effects,this.assets,spawnX) ],
@@ -189,7 +284,8 @@ class Game{
     this.enemyIndex = 0;
     this.enemies = this.enemyOrder[this.enemyIndex]();
 
-    updateHPUI(this.player.hp,this.player.maxhp);
+    const updateHP = ()=>updateHPUI(this.player.hp,this.player.maxhp);
+    updateHP();
     this.lastT=now();
 
     const loop=()=>{
@@ -216,7 +312,7 @@ class Game{
       for(const e of this.enemies){
         if(!e) continue;
 
-        // 消失保険（高速移動で外に出た時）
+        // 消失保険
         if(e.x < STAGE_LEFT - 200)  e.x = STAGE_LEFT + 40;
         if(e.x > STAGE_RIGHT + 200) e.x = STAGE_RIGHT - 40;
 
@@ -228,7 +324,7 @@ class Game{
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
               p.dead=true;
               const hit=this.player.hurt(p.power, p.dir, {lift:0, kbMul:0.55, kbuMul:0.5}, this.effects);
-              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
+              if(hit) updateHP();
             }
           }
         }
@@ -239,7 +335,7 @@ class Game{
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
               p.dead=true;
               const hit=this.player.hurt(p.power, p.dir, {lift:0.15, kbMul:0.7, kbuMul:0.7}, this.effects);
-              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
+              if(hit) updateHP();
             }
           }
         }
@@ -250,14 +346,14 @@ class Game{
             const hb = {x:e.x + e.face*22, y:e.y, w:e.w*0.9, h:e.h*0.9};
             if(this.player.invulnT<=0 && rectsOverlap(hb, this.player.aabb())){
               const hit=this.player.hurt(30, e.face, {lift:1, kbMul:1.1, kbuMul:1.1}, this.effects);
-              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
+              if(hit) updateHP();
             }
           }
           for(const p of e.energyOrbs||[]){
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
               p.dead=true;
               const hit=this.player.hurt(p.power, p.dir, {lift:0.2, kbMul:0.8, kbuMul:0.8}, this.effects);
-              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
+              if(hit) updateHP();
             }
           }
         }
@@ -268,7 +364,7 @@ class Game{
             if(!b.dead && this.player.invulnT<=0 && rectsOverlap(b.aabb(), this.player.aabb())){
               b.dead=true;
               const hit=this.player.hurt(b.power, b.dir, {lift:1.3, kbMul:1.2, kbuMul:1.2}, this.effects);
-              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
+              if(hit) updateHP();
             }
           }
         }
@@ -279,14 +375,14 @@ class Game{
             const hb = {x:e.x + e.face*30, y:e.y, w: e.w*0.96, h: e.h*0.96};
             if(this.player.invulnT<=0 && rectsOverlap(hb, this.player.aabb())){
               const hit=this.player.hurt(44, e.face, {lift:1, kbMul:1.15, kbuMul:1.15}, this.effects);
-              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
+              if(hit) updateHP();
             }
           }
           for(const p of e.energyOrbs||[]){
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
               p.dead=true;
               const hit=this.player.hurt(p.power, p.dir, {lift:0.25, kbMul:0.85, kbuMul:0.85}, this.effects);
-              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
+              if(hit) updateHP();
             }
           }
         }
@@ -300,7 +396,7 @@ class Game{
               const hit=this.player.hurt(p.power, dir, {lift:0.9, kbMul:1.15, kbuMul:1.25}, this.effects);
               this.player.vy = -JUMP_V*1.2;
               this.player.vx = -dir * 360;
-              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
+              if(hit) updateHP();
             }
           }
         }
