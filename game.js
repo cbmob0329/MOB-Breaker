@@ -1,4 +1,4 @@
-// game.js — World / Game / Boot (FULL, IceRobo-draw hotfix)
+// game.js — World / Game / Boot (FULL, IceRoboMini removed)
 (function(){
 'use strict';
 
@@ -11,7 +11,7 @@ const {
 
 const {
   Player,
-  WaruMOB, IceRobo, IceRoboMini, Kozou, MOBGiant,
+  WaruMOB, /* IceRoboMini 削除 */ IceRobo, Kozou, MOBGiant,
   GabuKing, Screw, Gardi, GardiElite, Nebyu, MOBVR
 } = window.__Actors__;
 
@@ -83,23 +83,18 @@ const updateHPUI=(hp,maxhp)=>{
 };
 
 /* ================================
- * IceRobo draw() hotfix (no state advance in draw)
+ * IceRobo draw() hotfix（描画では進行させない）
  * ================================ */
 (function patchIceRoboDraw(){
   if(!IceRobo) return;
-  const img = key => {
-    const map={ idle:'I1.png', walk1:'I1.png', walk2:'I2.png', jump1:'I1.png', jump2:'I2.png', jump3:'I3.png', charge:'I4.png', release:'I5.png', dashPrep:'I6.png', dashAtk:'I7.png', orb:'I8.png' };
-    return window.__GamePieces__?.Assets ? null : null; // no-op
-  };
-  // 既存 actors.js の描画をベースに、「draw内で _seq を進める」処理だけ除去
   IceRobo.prototype.draw = function(ctx,world){
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
     if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
     if(this.face<0 && !this.dead) ctx.scale(-1,1);
 
-    let imgEl=null, ox=0;
     const pick=(k)=>this.assets.img(({ idle:'I1.png', walk1:'I1.png', walk2:'I2.png', jump1:'I1.png', jump2:'I2.png', jump3:'I3.png', charge:'I4.png', release:'I5.png', dashPrep:'I6.png', dashAtk:'I7.png', orb:'I8.png' })[k]||'I1.png');
 
+    let imgEl=null, ox=0;
     if(this.state==='charge'){ imgEl=pick('charge'); ox=Math.sin(performance.now()/25)*1.5; }
     else if(this.state==='dash' || (this.state==='atk' && this._seq && this._seq[this._idx] && this._seq[this._idx].key==='dashAtk')){ imgEl=pick('dashAtk'); }
     else if(this.state==='atk' && this._seq){ const cur=this._seq[this._idx]; imgEl=pick(cur?.key||'dashPrep'); ox=Math.sin(performance.now()/25)*2; }
@@ -119,7 +114,6 @@ const updateHPUI=(hp,maxhp)=>{
     }
     ctx.restore();
     this.drawHPBar(ctx,world);
-
     for(const p of this.energyOrbs) p.draw(ctx);
   };
 })();
@@ -140,28 +134,34 @@ class Game{
 
   async start(){
     const imgs=[
+      // 背景
       'MOBA.png','back1.png',
+
       // Player
       'M1-1.png','M1-2.png','M1-3.png','M1-4.png',
       'K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png',
       'h1.png','h2.png','h3.png','h4.png','J.png',
       'Y1.png','Y2.png','Y3.png','Y4.png',
       'UL1.PNG','UL2.PNG','UL3.png','kem.png',
-      // Weak to mid
+
+      // 既存弱〜中（※ IceRoboMini 用の IC*.png は削除）
       'teki1.png','teki2.png','teki3.png','teki7.png',
-      'IC.png','IC2.png','IC3.png','IC4.png',
       'SL.png','SL2.png','SL3.png','SL4.png','SL5.png','SL6.png','SL7.png','SL8.png',
-      // Boss group
+
+      // ボス群
       'I1.png','I2.png','I3.png','I4.png','I5.png','I6.png','I7.png','I8.png',
       'P1.png','P2.png','P3.png','P4.png','P5.png','P6.png','P7.png','P10.png',
       't1.png','t2.png','t3.png','t4.png','t5.png','t6.png','t7.png','t8.png','t9.png','t10.png','t11.png',
       'B1.png','B2.png','B3.png','B4.png','B5.png','B6.png','B7.png','B8.png','B9.png','B10.png','B11.png','B12.png','B13.png','B14.png',
-      // Gardi / GardiElite
+
+      // 追加：Gardi / GardiElite
       'th1.png','th2.png','th3.png','th4.png','th5.png','th6.png','th7.png','th8.png','th9.png',
       'thb1.png','thb2.png','thb3.png','thb4.png','thb5.png','thb6.png','thb7.png','thb8.png','thb9.png',
-      // Nebyu
+
+      // 追加：Nebyu
       'MN.png','MN1.png','MN2.png','MN3.png','MN4.png','MN5.png','MN.6','MN7.png','MN8.png','MN9.png','MN10.png','MN11.png','GD.png',
-      // VR
+
+      // 追加：VR
       'VR.png','VR1.png','VR2.png','VR3.png','VR4.png','VR5.png','VR6.png','VR7.png',
       'VR8.png','VR.9','VR.10','VR.11','VR12.png','VR13.png','VR14.png','VR15.png','VR16.png'
     ];
@@ -172,9 +172,9 @@ class Game{
 
     const spawnX = 760;
 
+    // 弱→強、1体ずつ（IceRoboMini は削除）
     this.enemyOrder = [
       ()=>[ new WaruMOB(this.world,this.effects,this.assets,spawnX) ],
-      ()=>[ new IceRoboMini(this.world,this.effects,this.assets,spawnX) ],
       ()=>[ new Kozou(this.world,this.effects,this.assets,spawnX) ],
       ()=>[ new Gardi(this.world,this.effects,this.assets,spawnX) ],
       ()=>[ new GardiElite(this.world,this.effects,this.assets,spawnX) ],
@@ -206,7 +206,7 @@ class Game{
       const input=this.input;
       window._inputUltT = input.ultChargeT || 0;
 
-      // 追加保険：プレイヤーが視界外へ吹っ飛んだ時のクランプ
+      // プレイヤーの画面外保険
       if(this.player.x < STAGE_LEFT - 200)  this.player.x = STAGE_LEFT + 40;
       if(this.player.x > STAGE_RIGHT + 200) this.player.x = STAGE_RIGHT - 40;
 
@@ -216,13 +216,13 @@ class Game{
       for(const e of this.enemies){
         if(!e) continue;
 
-        // 消失保険（高速移動で飛び出した時）
+        // 消失保険（高速移動で外に出た時）
         if(e.x < STAGE_LEFT - 200)  e.x = STAGE_LEFT + 40;
         if(e.x > STAGE_RIGHT + 200) e.x = STAGE_RIGHT - 40;
 
         e.update(dt,this.player);
 
-        // WaruMOB 弾
+        // WaruMOB: 弾
         if(e.constructor && e.constructor.name==='WaruMOB' && e.projectiles){
           for(const p of e.projectiles){
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
@@ -233,7 +233,7 @@ class Game{
           }
         }
 
-        // Kozou 石
+        // Kozou: 石
         if(e.constructor && e.constructor.name==='Kozou' && e.projectiles){
           for(const p of e.projectiles){
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
@@ -244,7 +244,7 @@ class Game{
           }
         }
 
-        // IceRobo ダッシュ & 玉
+        // IceRobo: ダッシュ & 玉
         if(e.constructor && e.constructor.name==='IceRobo'){
           if(e.state==='dash'){
             const hb = {x:e.x + e.face*22, y:e.y, w:e.w*0.9, h:e.h*0.9};
@@ -262,7 +262,7 @@ class Game{
           }
         }
 
-        // GabuKing 弾（保険）
+        // GabuKing: 弾（保険）
         if(e.constructor && e.constructor.name==='GabuKing' && e.bullets){
           for(const b of e.bullets){
             if(!b.dead && this.player.invulnT<=0 && rectsOverlap(b.aabb(), this.player.aabb())){
@@ -273,7 +273,7 @@ class Game{
           }
         }
 
-        // MOBGiant ダッシュ & 玉
+        // MOBGiant: ダッシュ & 玉
         if(e.constructor && e.constructor.name==='MOBGiant'){
           if(e.state==='dash'){
             const hb = {x:e.x + e.face*30, y:e.y, w: e.w*0.96, h: e.h*0.96};
@@ -291,7 +291,7 @@ class Game{
           }
         }
 
-        // Nebyu 弾（ヒットでハイジャンプ＋バクステ）
+        // Nebyu: 弾（ヒットでハイジャンプ＋バクステ）
         if(e.constructor && e.constructor.name==='Nebyu' && e.projectiles){
           for(const p of e.projectiles){
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
