@@ -1,4 +1,7 @@
-// game.js — World / Game / Boot (FULL, Melee AI engage-band patch + IceRobo draw hotfix)
+// game.js — World / Game / Boot (FULL)
+// - Melee AI: 基本前進／稀にだけ短く後退（内蔵）
+// - IceRoboMini 削除済み
+// - IceRobo draw() hotfix 継続
 (function(){
 'use strict';
 
@@ -23,7 +26,8 @@ class World{
     this.assets=assets; this.effects=effects; this.canvas=canvas;
     this.ctx=canvas.getContext('2d',{alpha:true}); this.ctx.imageSmoothingEnabled=false;
     this.gameW=canvas.width; this.gameH=canvas.height; this.camX=0; this.camY=0; this.time=0; this._timerAcc=0;
-    const r=this.canvas.getBoundingClientRect(); this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
+    const r=this.canvas.getBoundingClientRect();
+    this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
 
     this.bgImg = this.assets.has('MOBA.png') ? this.assets.img('MOBA.png')
                : (this.assets.has('back1.png') ? this.assets.img('back1.png') : null);
@@ -32,7 +36,10 @@ class World{
 
     this._skillBullets=[];
   }
-  resize(){ const r=this.canvas.getBoundingClientRect(); this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH; }
+  resize(){
+    const r=this.canvas.getBoundingClientRect();
+    this.screenScaleX=r.width/this.gameW; this.screenScaleY=r.height/this.gameH;
+  }
   updateCam(p){
     const offs=this.effects.getCamOffset();
     const target=clamp(p.x - this.gameW*0.35 + offs.x, 0, Math.max(0, STAGE_RIGHT - this.gameW));
@@ -83,7 +90,7 @@ const updateHPUI=(hp,maxhp)=>{
 };
 
 /* ================================
- * IceRobo draw() hotfix（描画で状態を進めない）
+ * IceRobo draw() hotfix（描画では状態を進めない）
  * ================================ */
 (function patchIceRoboDraw(){
   if(!IceRobo) return;
@@ -116,101 +123,70 @@ const updateHPUI=(hp,maxhp)=>{
 })();
 
 /* ================================
- * Melee Engage-Band Patch
- * 「0 or 100」ではなく“間合い帯”で寄る/離れる/維持
- * 適用先：Gardi / GardiElite / Screw / GabuKing / MOBVR / MOBGiant
+ * Melee Engage（簡易版）
+ * 基本は詰める。ごく稀にだけ短く後退。
+ * 対象：Gardi / GardiElite / Screw / GabuKing / MOBVR / MOBGiant
  * ================================ */
 (function patchMeleeAI(){
-  // 共通ヘルパ：間合いバンドに基づくVX・小行動生成
-  function steerToEngage(self, player, cfg, dt){
+  function steerSimple(self, player, cfg, dt){
     const dx = player.x - self.x;
     const adx = Math.abs(dx);
     const dir = dx>=0? 1 : -1;
     self.face = dir;
 
-    // 近距離で“揺さぶり”を入れて単調にならないように
-    self._aiT = (self._aiT||0) + dt;
-
-    // 状態の既存制御が優先（攻撃/スキル/ult/ダッシュ中は触らない）
+    // 攻撃や特殊中は触らない
     if(['atk','skill','ult','dash','charge','recover','post','hurt'].includes(self.state)) return;
 
-    // 超遠距離 → 走って接近
-    if(adx > cfg.engageFar){
-      self.vx = dir * cfg.run;
-      return;
-    }
-    // 少し遠い → じわじわ接近
-    if(adx > cfg.engageNear){
-      // ときどき小ジャンプを混ぜる
-      self.vx = dir * cfg.walk;
-      if(self.onGround && Math.random() < cfg.smallHopRate){ self.vy = -JUMP_V * cfg.smallHopV; }
-      return;
-    }
-    // 近距離帯（ここでインファイト維持）
-    // ときどき微後退→再接近、軽い横揺さぶり
-    if(adx <= cfg.engageNear){
-      // ほんの少し引いて間合いを作る（後退）
-      if(!self._backstepT && Math.random()<cfg.backstepRate){
-        self._backstepT = cfg.backstepDur; // 後退時間
-      }
-      if(self._backstepT){
-        self._backstepT = Math.max(0, self._backstepT - dt);
-        self.vx = -dir * cfg.backstepSpd;
-        // ミニジャンプ混ぜて“下がる”感じ
-        if(self.onGround && Math.random()<0.15){ self.vy = -JUMP_V * 0.35; }
+    // 基本は前進：遠ければ run、少し遠ければ walk
+    if(adx > cfg.near){
+      self.vx = dir * (adx > cfg.far ? cfg.run : cfg.walk);
+      if(self.onGround && Math.random() < cfg.hopRate){ self.vy = -JUMP_V * cfg.hopV; }
+    } else {
+      // 近距離帯：基本は押し続け、稀にだけ短いバクステ
+      if(!self._bkT && Math.random() < cfg.bkRate){ self._bkT = cfg.bkDur; }
+      if(self._bkT){
+        self._bkT = Math.max(0, self._bkT - dt);
+        self.vx = -dir * cfg.bkSpd;
+        if(self.onGround && Math.random() < 0.05){ self.vy = -JUMP_V*0.3; }
       } else {
-        // じり寄り（ゼロにしない）
-        self.vx = dir * cfg.stickSpd;
-        // 左右ブレ
-        if(Math.sin(self._aiT*cfg.lateralOsc) > 0.7) self.vx *= 1.15;
+        self.vx = dir * cfg.stick; // ほんの少し押す
       }
+    }
+
+    // 表示用 state
+    if(!['atk','skill','ult','dash','charge','recover','post','hurt'].includes(self.state)){
+      if(self.onGround) self.state = (Math.abs(self.vx)>1? 'run':'idle'); else self.state='jump';
     }
   }
 
-  // キャラごとの味付け（スピードや帯）
+  // 離れすぎない控えめ設定
   const PRESETS = {
-    slow:   { walk:90,  run:220, stickSpd:65, engageNear:110, engageFar:260, smallHopRate:0.12, smallHopV:0.35, backstepRate:0.18, backstepDur:0.22, backstepSpd:180, lateralOsc:2.4 },
-    mid:    { walk:120, run:300, stickSpd:85, engageNear:120, engageFar:300, smallHopRate:0.16, smallHopV:0.42, backstepRate:0.20, backstepDur:0.24, backstepSpd:210, lateralOsc:2.8 },
-    fast:   { walk:150, run:360, stickSpd:110,engageNear:130, engageFar:340, smallHopRate:0.18, smallHopV:0.48, backstepRate:0.22, backstepDur:0.26, backstepSpd:240, lateralOsc:3.2 }
+    slow: { walk:90,  run:210, near:115, far:260, stick:55, hopRate:0.04, hopV:0.32, bkRate:0.035, bkDur:0.12, bkSpd:170 },
+    mid:  { walk:120, run:280, near:120, far:300, stick:70, hopRate:0.05, hopV:0.36, bkRate:0.040, bkDur:0.12, bkSpd:185 },
+    fast: { walk:150, run:340, near:125, far:330, stick:85, hopRate:0.06, hopV:0.40, bkRate:0.045, bkDur:0.12, bkSpd:200 }
   };
 
-  // パッチ共通ロジック
-  function wrapUpdate(Ctor, picker){
+  function wrapUpdate(Ctor, pick){
     if(!Ctor || !Ctor.prototype || !Ctor.prototype.update) return;
     const orig = Ctor.prototype.update;
     Ctor.prototype.update = function(dt, player){
-      // 既存updateの前に“消失保険”
-      if(this.x < STAGE_LEFT - 200)  this.x = STAGE_LEFT + 40;
-      if(this.x > STAGE_RIGHT + 200) this.x = STAGE_RIGHT - 40;
-
-      // まず元のupdate実行（攻撃選択や弾の処理を壊さない）
+      // まず元の挙動（攻撃選択など）
       orig.call(this, dt, player);
-
-      // 元updateで攻撃中/特殊中ならスキップ
-      if(['atk','skill','ult','dash','charge','recover','post','hurt'].includes(this.state)) return;
-
-      // ここでステアのみ上書き（vx/vyの“寄り”を補正）
-      const cfg = picker(this);
-      steerToEngage(this, player, cfg, dt);
-
-      // 通常状態のstate再設定（描画切替のため）
-      if(this.onGround) this.state = (Math.abs(this.vx)>1? 'run':'idle');
-      else this.state = 'jump';
+      // ステアだけ後段で補正
+      const cfg = pick(this);
+      steerSimple(this, player, cfg, dt);
     };
   }
 
-  // 各キャラにプリセットを割当
   wrapUpdate(Gardi,       ()=>PRESETS.slow);
   wrapUpdate(GardiElite,  ()=>PRESETS.slow);
   wrapUpdate(Screw,       ()=>PRESETS.fast);
   wrapUpdate(GabuKing,    ()=>PRESETS.mid);
   wrapUpdate(MOBGiant,    ()=>PRESETS.mid);
   wrapUpdate(MOBVR,       (self)=>{
-    // 変身後は少し早め
     const evolved = (self._evolved===true || self.state==='evolved');
     return evolved ? PRESETS.fast : PRESETS.mid;
   });
-
 })();
 
 /* ================================
