@@ -23,7 +23,8 @@ canvas#game{display:block;width:100%;height:100%}
 .btn.ult    {background:#2b2030} /* U */
 .btn.jump   {background:#25202b} /* × */
 .btn.pskill {background:#1b2a1f} /* P */
-.btn.air    {background:#2a1b1f} /* AIR */
+.btn.air    {background:#2a1b1f} /* A */
+.btn.ult2   {background:#352032} /* U2 */
 
 header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex;gap:10px;align-items:center;z-index:10;pointer-events:none}
 .chip{background:var(--hud-bg);outline:1px solid #0e1522;border-radius:12px;padding:6px 10px;font-weight:600;font-size:12px;display:flex;gap:8px;align-items:center}
