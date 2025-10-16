@@ -70,9 +70,9 @@ class Assets{
 class Input{
   constructor(){
     this.left=0; this.right=0; this.jump=false;
-    this.btn={a1:false,a2:false,skill:false,skill2:false,ult:false, p:false, air:false};
-    this.prev={a1:false,a2:false,skill:false,skill2:false,ult:false,p:false,air:false};
-    this.edge={a1:false,a2Press:false,skillPress:false,skillRelease:false,skill2:false,ultPress:false,ultRelease:false, p:false, air:false};
+    this.btn={a1:false,a2:false,skill:false,skill2:false,ult:false, ult2:false, p:false, air:false};
+    this.prev={a1:false,a2:false,skill:false,skill2:false,ult:false,ult2:false,p:false,air:false};
+    this.edge={a1:false,a2Press:false,skillPress:false,skillRelease:false,skill2:false,ultPress:false,ultRelease:false, ult2:false, p:false, air:false};
     this.skillCharging=false; this.skillChargeT=0;
     this.ultCharging=false; this.ultChargeT=0;
     this._initKeyboard(); this._initTouch();
@@ -88,6 +88,7 @@ class Input{
       if(k==='l'||k==='L'){ if(!this.btn.skill){ this.btn.skill=true; this.edge.skillPress=true; this.skillCharging=true; this.skillChargeT=0; } }
       if(k==='o'||k==='O'){ this.edge.skill2=true; this.btn.skill2=true; }
       if(k==='u'||k==='U'){ if(!this.btn.ult){ this.btn.ult=true; this.edge.ultPress=true; this.ultCharging=true; this.ultChargeT=0; } }
+      if(k==='y'||k==='Y'){ if(!this.btn.ult2){ this.btn.ult2=true; this.edge.ult2=true; } }  // ULT2 直接発動
       if(k==='p'||k==='P'){ if(!this.btn.p){ this.btn.p=true; this.edge.p=true; } }
       if(k==='i'||k==='I'){ if(!this.btn.air){ this.btn.air=true; this.edge.air=true; } }
     },{passive:false});
@@ -100,6 +101,7 @@ class Input{
       if(k==='l'||k==='L'){ if(this.btn.skill){ this.btn.skill=false; this.edge.skillRelease=true; this.skillCharging=false; } }
       if(k==='o'||k==='O') this.btn.skill2=false;
       if(k==='u'||k==='U'){ if(this.btn.ult){ this.btn.ult=false; this.ultCharging=false; this.edge.ultRelease=true; } }
+      if(k==='y'||k==='Y') this.btn.ult2=false;
       if(k==='p'||k==='P') this.btn.p=false;
       if(k==='i'||k==='I') this.btn.air=false;
     },{passive:false});
@@ -141,6 +143,7 @@ class Input{
     stickArea.addEventListener('touchcancel',e=>{e.preventDefault();onEnd(e);},{passive:false});
     const bind=(id,onDown,onUp)=>{
       const el=document.getElementById(id);
+      if(!el) return;
       el.addEventListener('pointerdown',e=>{e.preventDefault(); onDown(); el.setPointerCapture?.(e.pointerId);});
       el.addEventListener('pointerup',  e=>{e.preventDefault(); onUp();   el.releasePointerCapture?.(e.pointerId);});
       el.addEventListener('pointercancel',()=>{ onUp(); });
@@ -153,16 +156,17 @@ class Input{
     bind('btnSK2', ()=>{ this.edge.skill2=true; this.btn.skill2=true; }, ()=>{ this.btn.skill2=false; });
     bind('btnULT', ()=>{ if(!this.btn.ult){ this.btn.ult=true; this.edge.ultPress=true; this.ultCharging=true; this.ultChargeT=0; } },
                    ()=>{ if(this.btn.ult){ this.btn.ult=false; this.ultCharging=false; this.edge.ultRelease=true; } });
+    bind('btnULT2', ()=>{ if(!this.btn.ult2){ this.btn.ult2=true; this.edge.ult2=true; } }, ()=>{ this.btn.ult2=false; });
     bind('btnJMP', ()=>{ this.jump=true; }, ()=>{ /* release */ });
 
-    // 追加：P / AIR
+    // 追加：P / AIR（A）
     bind('btnP',   ()=>{ if(!this.btn.p){ this.btn.p=true; this.edge.p=true; } }, ()=>{ this.btn.p=false; });
     bind('btnAIR', ()=>{ if(!this.btn.air){ this.btn.air=true; this.edge.air=true; } }, ()=>{ this.btn.air=false; });
   }
   consumeJump(){ const j=this.jump; this.jump=false; return j; }
   beginFrame(){
     this.edge.a1 = this.btn.a1 && !this.prev.a1;
-    this.prev.a1=this.btn.a1; this.prev.a2=this.btn.a2; this.prev.skill=this.btn.skill; this.prev.skill2=this.btn.skill2; this.prev.ult=this.btn.ult;
+    this.prev.a1=this.btn.a1; this.prev.a2=this.btn.a2; this.prev.skill=this.btn.skill; this.prev.skill2=this.btn.skill2; this.prev.ult=this.btn.ult; this.prev.ult2=this.btn.ult2;
     this.prev.p=this.btn.p; this.prev.air=this.btn.air;
   }
 }
