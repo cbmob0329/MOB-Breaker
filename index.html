@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-  <title>MOB Side Action – Rev32 FULL (MOBA stage + GabuKing/Screw + Edge Walls + ULT test)</title>
+  <title>MOB Side Action – Player Rev (Skill2/3/4 + ULT2)</title>
   <meta name="theme-color" content="#0b0c10" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -20,6 +20,8 @@
         </header>
         <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
       </div>
+
+      <!-- 操作系：右側を 4x2 に拡張（A1/A2/SK1/SK2/ULT/JUMP に加え P / AIR を追加） -->
       <div class="controls">
         <div class="stickArea" id="stickArea" aria-label="Move Stick">
           <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
@@ -29,8 +31,13 @@
           <button class="btn attack2" id="btnA2"  aria-label="攻撃② ▲">▲</button>
           <button class="btn skill1"  id="btnSK"  aria-label="スキル① ●">●</button>
           <button class="btn skill2"  id="btnSK2" aria-label="スキル② ◎">◎</button>
+
           <button class="btn ult"     id="btnULT" aria-label="ULT U">U</button>
           <button class="btn jump"    id="btnJMP" aria-label="ジャンプ ×">×</button>
+
+          <!-- 追加：スキル③（P） / スキル④（AIR） -->
+          <button class="btn pskill"  id="btnP"   aria-label="スキル③ P">P</button>
+          <button class="btn air"     id="btnAIR" aria-label="スキル④ AIR">AIR</button>
         </div>
       </div>
     </div>
@@ -38,16 +45,16 @@
 </div>
 
 <!-- 読み込み順が超重要： -->
-<!-- 1) 共通コア（ユーティリティ・基底クラス） -->
+<!-- 1) 共通コア（ユーティリティ・基底クラス・入力） -->
 <script src="script-core.js"></script>
 
-<!-- 2) 既存の敵（WaruMOB / IceRobo / …）※そのまま -->
+<!-- 2) 既存の敵（WaruMOB / IceRobo / …） -->
 <script src="actors.js"></script>
 
-<!-- 3) 新プレイヤー（ここで Player だけ上書き差し替え） -->
+<!-- 3) 新プレイヤー（スキル2/3/4 + ULT2 実装版） -->
 <script src="actors-player.js"></script>
 
-<!-- 4) World / Game / メインループ -->
+<!-- 4) World / Game / メインループ（画像リストなど更新） -->
 <script src="game.js"></script>
 </body>
 </html>
