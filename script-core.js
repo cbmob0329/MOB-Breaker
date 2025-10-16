@@ -11,7 +11,7 @@ const now=()=>performance.now();
 const rectsOverlap=(a,b)=> Math.abs(a.x-b.x)*2 < (a.w+b.w) && Math.abs(a.y-b.y)*2 < (a.h+b.h);
 
 const STAGE_LEFT = 0;
-const STAGE_RIGHT = 2200; // 横の広さ
+const STAGE_RIGHT = 2200;
 const WALL_PAD = 12;
 
 const GRAV=2000, MOVE=260, JUMP_V=760, MAX_FALL=1200;
@@ -70,9 +70,9 @@ class Assets{
 class Input{
   constructor(){
     this.left=0; this.right=0; this.jump=false;
-    this.btn={a1:false,a2:false,skill:false,skill2:false,ult:false};
-    this.prev={a1:false,a2:false,skill:false,skill2:false,ult:false};
-    this.edge={a1:false,a2Press:false,skillPress:false,skillRelease:false,skill2:false,ultPress:false,ultRelease:false};
+    this.btn={a1:false,a2:false,skill:false,skill2:false,ult:false, p:false, air:false};
+    this.prev={a1:false,a2:false,skill:false,skill2:false,ult:false,p:false,air:false};
+    this.edge={a1:false,a2Press:false,skillPress:false,skillRelease:false,skill2:false,ultPress:false,ultRelease:false, p:false, air:false};
     this.skillCharging=false; this.skillChargeT=0;
     this.ultCharging=false; this.ultChargeT=0;
     this._initKeyboard(); this._initTouch();
@@ -88,6 +88,8 @@ class Input{
       if(k==='l'||k==='L'){ if(!this.btn.skill){ this.btn.skill=true; this.edge.skillPress=true; this.skillCharging=true; this.skillChargeT=0; } }
       if(k==='o'||k==='O'){ this.edge.skill2=true; this.btn.skill2=true; }
       if(k==='u'||k==='U'){ if(!this.btn.ult){ this.btn.ult=true; this.edge.ultPress=true; this.ultCharging=true; this.ultChargeT=0; } }
+      if(k==='p'||k==='P'){ if(!this.btn.p){ this.btn.p=true; this.edge.p=true; } }
+      if(k==='i'||k==='I'){ if(!this.btn.air){ this.btn.air=true; this.edge.air=true; } }
     },{passive:false});
     addEventListener('keyup',(e)=>{
       const k=e.key;
@@ -98,6 +100,8 @@ class Input{
       if(k==='l'||k==='L'){ if(this.btn.skill){ this.btn.skill=false; this.edge.skillRelease=true; this.skillCharging=false; } }
       if(k==='o'||k==='O') this.btn.skill2=false;
       if(k==='u'||k==='U'){ if(this.btn.ult){ this.btn.ult=false; this.ultCharging=false; this.edge.ultRelease=true; } }
+      if(k==='p'||k==='P') this.btn.p=false;
+      if(k==='i'||k==='I') this.btn.air=false;
     },{passive:false});
   }
   _initTouch(){
@@ -150,11 +154,16 @@ class Input{
     bind('btnULT', ()=>{ if(!this.btn.ult){ this.btn.ult=true; this.edge.ultPress=true; this.ultCharging=true; this.ultChargeT=0; } },
                    ()=>{ if(this.btn.ult){ this.btn.ult=false; this.ultCharging=false; this.edge.ultRelease=true; } });
     bind('btnJMP', ()=>{ this.jump=true; }, ()=>{ /* release */ });
+
+    // 追加：P / AIR
+    bind('btnP',   ()=>{ if(!this.btn.p){ this.btn.p=true; this.edge.p=true; } }, ()=>{ this.btn.p=false; });
+    bind('btnAIR', ()=>{ if(!this.btn.air){ this.btn.air=true; this.edge.air=true; } }, ()=>{ this.btn.air=false; });
   }
   consumeJump(){ const j=this.jump; this.jump=false; return j; }
   beginFrame(){
     this.edge.a1 = this.btn.a1 && !this.prev.a1;
     this.prev.a1=this.btn.a1; this.prev.a2=this.btn.a2; this.prev.skill=this.btn.skill; this.prev.skill2=this.btn.skill2; this.prev.ult=this.btn.ult;
+    this.prev.p=this.btn.p; this.prev.air=this.btn.air;
   }
 }
 
@@ -189,7 +198,6 @@ class CharacterBase{
     this.vy = Math.min(this.vy + GRAV*dt, MAX_FALL);
     this.x += this.vx*dt; this.y += this.vy*dt;
 
-    // 横壁クランプ
     const leftBound  = STAGE_LEFT  + WALL_PAD + this.w*0.4;
     const rightBound = STAGE_RIGHT - WALL_PAD - this.w*0.4;
     if(this.x < leftBound){ this.x = leftBound; this.vx = Math.max(this.vx, 0); }
@@ -236,6 +244,7 @@ class Projectile{
 class EnergyBall extends Projectile{
   constructor(world,x,y,dir,img,basePower=20,chargeSec=0, incrementPerTenth=1){
     super(world,x,y,dir,img,basePower);
+    const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
     this.chargeSec = clamp(chargeSec,0,2.0);
     this.power = basePower + Math.floor(this.chargeSec / 0.1) * incrementPerTenth;
     const sizeMul = 1 + 0.55*(this.chargeSec/2);
@@ -247,6 +256,7 @@ class EnergyBall extends Projectile{
 class UltBlast extends Projectile{
   constructor(world,x,y,dir,img,chargeSec){
     super(world,x,y,dir,img,300);
+    const lerp=(a,b,t)=>a+(b-a)*t; const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
     const cs = clamp(chargeSec,0,3.0);
     const sizeMul = lerp(0.35, 1.6, clamp(cs/3.0,0,1));
     this.w = Math.round(60*sizeMul);
@@ -275,7 +285,7 @@ class GroundSpike extends Projectile{
 }
 
 /* ================================
- * Export shared pieces (for actors.js / game.js)
+ * Export shared pieces
  * ================================ */
 window.__GamePieces__ = {
   Effects, Assets, Input, CharacterBase,
