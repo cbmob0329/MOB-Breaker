@@ -1,4 +1,4 @@
-// actors-player.js — ULT独立進行 + S2はULT中CD無視 + A1確実発動
+// actors-player.js — Skill2/3/4 + ULT2 実装版（フル差し替え）
 (function(){
 'use strict';
 
@@ -31,26 +31,18 @@ class Player extends CharacterBase{
     this.maxJumps=2; this.jumpsLeft=this.maxJumps;
 
     // Combo / input
-    this.comboStep=0;
-    this.comboGraceT=0;            // 猶予
-    this.comboGraceMax=0.24;
-    this.bufferA1=false;
-    this.a2LockoutT=0;
+    this.comboStep=0; this.comboGraceT=0; this.comboGraceMax=0.24;
+    this.bufferA1=false; this.a2LockoutT=0;
 
     // CDs
-    this.skillCDT=0; this.skill2CDT=0; this.ultCDT=0;
+    this.skillCDT=0; this.skill2CDT=0; this.skill3CDT=0; this.skill4CDT=0; this.ultCDT=0;
 
     // SA
     this.saT=0;
 
-    // ULT scheduler
-    this._inULT=false;
-    this._ultQueue=null;           // ['A1R','S1','S2']
-    this._ultSpeed=2.2;
-    this._ultPhase='';
-    this._ultTimer=0;              // 監視（保険）
-    this._ultTimeLimit=8.0;
-    this._ultLockInput=false;
+    // ULT scheduler（既存のULT1を保持）
+    this._inULT=false; this._ultQueue=null; this._ultSpeed=2.2; this._ultPhase='';
+    this._ultTimer=0; this._ultTimeLimit=8.0; this._ultLockInput=false;
 
     this.frames={
       idle:['M1-1.png'],
@@ -60,7 +52,13 @@ class Player extends CharacterBase{
       spin:['h1.png','h2.png','h3.png','h4.png'],
       chaseJump:'J.png',
       y1:'Y1.png', y2:'Y2.png', y3:'Y3.png', y4:'Y4.png',
-      ul1:'UL1.PNG', ul2:'UL2.PNG', ul3:'UL3.png'
+      // 新リソース（Skill2/3/4）
+      tms1:'tms1.png', tms2:'tms2.png', tms3:'tms3.png', tms4:'tms4.png', tms5:'tms5.png', tms6:'tms6.png',
+      dr1:'dr1.png', dr2:'dr2.png', dr3:'dr3.png', dr4:'dr4.png', dr5:'dr5.png', dr6:'dr6.png', dr7:'dr7.png', dr8:'dr8.png',
+      air1:'air1.png', air2:'air2.png', air3:'air3.png', air4:'air4.png', air5:'air5.png',
+      // ULT1/2
+      ul1:'UL1.PNG', ul2:'UL2.PNG', ul3:'UL3.png',
+      pk1:'PK1.png', pk2:'PK2.png', pk3:'PK3.png', pk4:'PK4.png', pk5:'PK5.png', pk6:'PK6.png', pk7:'PK7.png', pk8:'PK8.png'
     };
     this.overhead=this._createOverheadGauge();
     document.querySelector('.gamewrap').appendChild(this.overhead.root);
@@ -91,9 +89,10 @@ class Player extends CharacterBase{
 
   /* ---------- hitbox ---------- */
   currentHitbox(){
-    if(!(this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='ult') || !this._actionSeq) return null;
+    if(!(this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='skill3'||this.state==='skill4'||this.state==='ult') || !this._actionSeq) return null;
     const cur=this._actionSeq[this._actionIndex]; if(!cur) return null;
-    if(this.state==='skill' || this.state==='skill2' || this.state==='ult'){
+    // スキル＆ULTはやや大きめの矩形
+    if(this.state==='skill'||this.state==='skill2'||this.state==='skill3'||this.state==='skill4'||this.state==='ult'){
       const W=86,H=64; const x=this.x + this.face*(this.w*0.2);
       return {x, y:this.y, w:W, h:H, power:cur.power||0, dir:this.face, lift:cur.lift||0, kbMul:cur.kbMul||1.6, kbuMul:cur.kbuMul||1.3};
     }
@@ -106,8 +105,7 @@ class Player extends CharacterBase{
 
   /* ---------- cleanup ---------- */
   _abortAllActions(){
-    this._inULT=false;
-    this._ultQueue=null; this._ultPhase=''; this._ultTimer=0; this._ultLockInput=false;
+    this._inULT=false; this._ultQueue=null; this._ultPhase=''; this._ultTimer=0; this._ultLockInput=false;
     this._actionSeq=null; this._actionIndex=0; this._actionTime=0;
     this.bufferA1=false; this.comboStep=0; this.comboGraceT=0; this.a2LockoutT=0;
     this.saT=0; this.vx=0; this.state='idle';
@@ -118,32 +116,36 @@ class Player extends CharacterBase{
   update(dt,input,world,enemies){
     input.beginFrame(); this._posOverhead();
 
-    // ULTは最初に進める（stateがどうであれ）
+    // ULT（常時先行）
     if(this._inULT){
-      this.state='ult';                  // 強制保持
-      this._tickULT(dt);                 // 必ず毎フレーム進行
-      // 入力はロック
-      input.edge.a1=input.edge.a2Press=input.edge.skillRelease=input.edge.skill2=input.edge.ultPress=input.edge.ultRelease=false;
-      input.btn.a1=input.btn.a2=input.btn.skill=input.btn.skill2=input.btn.ult=false;
+      this.state='ult';
+      this._tickULT(dt);
+      // 入力ロック
+      input.edge.a1=input.edge.a2Press=input.edge.skillRelease=input.edge.skill2=input.edge.p=input.edge.air=input.edge.ultPress=input.edge.ultRelease=false;
+      input.btn.a1=input.btn.a2=input.btn.skill=input.btn.skill2=input.btn.p=input.btn.air=input.btn.ult=false;
     }
 
     if(this.saT>0) this.saT=Math.max(0,this.saT-dt);
     if(this.a2LockoutT>0) this.a2LockoutT=Math.max(0,this.a2LockoutT-dt);
 
-    // コンボ猶予
     if(this.comboGraceT>0){
       this.comboGraceT=Math.max(0,this.comboGraceT-dt);
       if(this.comboGraceT===0 && this.state==='idle'){ this.comboStep=0; }
     }
 
-    // 残骸掃除
-    if(this.state!=='atk' && this.state!=='skill' && this.state!=='skill2' && this.state!=='ult' && this._actionSeq){ this._actionSeq=null; }
+    if(this.state!=='atk' && this.state!=='skill' && this.state!=='skill2' && this.state!=='skill3' && this.state!=='skill4' && this.state!=='ult' && this._actionSeq){ this._actionSeq=null; }
 
-    // CD UI更新
-    const skBtn=document.getElementById('btnSK'); const sk2Btn=document.getElementById('btnSK2'); const ultBtn=document.getElementById('btnULT');
-    if(this.skillCDT>0){ this.skillCDT=Math.max(0,this.skillCDT-dt); skBtn.setAttribute('disabled',''); } else skBtn.removeAttribute('disabled');
-    if(this.skill2CDT>0){ this.skill2CDT=Math.max(0,this.skill2CDT-dt); sk2Btn.setAttribute('disabled',''); } else sk2Btn.removeAttribute('disabled');
-    if(this.ultCDT>0){ this.ultCDT=Math.max(0,this.ultCDT-dt); ultBtn.setAttribute('disabled',''); } else ultBtn.removeAttribute('disabled');
+    // CD UI（disable）
+    const skBtn=document.getElementById('btnSK');
+    const sk2Btn=document.getElementById('btnSK2');
+    const pBtn=document.getElementById('btnP');
+    const airBtn=document.getElementById('btnAIR');
+    const ultBtn=document.getElementById('btnULT');
+    if(this.skillCDT>0){ this.skillCDT=Math.max(0,this.skillCDT-dt); skBtn?.setAttribute('disabled',''); } else skBtn?.removeAttribute('disabled');
+    if(this.skill2CDT>0){ this.skill2CDT=Math.max(0,this.skill2CDT-dt); sk2Btn?.setAttribute('disabled',''); } else sk2Btn?.removeAttribute('disabled');
+    if(this.skill3CDT>0){ this.skill3CDT=Math.max(0,this.skill3CDT-dt); pBtn?.setAttribute('disabled',''); } else pBtn?.removeAttribute('disabled');
+    if(this.skill4CDT>0){ this.skill4CDT=Math.max(0,this.skill4CDT-dt); airBtn?.setAttribute('disabled',''); } else airBtn?.removeAttribute('disabled');
+    if(this.ultCDT>0){ this.ultCDT=Math.max(0,this.ultCDT-dt); ultBtn?.setAttribute('disabled',''); } else ultBtn?.removeAttribute('disabled');
 
     if(this.dead){
       this.updatePhysics(dt);
@@ -152,7 +154,7 @@ class Player extends CharacterBase{
       return;
     }
 
-    /* ===== Skill1：8回転固定（高速） ===== */
+    /* ===== Skill1（既存） ===== */
     if(!this._inULT){
       if(input.edge.skillRelease && this.skillCDT<=0){
         input.edge.skillRelease=false;
@@ -162,16 +164,39 @@ class Player extends CharacterBase{
       this._showGauge(false);
     }
 
-    /* ===== ULT起動（チャージなし） ===== */
-    if(!this._inULT && this.ultCDT<=0 && (input.edge.ultPress || input.edge.ultRelease)){
-      input.edge.ultPress=false; input.edge.ultRelease=false; input.btn.ult=false;
-      this._startULT_RushCombo();
+    /* ===== Skill2（◎）：tms1→…→tms6 を3ループ、全Hit（10）/ tms6は20＆強吹っ飛び ===== */
+    if(!this._inULT && input.edge.skill2 && this.skill2CDT<=0){
+      input.edge.skill2=false;
+      this._startSkill2_TornadoTriple();
     }
 
-    // 実行中（攻撃・スキル・ULTフェーズ）
-    if(this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='ult'){
+    /* ===== Skill3（P）：dr1-4 イントロ → dr5-8 3ループ、全Hit（15）・吹っ飛び弱 ===== */
+    if(!this._inULT && input.edge.p && this.skill3CDT<=0){
+      input.edge.p=false;
+      this._startSkill3_DrillLoop();
+    }
+
+    /* ===== Skill4（AIR）：列挙シーケンス、全Hit（20）・強吹っ飛び ===== */
+    if(!this._inULT && input.edge.air && this.skill4CDT<=0){
+      input.edge.air=false;
+      this._startSkill4_AirRush();
+    }
+
+    /* ===== ULT：短押し=ULT1、長押し(>=1.0s)=ULT2 ===== */
+    if(!this._inULT && this.ultCDT<=0 && (input.edge.ultPress || input.edge.ultRelease)){
+      if(input.edge.ultRelease){
+        const t = input.ultChargeT||0;
+        input.edge.ultPress=false; input.edge.ultRelease=false; input.btn.ult=false;
+        if(t>=1.0){ this._startULT2_PKCombo(); } else { this._startULT_RushCombo(); }
+        input.ultChargeT=0;
+      }
+    }
+
+    // 実行中のアクション
+    if(this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='skill3'||this.state==='skill4'||this.state==='ult'){
       const hb=this.currentHitbox();
       if(hb){
+        // 敵に当てる
         for(const e of enemies){
           if(!e || e.dead || e.invulnT>0) continue;
           if(rectsOverlap({x:hb.x,y:hb.y,w:hb.w,h:hb.h}, e.aabb())){
@@ -186,18 +211,15 @@ class Player extends CharacterBase{
       return;
     }
 
-    // === 入力（通常時のみ） ===
+    // === 通常時の入力 ===
     if(!this._inULT){
-      // A1：エッジ or 押しっぱ で起動（最優先）
+      // A1（最優先）
       if(input.edge.a1 || input.btn.a1){
-        // コンボ詰みなら即リセットして開始
         if(this.comboStep>=3 && this.comboGraceT<=0){ this.comboStep=0; }
         this.bufferA1=false;
         this._startA1();
         return;
       }
-      // 他入力
-      if(input.edge.skill2 && this.skill2CDT<=0){ input.edge.skill2=false; this._startSkill2_BiggerDust_Persistent(); return; }
       if(input.edge.a2Press && this.a2LockoutT<=0){ input.edge.a2Press=false; this._startA2(); return; }
     }
 
@@ -207,7 +229,7 @@ class Player extends CharacterBase{
       this.vx = ax!==0 ? (ax>0?MOVE:-MOVE) : 0;
       if(input.consumeJump() && this.jumpsLeft>0){ this.vy=-JUMP_V; this.onGround=false; this.jumpsLeft--; }
     } else {
-      this.vx=0; // ULT中は移動しない
+      this.vx=0;
     }
 
     this.updatePhysics(dt);
@@ -217,7 +239,7 @@ class Player extends CharacterBase{
     world.updateTimer(dt);
   }
 
-  /* ---------- 通常アクション ---------- */
+  /* ---------- 通常アクション（据え置き） ---------- */
   _startA1(){
     this.state='atk'; this.animT=0; this.comboStep=Math.min(this.comboStep+1,3);
     const seq=[ {kind:'prep',dur:0.08,frame:'k1prep',fx:80,power:0} ];
@@ -226,7 +248,7 @@ class Player extends CharacterBase{
     else if(this.comboStep===3){ frame='k1c'; power=12; fx=200; }
     seq.push({kind:'hit',dur:0.20,frame,fx,power, kbMul:1.0, kbuMul:1.0});
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
-    this.comboGraceT=0; // 次段受付は終了時に付与
+    this.comboGraceT=0;
   }
   _startA2(){
     this.state='atk'; this.animT=0;
@@ -248,7 +270,7 @@ class Player extends CharacterBase{
     this.a2LockoutT=0.6;
   }
 
-  // S1：8回転＋高速
+  // S1：8回転＋高速（据え置き）
   _startSkill1FixedTurns(turns=8, opts={speed:1.0}){
     this.state='skill'; this.animT=0; this.skillCDT=5.0;
     const frames=this.frames.spin;
@@ -266,41 +288,57 @@ class Player extends CharacterBase{
     this._showGauge(false);
   }
 
-  // S2：通常（大煙・持続）
-  _startSkill2_BiggerDust_Persistent(){
-    if(this.skill2CDT>0) return;
-    this._startSkill2Common(/*setCD=*/true);
-  }
-  // S2：ULT用（CD無視・必ず出す）
-  _startSkill2ForULT(){
-    this._startSkill2Common(/*setCD=*/false);
-  }
-  _startSkill2Common(setCD){
-    this.state='skill2'; this.animT=0;
-    if(setCD) this.skill2CDT=10.0;
-    this._skill2SAT = 1.6;
-    this._actionSeq=[
-      {kind:'hit', dur:0.12, frame:'y1', fx:30, power:5},
-      {kind:'hit', dur:0.12, frame:'y2', fx:30, power:5},
-      {kind:'hit', dur:0.12, frame:'y3', fx:30, power:5},
-      {kind:'hit', dur:0.12, frame:'y4', fx:0,  power:10},
-      {kind:'emit',dur:1.00,  frame:'y4', fx:0,  power:0}
-    ];
-    this._actionIndex=0; this._actionTime=0;
-
-    const kem=this.world.assets.img('kem.png');
-    if(kem){
-      const off=72;
-      const L=new GroundSpike(this.world, this.x - off, -1, kem);
-      const R=new GroundSpike(this.world, this.x + off,  1, kem);
-      [L,R].forEach(sp=>{ sp.w=68; sp.maxH=140; sp.life=1.15; makePersistentHitbox(sp); });
-      (this.world._skillBullets||(this.world._skillBullets=[])).push(L,R);
-      this._activeSpikes=[L,R];
-      this.effects.shake(0.14,7);
+  /* ====== 新規：Skill2（◎） 高速回転（tms1→…→tms6）x3 ====== */
+  _startSkill2_TornadoTriple(){
+    this.state='skill2'; this.animT=0; this.skill2CDT=8.0;
+    const fs=['tms1','tms2','tms3','tms4','tms5','tms6'];
+    const seq=[];
+    for(let loop=0; loop<3; loop++){
+      for(let i=0;i<fs.length;i++){
+        const hard = (fs[i]==='tms6');
+        seq.push({
+          kind:'hit',
+          dur: hard?0.12:0.08,
+          frame:fs[i],
+          fx: hard? 220: 140,
+          power: hard? 20: 10,
+          lift: hard? 1.0: 0.2,
+          kbMul: hard? 1.25: 0.9,
+          kbuMul: hard? 1.25: 0.9
+        });
+      }
     }
+    this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
+    this.saT = 0.2;
   }
 
-  /* ===== ULT：A1R → S1 → S2（CD無視） ===== */
+  /* ====== 新規：Skill3（P） ドリル：dr1-4(導入) → dr5-8 x3 ====== */
+  _startSkill3_DrillLoop(){
+    this.state='skill3'; this.animT=0; this.skill3CDT=10.0;
+    const intro=['dr1','dr2','dr3','dr4'];
+    const loop=['dr5','dr6','dr7','dr8'];
+    const seq=[];
+    for(const f of intro){ seq.push({kind:'hit',dur:0.08,frame:f,fx:120,power:15, lift:0.2, kbMul:0.85, kbuMul:0.85}); }
+    for(let r=0;r<3;r++){
+      for(const f of loop){ seq.push({kind:'hit',dur:0.08,frame:f,fx:150,power:15, lift:0.25, kbMul:0.85, kbuMul:0.85}); }
+    }
+    this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
+    this.saT=0.18;
+  }
+
+  /* ====== 新規：Skill4（AIR） 高速技：列挙・全Hit（20）強め吹き飛び ====== */
+  _startSkill4_AirRush(){
+    this.state='skill4'; this.animT=0; this.skill4CDT=6.0;
+    const order=['air1','air2','air3','air4','air5','air2','air3','air4','air5','air2','air3','air4','air5'];
+    const seq=[];
+    for(const f of order){
+      seq.push({kind:'hit', dur:0.06, frame:f, fx:200, power:20, lift:0.8, kbMul:1.2, kbuMul:1.2});
+    }
+    this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
+    this.saT=0.22;
+  }
+
+  /* ===== ULT1（既存：Rush A1R→S1→S2） ===== */
   _startULT_RushCombo(){
     this._inULT=true;
     this._ultQueue=['A1R','S1','S2'];
@@ -316,7 +354,7 @@ class Player extends CharacterBase{
     if(!next){ this._finishULT(); return; }
     if(next==='A1R'){ this._startA1RushSequence(); return; }
     if(next==='S1'){ this._startSkill1FixedTurns(8, {speed:1.5}); return; }
-    if(next==='S2'){ this._startSkill2ForULT(); return; } // ★CD無視で必ず出す
+    if(next==='S2'){ this._startSkill2_TornadoTriple(); return; }
   }
   _startA1RushSequence(){
     this.state='atk'; this.animT=0;
@@ -329,30 +367,47 @@ class Player extends CharacterBase{
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
   _tickULT(dt){
-    this.saT = Math.max(this.saT, 0.1);  // 薄く維持
+    this.saT = Math.max(this.saT, 0.1);
     this._ultTimer += dt;
     if(this._ultTimer >= this._ultTimeLimit){ this._finishULT(); return; }
-    // 現アクションが無ければ次へ（何度でも再試行）
     if(!this._actionSeq){ this._advanceULTPhase(); }
   }
   _finishULT(){
     this._inULT=false; this._ultQueue=null; this._ultPhase=''; this._ultTimer=0; this._ultLockInput=false;
     this.vx=0; this.state='idle';
     this.effects.shake(0.18,8); this.effects.addSpark(this.x + this.face*16, this.y-18, true);
-    // ★後残りフラグ掃除
     this.bufferA1=false; this.comboStep=0; this.comboGraceT=0; this.a2LockoutT=0;
+  }
+
+  /* ===== 新規：ULT2（長押し） PK1..PK8 指示通りの挙動 ===== */
+  _startULT2_PKCombo(){
+    this._inULT=true; this.state='ult'; this.animT=0; this._ultLockInput=true;
+    this.ultCDT=10.0; this.saT=0.6; this._ultTimer=0; this._ultTimeLimit=7.0;
+
+    // 指定：PK1(威20) → PK2(小震え前進) → PK3(威30少し前進) → PK4→PK5(威50) → PK6→PK7(威80超ぶっ飛ばし) → PK8(1秒硬直)
+    const seq=[
+      {kind:'hit', dur:0.14, frame:'pk1', fx:160, power:20, lift:0.3, kbMul:1.0, kbuMul:1.0},
+      {kind:'pose',dur:0.18, frame:'pk2', fx:220, power:0,   shake:0.05},
+      {kind:'hit', dur:0.16, frame:'pk3', fx:220, power:30,  lift:0.6, kbMul:1.05, kbuMul:1.05},
+      {kind:'pose',dur:0.10, frame:'pk4', fx:120, power:0},
+      {kind:'hit', dur:0.16, frame:'pk5', fx:240, power:50,  lift:0.9, kbMul:1.15, kbuMul:1.15},
+      {kind:'pose',dur:0.10, frame:'pk6', fx:160, power:0},
+      {kind:'hit', dur:0.20, frame:'pk7', fx:280, power:80,  lift:1.4, kbMul:1.4,  kbuMul:1.4}, // 超ぶっ飛ばし
+      {kind:'pose',dur:1.00, frame:'pk8', fx:0,   power:0}   // 1秒硬直
+    ];
+    this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
 
   /* ---------- 共通アクション進行 ---------- */
   _updateAction(dt,world,input){
     const cur=this._actionSeq?.[this._actionIndex];
 
-    if(this.state==='skill2'){
-      this._skill2SAT = Math.max(0, this._skill2SAT - dt);
+    if(this.state==='skill2' || this.state==='skill3' || this.state==='skill4'){
       this.saT = Math.max(this.saT, 0.08);
     }
 
     if(cur?.fx){ this.x += this.face * cur.fx * dt; }
+    if(cur?.shake){ this.world.effects.shake(cur.shake, 6); }
 
     // 追撃窓（通常のみ）
     if(this._actionSeq && this.state==='atk' && cur?.after==='enableChase' && !this._inULT){
@@ -363,7 +418,7 @@ class Player extends CharacterBase{
       }
     }
 
-    if((this.state==='skill2' && (cur?.frame==='y4' || cur?.kind==='emit')) || this.state==='ult'){
+    if((this.state==='skill2' || this.state==='skill3' || this.state==='skill4' || this.state==='ult') && cur){
       const ox=Math.sin(performance.now()/25)*2; this._shakeOX = ox;
     } else this._shakeOX=0;
 
@@ -374,14 +429,13 @@ class Player extends CharacterBase{
       if(this._actionTime>=cur.dur){
         this._actionIndex++; this._actionTime=0;
         if(this._actionIndex>=this._actionSeq.length){
-          // 終了時の後始末
           if(this.state==='atk' && this.comboStep>0 && !this._inULT){
-            this.comboGraceT=this.comboGraceMax; // コンボ猶予付与（通常のみ）
+            this.comboGraceT=this.comboGraceMax;
           }
-          if(this.state==='skill2'){ this._activeSpikes=null; }
-          // ★ULT中はstateを変えない（idleへ落とさない）
           if(!this._inULT) this.state='idle';
           this._actionSeq=null;
+          if(this._inULT && this._ultQueue){ /* ULT1の次フェーズへ */ }
+          else if(this._inULT && !this._ultQueue){ this._finishULT(); }
         }
       }
     }
@@ -412,7 +466,7 @@ class Player extends CharacterBase{
       img=this._imgByKey('run',i);
     }
     else if(this.state==='jump'){ img=this._imgByKey('run',0); }
-    else if((this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='ult') && this._actionSeq){
+    else if((this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='skill3'||this.state==='skill4'||this.state==='ult') && this._actionSeq){
       const cur=this._actionSeq[this._actionIndex]; const key=cur.frame; img=this.world.assets.img(this.frames[key]?this._getFramePath(key,0):key);
     } else img=this._imgByKey('idle',0);
 
@@ -429,7 +483,7 @@ class Player extends CharacterBase{
       const safeOpts = {...(opts||{}), kbMul:0, kbuMul:0};
       const hit = CharacterBase.prototype.hurt.call(this,amount,dir,safeOpts,effects);
       if(hit && !this.dead){
-        this.state='ult';                   // 維持
+        this.state='ult';
         this.invulnT = Math.max(this.invulnT, 0.08);
       }
       const fill=document.getElementById('hpfill'); const num=document.getElementById('hpnum');
@@ -437,16 +491,14 @@ class Player extends CharacterBase{
       return hit;
     }
 
-    if(this.state==='skill2' || this.saT>0){ opts = {...(opts||{}), kbMul:0.2, kbuMul:0.2}; }
+    if(this.state==='skill2'||this.state==='skill3'||this.state==='skill4' || this.saT>0){ opts = {...(opts||{}), kbMul:0.2, kbuMul:0.2}; }
     const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
     if(hit){
       const fill=document.getElementById('hpfill'); const num=document.getElementById('hpnum');
       if(fill&&num){ num.textContent=this.hp; fill.style.width=Math.max(0,Math.min(100,(this.hp/this.maxhp)*100))+'%'; }
-
-      // A1詰み防止：確実に初期化
       this.bufferA1=false; this.comboStep=0; this.comboGraceT=0; this.a2LockoutT=0;
 
-      if(this.state!=='skill2'){
+      if(!(this.state==='skill2'||this.state==='skill3'||this.state==='skill4')){
         this._actionSeq=null; this._actionIndex=0; this._actionTime=0;
         this.overhead?.root && (this.overhead.root.style.display='none');
         this.jumpsLeft=this.maxJumps;
