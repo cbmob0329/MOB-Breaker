@@ -1,4 +1,4 @@
-// actors-player.js — Player (A=その場ゆっくり+煙, ◎=ENレコード軌道ヒット, U溜め半分+強振動, U2ラスト全体攻撃)
+// actors-player.js — Player (A=煙削減+威力60, ◎=LE.png, U=溜め左右揺れ+残像, U弾=超回転吹っ飛び, U2=PK8中シェイク+SA貫通)
 (function(){
 'use strict';
 
@@ -9,9 +9,7 @@ const {
   utils:{ clamp, lerp, rectsOverlap }
 } = window.__GamePieces__;
 
-/* ================================
- * Player
- * ================================ */
+/* ================================ */
 class Player extends CharacterBase{
   constructor(assets, world, effects){
     super(56,64);
@@ -25,27 +23,29 @@ class Player extends CharacterBase{
     this.bufferA1=false; this.a2LockoutT=0;
 
     // CDs
-    this.skillCDT=0;     // ●（長押し既存）
-    this.skill2CDT=0;    // ◎（回転+レコード）
-    this.pCDT=0;         // P（回転2）
-    this.airCDT=0;       // A（高速：今回はその場で発動に変更）
+    this.skillCDT=0;     // ●
+    this.skill2CDT=0;    // ◎
+    this.pCDT=0;         // P
+    this.airCDT=0;       // A
     this.ultCDT=0;       // U1
     this.ult2CDT=0;      // U2
 
     // SA
     this.saT=0;
 
-    // U1 溜め管理
+    // U1 溜め
     this.isUltCharging=false;
-    this._ultChargeMax=1.5;    // ★ 溜め時間 半分（1.5秒）
+    this._ultChargeMax=1.5; // 半分
 
-    // ◎レコード軌道
+    // ◎レコード
     this._orbitAngle=0;
-    this._orbitHitCool=0.18;   // 敵ごとの当たり間隔
-    // U2 演出
+    this._orbitHitCool=0.18;
+
+    // U2
     this._trail=[];
     this._pendingU2AOE=false;
     this._u2aoeDone=false;
+    this._u2ShakeT=0;
 
     this.frames={
       idle:['M1-1.png'],
@@ -57,12 +57,12 @@ class Player extends CharacterBase{
       y1:'Y1.png', y2:'Y2.png', y3:'Y3.png', y4:'Y4.png',
       ul1:'UL1.PNG', ul2:'UL2.PNG', ul3:'UL3.png',
 
-      // ◎（その場回転）で使うtms配列
+      // ◎
       tms:['tms1.png','tmsA.png','tms2.png','tms3.png','tms4.png','tmsA.png','tms5.png','tms6.png'],
       // P
       drIn:['dr1.png','dr2.png','dr3.png','dr4.png'],
       drLp:['dr5.png','dr6.png','dr7.png','dr8.png'],
-      // A（順序固定）※今回は移動しない
+      // A（順序固定・その場）
       airSeq:[
         'air1.png','air2.png','air3.png','airA.png','air4.png','air5.png',
         'air2.png','air3.png','airA.png','air4.png','air5.png',
@@ -100,7 +100,7 @@ class Player extends CharacterBase{
     this.overhead.fill.style.width=((ratio*100)|0)+'%';
   }
 
-  /* ---------- 当たり ---------- */
+  /* ---------- HB ---------- */
   currentHitbox(){
     if(!(this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='skillP'||this.state==='air'||this.state==='ult'||this.state==='ult2') || !this._actionSeq) return null;
     const cur=this._actionSeq[this._actionIndex]; if(!cur) return null;
@@ -112,8 +112,9 @@ class Player extends CharacterBase{
   update(dt,input,world,enemies){
     input.beginFrame(); this._posOverhead();
     if(this.saT>0) this.saT=Math.max(0,this.saT-dt);
+    if(this._u2ShakeT>0) this._u2ShakeT=Math.max(0,this._u2ShakeT-dt);
 
-    if(this.state!=='atk' && this.state!=='skill' && this.state!=='skill2' && this.state!=='skillP' && this.state!=='air' && this.state!=='ult' && this.state!=='ult2' && this._actionSeq){ this._actionSeq=null; }
+    if(!['atk','skill','skill2','skillP','air','ult','ult2'].includes(this.state) && this._actionSeq){ this._actionSeq=null; }
     if(this.a2LockoutT>0) this.a2LockoutT=Math.max(0,this.a2LockoutT-dt);
 
     // UIボタン
@@ -133,19 +134,19 @@ class Player extends CharacterBase{
 
     if(this.dead){ this.updatePhysics(dt); if(this.fade<=0){ this._respawn(world); } world.updateTimer(dt); return; }
 
-    /* ===== ● 充填（既存） ===== */
+    /* ===== ● 充填 ===== */
     if(input.skillCharging && this.skillCDT<=0){
       input.skillChargeT=Math.min(1.0, input.skillChargeT+dt);
       this._showGauge(true,'● Charge', input.skillChargeT/1.0);
       this.saT = 0.08;
     }
 
-    /* ===== U 溜め（溜め時間半分・強振動・溜め中SA） ===== */
+    /* ===== U 溜め（左右高速揺れ＋残像／溜め中SA） ===== */
     this.isUltCharging = input.ultCharging && this.ultCDT<=0;
     if(this.isUltCharging){
       input.ultChargeT = Math.min(this._ultChargeMax, input.ultChargeT + dt);
       this._showGauge(true,'U Charge', input.ultChargeT/this._ultChargeMax);
-      this.saT = 0.18; // 溜め中もSA
+      this.saT = 0.18;
     }
 
     // リリース
@@ -160,64 +161,60 @@ class Player extends CharacterBase{
 
     // 実行中
     if(['atk','skill','skill2','skillP','air','ult','ult2'].includes(this.state)){
-      // 通常ヒットボックス
       const hb=this.currentHitbox();
       if(hb){
         for(const e of enemies){
           if(!e || e.dead || e.invulnT>0) continue;
           if(rectsOverlap({x:hb.x,y:hb.y,w:hb.w,h:hb.h}, e.aabb())){
             const hit=e.hurt(hb.power, hb.dir, {lift:hb.lift, kbMul:hb.kbMul, kbuMul:hb.kbuMul}, this.effects);
-            // A/◎の追加演出（非SA → くるっと下がる）
             if(hit && (this.state==='air' || this.state==='skill2') && !e.superArmor){
-              e._twirlT = Math.max(e._twirlT||0, 0.45);
+              e._twirlT = Math.max(e._twirlT||0, 0.6);
             }
           }
         }
       }
 
-      /* ◎：EN.pngレコードがプレイヤー周囲を高速回転しヒット（60ダメ＋超吹っ飛び） */
+      // ◎ レコード周回（LE.png）
       if(this.state==='skill2'){
-        this._orbitAngle += dt*10; // 回転速度
-        const R=42;                 // 半径
-        const nowT = performance.now()/1000;
+        this._orbitAngle += dt*10;
+        const R=42; const nowT=performance.now()/1000;
         for(const e of enemies){
           if(!e || e.dead) continue;
-          // 3枚のレコードを周回させる（等間隔）
           let touched=false;
           for(let i=0;i<3;i++){
-            const ang = this._orbitAngle + i*2.094395102; // 120度
-            const px = this.x + Math.cos(ang)*R;
-            const py = this.y + Math.sin(ang)*R;
-            const box = e.aabb();
-            // 簡易円判定
-            const dx = Math.abs(px - box.x), dy = Math.abs(py - box.y);
-            if(dx*2 < (box.w+24) && dy*2 < (box.h+24)){ touched=true; break; }
+            const ang=this._orbitAngle+i*2.094395102;
+            const px=this.x+Math.cos(ang)*R, py=this.y+Math.sin(ang)*R;
+            const b=e.aabb(); const dx=Math.abs(px-b.x), dy=Math.abs(py-b.y);
+            if(dx*2<(b.w+24) && dy*2<(b.h+24)){ touched=true; break; }
           }
           if(touched){
-            const last = e._lastRecHitT || 0;
-            if(nowT - last >= this._orbitHitCool){
-              e._lastRecHitT = nowT;
-              const dir = (e.x>=this.x)? 1 : -1;
-              e.hurt(60, dir, {lift:1.2, kbMul:2.4, kbuMul:2.0}, this.effects);
-              if(!e.superArmor) e._twirlT = Math.max(e._twirlT||0, 0.6);
+            const last=e._lastRecHitT||0;
+            if(nowT-last>=this._orbitHitCool){
+              e._lastRecHitT=nowT;
+              const dir=(e.x>=this.x)?1:-1;
+              e.hurt(60,dir,{lift:1.2,kbMul:2.4,kbuMul:2.0},this.effects);
+              if(!e.superArmor) e._twirlT=Math.max(e._twirlT||0,0.8);
             }
           }
         }
       }
 
-      /* U2：PK8で全体攻撃 */
+      // U2：AOE発動
       if(this._pendingU2AOE){
         this._pendingU2AOE=false;
         if(!this._u2aoeDone){
           this._u2aoeDone=true;
-          // 全体ヒット
+          this._u2ShakeT=1.0;                // 1秒プレイヤー揺らす
+          this.effects.shake(0.35,12);       // 画面シェイク
           for(const e of enemies){
             if(!e || e.dead) continue;
-            const dir = (e.x>=this.x)? 1 : -1;
-            e.hurt(100, dir, {lift:1.6, kbMul:2.6, kbuMul:2.2}, this.effects);
-            e._twirlT = Math.max(e._twirlT||0, 0.8);
+            const dir=(e.x>=this.x)?1:-1;
+            // まず通常HIT
+            e.hurt(100,dir,{lift:1.6,kbMul:2.6,kbuMul:2.2},this.effects);
+            // SA貫通のため直接速度を上書きして超吹っ飛ばし
+            e.vx = dir*720; e.vy = -720;
+            e._twirlT=Math.max(e._twirlT||0,1.2);
           }
-          this.effects.shake(0.25,10);
         }
       }
 
@@ -226,15 +223,12 @@ class Player extends CharacterBase{
       return;
     }
 
-    // 入力受付
+    // 入力
     if(input.edge.a1) this.bufferA1=true;
-
-    // 起動優先
     if(input.edge.air && this.airCDT<=0){ input.edge.air=false; this.bufferA1=false; this._startAIR(); return; }
     if(input.edge.p && this.pCDT<=0){ input.edge.p=false; this.bufferA1=false; this._startP(); return; }
     if(input.edge.skill2 && this.skill2CDT<=0){ input.edge.skill2=false; this.bufferA1=false; this._startSpinSkill2(); return; }
     if(input.edge.ult2 && this.ult2CDT<=0){ input.edge.ult2=false; this.bufferA1=false; this._startULT2(); return; }
-
     if(input.edge.a2Press && this.a2LockoutT<=0){ input.edge.a2Press=false; this.bufferA1=false; this._startA2(); return; }
     if(this.bufferA1 && this.comboStep<3){ this.bufferA1=false; this._startA1(); return; }
 
@@ -250,7 +244,7 @@ class Player extends CharacterBase{
     world.updateTimer(dt);
   }
 
-  /* ---------- 通常技 ---------- */
+  /* ---------- 通常 ---------- */
   _startA1(){
     this.state='atk'; this.animT=0; this.comboStep=Math.min(this.comboStep+1,3);
     const seq=[ {kind:'prep',dur:0.08,frame:'k1prep',fx:80,power:0} ];
@@ -271,72 +265,64 @@ class Player extends CharacterBase{
   }
 
   /* ---------- ●（既存） ---------- */
-  _startSkill1Release(chargeSec){
+  _startSkill1Release(t){
     this.state='skill'; this.animT=0; this.skillCDT=5.0;
-    const t=clamp(chargeSec,0,1.0);
-    const rounds = 2 + Math.floor(t/0.33);
-    const base   = 26 + Math.floor(t/0.1)*2;
+    const c=clamp(t,0,1.0);
+    const rounds = 2 + Math.floor(c/0.33);
+    const base   = 26 + Math.floor(c/0.1)*2;
     const kbm  = 1.6 + 0.1*(rounds-2);
     const kbum = 1.3 + 0.05*(rounds-2);
     const frames=this.frames.spin; const seq=[];
-    for(let r=0;r<rounds;r++){
-      for(let i=0;i<frames.length;i++){
-        const pow = base*(i===1?1:0.6); const lift=(i===1?1:0);
-        seq.push({kind:'sp',dur:0.06,frame:frames[i],fx:80,power:pow,lift, kbMul:kbm, kbuMul:kbum});
-      }
+    for(let r=0;r<rounds;r++) for(let i=0;i<frames.length;i++){
+      const pow = base*(i===1?1:0.6); const lift=(i===1?1:0);
+      seq.push({kind:'sp',dur:0.06,frame:frames[i],fx:80,power:pow,lift, kbMul:kbm, kbuMul:kbum});
     }
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
     this._showGauge(false);
   }
 
-  /* ---------- ◎（その場回転＋SA＋ENレコード） ---------- */
+  /* ---------- ◎（LEレコード） ---------- */
   _startSpinSkill2(){
     if(this.skill2CDT>0) return;
     this.state='skill2'; this.animT=0; this.skill2CDT=10.0;
-    this.saT = 1.8; // 発動中SA
-
-    const order=this.frames.tms;
-    const seq=[];
+    this.saT = 1.8;
+    const order=this.frames.tms; const seq=[];
     for(let loop=0; loop<3; loop++){
       for(let i=0;i<order.length;i++){
-        const f=order[i];
-        const fin = (f==='tms6.png'||f==='tms6');
-        // その場：fx=0、打撃強め
-        seq.push({kind:'hit', dur:0.09, frame:f, fx:0, power: fin? 20:10, lift:1.0, kbMul: fin?2.0:1.6, kbuMul:fin?1.7:1.4, tag:'spin2'});
+        const f=order[i]; const fin=(f==='tms6.png'||f==='tms6');
+        seq.push({kind:'hit', dur:0.09, frame:f, fx:0, power: fin?20:10, lift:1.0, kbMul: fin?2.0:1.6, kbuMul:fin?1.7:1.4, tag:'spin2'});
       }
     }
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
-    this._orbitAngle=0; // レコード初期化
+    this._orbitAngle=0;
   }
 
-  /* ---------- P（回転2） ---------- */
+  /* ---------- P ---------- */
   _startP(){
     if(this.pCDT>0) return;
     this.state='skillP'; this.animT=0; this.pCDT=9.0;
     const seq=[];
     for(const f of this.frames.drIn){ seq.push({kind:'hit',dur:0.10,frame:f,fx:80,power:15, lift:0.2, kbMul:0.9, kbuMul:0.9}); }
-    for(let loop=0; loop<4; loop++){
-      for(const f of this.frames.drLp){ seq.push({kind:'hit',dur:0.08,frame:f,fx:120,power:15, lift:0.2, kbMul:0.9, kbuMul:0.9}); }
+    for(let loop=0; loop<4; loop++) for(const f of this.frames.drLp){
+      seq.push({kind:'hit',dur:0.08,frame:f,fx:120,power:15, lift:0.2, kbMul:0.9, kbuMul:0.9});
     }
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
 
-  /* ---------- A（その場・ゆっくり・SA・煙をポフポフ） ---------- */
+  /* ---------- A（煙削減＋威力60＋KB強化） ---------- */
   _startAIR(){
     if(this.airCDT>0) return;
     this.state='air'; this.animT=0; this.airCDT=12.0;
-    this.saT = 2.0; // 発動中SA
-    const seq=[];
-    const arr=this.frames.airSeq;
+    this.saT = 2.0;
+    const seq=[]; const arr=this.frames.airSeq;
     for(let i=0;i<arr.length;i++){
       const f=arr[i];
-      // ★ その場：fx=0、フレーム少しゆっくり 0.10
-      seq.push({kind:'hit', dur:0.10, frame:f, fx:0, power:30, lift:0.8, kbMul:1.9, kbuMul:1.7, tag:'air'});
+      seq.push({kind:'hit', dur:0.10, frame:f, fx:0, power:60, lift:1.0, kbMul:2.2, kbuMul:2.0, tag:'air'});
     }
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
 
-  /* ---------- U（溜め半分・溜め中SA・強振動・UL3大きく） ---------- */
+  /* ---------- U1 ---------- */
   _releaseULT(chargeSec){
     if(this.ultCDT>0) return;
     this.state='ult'; this.animT=0;
@@ -355,7 +341,7 @@ class Player extends CharacterBase{
     this.effects.addSpark(this.x+ox, this.y-14, true);
   }
 
-  /* ---------- U2（演出強化＆最後全体攻撃） ---------- */
+  /* ---------- U2 ---------- */
   _startULT2(){
     if(this.ult2CDT>0) return;
     this.state='ult2'; this.animT=0; this.ult2CDT=12.0; this._u2aoeDone=false;
@@ -368,33 +354,28 @@ class Player extends CharacterBase{
       {kind:'hit', dur:0.12, frame:P[4], fx:200, power:50, lift:0.8, kbMul:1.4, kbuMul:1.2},
       {kind:'pose',dur:0.10, frame:P[5], fx:140, power:0},
       {kind:'hit', dur:0.18, frame:P[6], fx:240, power:80, lift:1.4, kbMul:2.2, kbuMul:1.9, tag:'u2fin'},
-      // 最後：1秒硬直＋全体攻撃トリガ
-      {kind:'pose',dur:1.00, frame:P[7], fx:0, power:0, tag:'u2aoe'}
+      {kind:'pose',dur:1.00, frame:P[7], fx:0, power:0, tag:'u2aoe'} // 1秒硬直中プレイヤーシェイク
     ];
     this._actionIndex=0; this._actionTime=0;
   }
 
-  /* ---------- アクション進行 ---------- */
+  /* ---------- 進行 ---------- */
   _updateAction(dt,world,input){
     const cur=this._actionSeq?.[this._actionIndex];
 
-    // 状態別SA維持
     if(this.state==='skill2' || this.state==='air'){ this.saT = Math.max(this.saT, 0.08); }
-
-    // その場系は移動しない
     if(cur?.fx){ this.x += this.face * cur.fx * dt; }
 
-    // 残像（U2のみ）
+    // U2 残像
     if(this.state==='ult2'){
       this._trail.push({x:this.x, y:this.y, t:0});
       if(this._trail.length>12) this._trail.shift();
       for(const tr of this._trail) tr.t += dt;
     } else this._trail.length=0;
 
-    // U2 AOEトリガ
     if(cur?.tag==='u2aoe' && !this._u2aoeSeen){
       this._u2aoeSeen=true;
-      this._pendingU2AOE=true; // 実処理は update() 冒頭で
+      this._pendingU2AOE=true;
     }
 
     this.vx = 0; this.updatePhysics(dt);
@@ -419,17 +400,22 @@ class Player extends CharacterBase{
     const fill=document.getElementById('hpfill'); const num=document.getElementById('hpnum');
     if(fill&&num){ fill.style.width='100%'; num.textContent=this.hp; }
     this.x=world.camX+80; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.vx=0; this.vy=0;
-    this.jumpsLeft=this.maxJumps; this.saT=0; this.isUltCharging=false; this._trail.length=0;
+    this.jumpsLeft=this.maxJumps; this.saT=0; this.isUltCharging=false; this._trail.length=0; this._u2ShakeT=0;
   }
 
   draw(ctx,world){
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
 
-    // U 溜め中はプレイヤーのみ強振動
+    // U溜め中：左右高速揺れ＋残像
     if(this.isUltCharging){
-      const jitter=2.5; // ちょっと強め
-      const ox=(Math.random()*2-1)*jitter, oy=(Math.random()*2-1)*jitter;
-      ctx.translate(ox,oy);
+      const t=performance.now()/100;
+      const ox=Math.sin(t*2.8)*6; // 左右高速
+      ctx.translate(ox,0);
+    }
+    // U2：PK8中はプレイヤー自身も揺らす
+    if(this._u2ShakeT>0){
+      const a=6*this._u2ShakeT;
+      ctx.translate((Math.random()*2-1)*a,(Math.random()*2-1)*a*0.6);
     }
 
     if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
@@ -452,36 +438,45 @@ class Player extends CharacterBase{
       ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
     }
 
-    /* U 溜め中視覚：UL3を2倍スケールで表示 */
+    // U溜め中：UL3を大きく＋残像
     if(this.isUltCharging){
       const ul3=this.world.assets.img(this.frames.ul3);
       if(ul3){
         const t=Math.min(this._ultChargeMax, (window._inputUltT||0));
-        const mul = lerp(0.7, 3.2, clamp(t/this._ultChargeMax,0,1)); // ★以前より大きく
+        const mul = lerp(0.7, 3.2, clamp(t/this._ultChargeMax,0,1));
         const hh=60*mul, ww=60*mul; const oxh = this.face*26, oyh=-14;
-        ctx.save(); ctx.translate(oxh, oyh); if(this.face<0) ctx.scale(-1,1); ctx.globalAlpha=0.95; ctx.drawImage(ul3, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh)); ctx.restore();
+        // 残像
+        for(let i=0;i<3;i++){
+          const f=(3-i)/3; ctx.save(); ctx.globalAlpha=0.20*f;
+          ctx.translate(oxh - i*6*this.face, oyh);
+          if(this.face<0) ctx.scale(-1,1);
+          ctx.drawImage(ul3, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh));
+          ctx.restore();
+        }
+        ctx.save(); ctx.translate(oxh, oyh); if(this.face<0) ctx.scale(-1,1);
+        ctx.globalAlpha=0.95; ctx.drawImage(ul3, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh)); ctx.restore();
       }
     }
 
-    /* A：煙のポフポフ（kem.png を小さく、周囲に発生→消滅） */
+    // A：煙（数量/サイズ/透明度を控えめに）
     if(this.state==='air'){
       const kem=this.world.assets.img('kem.png');
       if(kem){
-        const n=6, r=28;
+        const n=3, r=24;
         for(let i=0;i<n;i++){
-          const ang = (performance.now()/200 + i/n*2*Math.PI);
-          const px = Math.cos(ang)*r, py=Math.sin(ang)*r;
-          const a = 0.45 + 0.45*Math.sin(performance.now()/180 + i);
-          const s = 0.30 + 0.10*Math.sin(performance.now()/220 + i);
-          const hh=kem.height*s, ww=kem.width*s;
-          ctx.save(); ctx.globalAlpha=a; ctx.translate(Math.round(px), Math.round(py-10)); ctx.scale(s,s); ctx.drawImage(kem, Math.round(-kem.width/2), Math.round(-kem.height/2)); ctx.restore();
+          const ang=(performance.now()/260 + i/n*2*Math.PI);
+          const px=Math.cos(ang)*r, py=Math.sin(ang)*r;
+          const a=0.25 + 0.25*Math.sin(performance.now()/240 + i);
+          const s=0.22 + 0.06*Math.sin(performance.now()/260 + i);
+          ctx.save(); ctx.globalAlpha=a; ctx.translate(Math.round(px), Math.round(py-10)); ctx.scale(s,s);
+          ctx.drawImage(kem, Math.round(-kem.width/2), Math.round(-kem.height/2)); ctx.restore();
         }
       }
     }
 
-    /* ◎：EN.png レコードが周囲を高速周回（描画のみ／当たりは update で処理） */
+    // ◎：LE.pngレコード可視
     if(this.state==='skill2'){
-      const en=this.world.assets.img('EN.png');
+      const en=this.world.assets.img('LE.png');
       if(en){
         const R=42;
         for(let i=0;i<3;i++){
@@ -495,19 +490,15 @@ class Player extends CharacterBase{
       }
     }
 
-    /* U2：残像（半透明の過去フレーム） */
-    if(this.state==='ult2' && this._trail.length){
-      const holder=img;
-      if(holder){
-        for(let i=0;i<this._trail.length;i++){
-          const tr=this._trail[i];
-          const k=1 - i/this._trail.length;
-          ctx.save(); ctx.translate(tr.x-this.x, tr.y-this.y);
-          ctx.globalAlpha=0.12*k;
-          const scale=this.h/holder.height, w=holder.width*scale, h=this.h;
-          ctx.drawImage(holder, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
-          ctx.restore();
-        }
+    // U2：残像
+    if(this.state==='ult2' && this._trail.length && img){
+      for(let i=0;i<this._trail.length;i++){
+        const tr=this._trail[i], k=1 - i/this._trail.length;
+        ctx.save(); ctx.translate(tr.x-this.x, tr.y-this.y);
+        ctx.globalAlpha=0.12*k;
+        const scale=this.h/img.height, w=img.width*scale, h=this.h;
+        ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
+        ctx.restore();
       }
     }
 
@@ -516,7 +507,6 @@ class Player extends CharacterBase{
 
   // 被弾
   hurt(amount,dir,opts,effects){
-    // SA中ならのけ反り大幅軽減
     if(this.state==='skill2' || this.state==='air' || this.saT>0){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
     const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
     if(hit){
