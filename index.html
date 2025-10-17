@@ -1,66 +1,54 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-<title>MOB SIDE ACTION – Rev33 (Skills2-4 + ULT2) – 2025-10-17</title>
-<meta name="theme-color" content="#0b0c10" />
-<link rel="stylesheet" href="style.css" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
+  <title>MOB Side Action – Player Rev</title>
+  <meta name="theme-color" content="#0b0c10" />
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div id="app">
-    <canvas id="game" width="540" height="960"></canvas>
-
-    <!-- HUD -->
-    <div id="hud">
-      <div id="version">Rev33 – Skills2-4 + ULT2 – 2025-10-17</div>
-      <div id="status">
-        <span id="hp">HP: 100</span>
-        <span id="sp">SP: 100</span>
-        <span id="debug"></span>
+<div id="root">
+  <div id="phone">
+    <div class="grid">
+      <div class="gamewrap">
+        <header class="hud">
+          <div class="chip">残機 <strong id="lives">3</strong></div>
+          <div class="chip">HP <span class="bar"><i id="hpfill" style="width:100%"></i></span> <strong id="hpnum">1000</strong></div>
+          <div class="chip name">MOBYOKI</div>
+          <div class="chip timer">Time <strong id="time">00:00</strong></div>
+        </header>
+        <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
       </div>
-    </div>
 
-    <!-- Controls -->
-    <div id="controls">
-      <div id="padL" class="pad">
-        <div class="stick" id="stick"></div>
-      </div>
-      <div id="padR">
-        <!-- 円形ボタン：大きめで押しやすく -->
-        <button id="btnSkill2" class="btn round">◎</button>
-        <button id="btnSkill3" class="btn round">P</button>
-        <button id="btnSkill4" class="btn round">A</button>
-        <button id="btnULT2"   class="btn round">U2</button>
+      <div class="controls">
+        <!-- 左：スティック（小型化） -->
+        <div class="stickArea" id="stickArea" aria-label="Move Stick">
+          <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
+        </div>
+
+        <!-- 右：4x2 の円形ボタン -->
+        <div class="buttons">
+          <!-- 1段目 -->
+          <button class="btn attack1" id="btnA1"  aria-label="攻撃① ■">■</button>
+          <button class="btn attack2" id="btnA2"  aria-label="攻撃② ▲">▲</button>
+          <button class="btn skill1"  id="btnSK"  aria-label="スキル① ●">●</button>
+          <button class="btn skill2"  id="btnSK2" aria-label="スキル② ◎">◎</button>
+          <!-- 2段目 -->
+          <button class="btn air"     id="btnAIR" aria-label="スキル④ A">A</button>
+          <button class="btn pskill"  id="btnP"   aria-label="スキル③ P">P</button>
+          <button class="btn ult"     id="btnULT"  aria-label="ULT1 U">U</button>
+          <button class="btn ult2"    id="btnULT2" aria-label="ULT2 U2">U2</button>
+        </div>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- 画像はユーザーのリポジトリに配置される前提のファイル名で読み込み -->
-  <script>
-    window.ASSETS = {
-      player: {
-        idle: ["idle1.png","idle2.png"],
-        run:  ["run1.png","run2.png","run3.png","run4.png"],
-        jump: ["jump1.png","jump2.png"]
-      },
-      // スキル②（◎）：その場高速回転（スーパーアーマー）
-      skill2: ["tms1.png","tmsA.png","tms2.png","tms3.png","tms4.png","tmsA.png","tms5.png","tms6.png"],
-      // スキル③（P）：高速回転（入り→ループ×4）
-      skill3_in:  ["dr1.png","dr2.png","dr3.png","dr4.png"],
-      skill3_loop:["dr5.png","dr6.png","dr7.png","dr8.png"],
-      // スキル④（A）：高速技（発動中スーパーアーマー）
-      skill4_seq:["air1.png","air2.png","air3.png","airA.png","air4.png","air5.png"],
-      // ULT②：PK1→…→PK8
-      ult2: ["PK1.png","PK2.png","PK3.png","PK4.png","PK5.png","PK6.png","PK7.png","PK8.png"],
-
-      // 敵（例）
-      enemies: {
-        mob: ["mob1.png","mob2.png"],
-        golem:["golem1.png","golem2.png"]
-      }
-    };
-  </script>
-  <script src="game.js"></script>
+<!-- スクリプト -->
+<script src="script-core.js"></script>
+<script src="actors.js"></script>         <!-- 既存の敵たち -->
+<script src="actors-player.js"></script>  <!-- この回答の Part2 で上書き -->
+<script src="game.js"></script>
 </body>
 </html>
