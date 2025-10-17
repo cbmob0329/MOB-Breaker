@@ -1,4 +1,4 @@
-// actors-player.js — Player (A=煙削減+威力60, ◎=LE.png, U=溜め左右揺れ+残像, U弾=超回転吹っ飛び, U2=PK8中シェイク+SA貫通)
+// actors-player.js — Aの煙を極小&周囲のみ / ◎のLEを半身サイズ&被り防止 / U弾サイズ=溜め見た目に一致
 (function(){
 'use strict';
 
@@ -35,7 +35,7 @@ class Player extends CharacterBase{
 
     // U1 溜め
     this.isUltCharging=false;
-    this._ultChargeMax=1.5; // 半分
+    this._ultChargeMax=1.5; // 半分に短縮済み
 
     // ◎レコード
     this._orbitAngle=0;
@@ -117,7 +117,7 @@ class Player extends CharacterBase{
     if(!['atk','skill','skill2','skillP','air','ult','ult2'].includes(this.state) && this._actionSeq){ this._actionSeq=null; }
     if(this.a2LockoutT>0) this.a2LockoutT=Math.max(0,this.a2LockoutT-dt);
 
-    // UIボタン
+    // UIボタン（存在すれば）
     const skBtn=document.getElementById('btnSK');
     const sk2Btn=document.getElementById('btnSK2');
     const pBtn=document.getElementById('btnP');
@@ -174,18 +174,23 @@ class Player extends CharacterBase{
         }
       }
 
-      // ◎ レコード周回（LE.png）
+      // ◎ レコード周回（LE.png）— プレイヤー半身サイズ、被り防止の半径で表示・HIT
       if(this.state==='skill2'){
         this._orbitAngle += dt*10;
-        const R=42; const nowT=performance.now()/1000;
+        const tex=this.world.assets.img('LE.png');
+        const R = Math.max(this.w*0.3, (this.w*0.6)/2 + (this.h*0.5)/2 + 6); // プレイヤー外周+レコード半径+余白
+        const nowT=performance.now()/1000;
         for(const e of enemies){
           if(!e || e.dead) continue;
           let touched=false;
           for(let i=0;i<3;i++){
             const ang=this._orbitAngle+i*2.094395102;
             const px=this.x+Math.cos(ang)*R, py=this.y+Math.sin(ang)*R;
-            const b=e.aabb(); const dx=Math.abs(px-b.x), dy=Math.abs(py-b.y);
-            if(dx*2<(b.w+24) && dy*2<(b.h+24)){ touched=true; break; }
+            const b=e.aabb();
+            // レコード実寸相当（半身≈32px）で接触見る
+            const recR = (this.h*0.5)*0.5;
+            const dx=Math.abs(px-b.x), dy=Math.abs(py-b.y);
+            if(dx < (b.w/2 + recR*0.6) && dy < (b.h/2 + recR*0.6)){ touched=true; break; }
           }
           if(touched){
             const last=e._lastRecHitT||0;
@@ -209,9 +214,7 @@ class Player extends CharacterBase{
           for(const e of enemies){
             if(!e || e.dead) continue;
             const dir=(e.x>=this.x)?1:-1;
-            // まず通常HIT
             e.hurt(100,dir,{lift:1.6,kbMul:2.6,kbuMul:2.2},this.effects);
-            // SA貫通のため直接速度を上書きして超吹っ飛ばし
             e.vx = dir*720; e.vy = -720;
             e._twirlT=Math.max(e._twirlT||0,1.2);
           }
@@ -309,7 +312,7 @@ class Player extends CharacterBase{
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
 
-  /* ---------- A（煙削減＋威力60＋KB強化） ---------- */
+  /* ---------- A（煙：超控えめ/周囲のみ） ---------- */
   _startAIR(){
     if(this.airCDT>0) return;
     this.state='air'; this.animT=0; this.airCDT=12.0;
@@ -322,7 +325,7 @@ class Player extends CharacterBase{
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
 
-  /* ---------- U1 ---------- */
+  /* ---------- U1（発射サイズ=溜め見た目に一致） ---------- */
   _releaseULT(chargeSec){
     if(this.ultCDT>0) return;
     this.state='ult'; this.animT=0;
@@ -333,9 +336,13 @@ class Player extends CharacterBase{
     this._actionIndex=0; this._actionTime=0;
     this.ultCDT=3.0;
 
+    // UltBlast は 0..3.0 を基準にサイズ計算するので、溜め最大(=this._ultChargeMax)が 3.0 に対応するよう正規化
+    const csClamped = Math.min(this._ultChargeMax, chargeSec);
+    const csScaledForProjectile = csClamped * (3.0 / this._ultChargeMax);
+
     const img=this.world.assets.img(this.frames.ul3);
     const ox=this.face*30, oy=-12;
-    const blast=new UltBlast(this.world, this.x+ox, this.y+oy, this.face, img, chargeSec);
+    const blast=new UltBlast(this.world, this.x+ox, this.y+oy, this.face, img, csScaledForProjectile);
     (this.world._skillBullets||(this.world._skillBullets=[])).push(blast);
     this.saT=0; this._showGauge(false);
     this.effects.addSpark(this.x+ox, this.y-14, true);
@@ -354,7 +361,7 @@ class Player extends CharacterBase{
       {kind:'hit', dur:0.12, frame:P[4], fx:200, power:50, lift:0.8, kbMul:1.4, kbuMul:1.2},
       {kind:'pose',dur:0.10, frame:P[5], fx:140, power:0},
       {kind:'hit', dur:0.18, frame:P[6], fx:240, power:80, lift:1.4, kbMul:2.2, kbuMul:1.9, tag:'u2fin'},
-      {kind:'pose',dur:1.00, frame:P[7], fx:0, power:0, tag:'u2aoe'} // 1秒硬直中プレイヤーシェイク
+      {kind:'pose',dur:1.00, frame:P[7], fx:0, power:0, tag:'u2aoe'}
     ];
     this._actionIndex=0; this._actionTime=0;
   }
@@ -374,8 +381,7 @@ class Player extends CharacterBase{
     } else this._trail.length=0;
 
     if(cur?.tag==='u2aoe' && !this._u2aoeSeen){
-      this._u2aoeSeen=true;
-      this._pendingU2AOE=true;
+      this._u2aoeSeen=true; this._pendingU2AOE=true;
     }
 
     this.vx = 0; this.updatePhysics(dt);
@@ -438,14 +444,13 @@ class Player extends CharacterBase{
       ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
     }
 
-    // U溜め中：UL3を大きく＋残像
+    // U溜め中：UL3を大きく（見た目）＋残像
     if(this.isUltCharging){
       const ul3=this.world.assets.img(this.frames.ul3);
       if(ul3){
         const t=Math.min(this._ultChargeMax, (window._inputUltT||0));
         const mul = lerp(0.7, 3.2, clamp(t/this._ultChargeMax,0,1));
         const hh=60*mul, ww=60*mul; const oxh = this.face*26, oyh=-14;
-        // 残像
         for(let i=0;i<3;i++){
           const f=(3-i)/3; ctx.save(); ctx.globalAlpha=0.20*f;
           ctx.translate(oxh - i*6*this.face, oyh);
@@ -458,33 +463,35 @@ class Player extends CharacterBase{
       }
     }
 
-    // A：煙（数量/サイズ/透明度を控えめに）
+    // A：煙（数=2 / 半径=小 / 透明度低め / 周囲のみ）
     if(this.state==='air'){
       const kem=this.world.assets.img('kem.png');
       if(kem){
-        const n=3, r=24;
+        const n=2, r=14;
         for(let i=0;i<n;i++){
-          const ang=(performance.now()/260 + i/n*2*Math.PI);
-          const px=Math.cos(ang)*r, py=Math.sin(ang)*r;
-          const a=0.25 + 0.25*Math.sin(performance.now()/240 + i);
-          const s=0.22 + 0.06*Math.sin(performance.now()/260 + i);
-          ctx.save(); ctx.globalAlpha=a; ctx.translate(Math.round(px), Math.round(py-10)); ctx.scale(s,s);
+          const ang=(performance.now()/300 + i/n*2*Math.PI);
+          const px=Math.cos(ang)*r, py=Math.sin(ang)*r - 10; // 体に被らないよう少し外周&上寄せ
+          const a=0.16 + 0.10*Math.sin(performance.now()/300 + i);
+          const s=0.12 + 0.03*Math.sin(performance.now()/320 + i);
+          ctx.save(); ctx.globalAlpha=a; ctx.translate(Math.round(px), Math.round(py)); ctx.scale(s,s);
           ctx.drawImage(kem, Math.round(-kem.width/2), Math.round(-kem.height/2)); ctx.restore();
         }
       }
     }
 
-    // ◎：LE.pngレコード可視
+    // ◎：LE.png（プレイヤー半身サイズで外周回転＝被り防止）
     if(this.state==='skill2'){
-      const en=this.world.assets.img('LE.png');
-      if(en){
-        const R=42;
+      const tex=this.world.assets.img('LE.png');
+      if(tex){
+        const targetH = this.h*0.5;                 // 半身サイズ ≈ 32px
+        const s = targetH / tex.height;
+        const R = Math.max(this.w*0.3, (this.w*0.6)/2 + (targetH/2) + 6);
         for(let i=0;i<3;i++){
           const ang = this._orbitAngle + i*2.094395102;
           const px = Math.cos(ang)*R, py=Math.sin(ang)*R;
           ctx.save(); ctx.translate(Math.round(px), Math.round(py)); ctx.rotate(ang*3);
-          const s=0.60; const ww=en.width*s, hh=en.height*s;
-          ctx.globalAlpha=0.95; ctx.drawImage(en, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh));
+          const ww=tex.width*s, hh=tex.height*s;
+          ctx.globalAlpha=0.95; ctx.drawImage(tex, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh));
           ctx.restore();
         }
       }
