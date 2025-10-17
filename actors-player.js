@@ -1,4 +1,4 @@
-// actors-player.js — Skill2/3/4 + ULT1/2（U2ボタン対応）
+// actors-player.js — Skill2/3/4 + ULT2（ご指定版）
 (function(){
 'use strict';
 
@@ -17,6 +17,7 @@ class Player extends CharacterBase{
     this.hp=1000; this.maxhp=1000; this.lives=3;
 
     this.maxJumps=2; this.jumpsLeft=this.maxJumps;
+
     this.comboStep=0; this.comboGraceT=0; this.comboGraceMax=0.24;
     this.bufferA1=false; this.a2LockoutT=0;
 
@@ -34,16 +35,17 @@ class Player extends CharacterBase{
       spin:['h1.png','h2.png','h3.png','h4.png'],
       chaseJump:'J.png',
       y1:'Y1.png', y2:'Y2.png', y3:'Y3.png', y4:'Y4.png',
-      tms1:'tms1.png', tms2:'tms2.png', tms3:'tms3.png', tms4:'tms4.png', tms5:'tms5.png', tms6:'tms6.png',
+
+      /* 新規フレーム */
+      tms1:'tms1.png', tmsA:'tmsA.png', tms2:'tms2.png', tms3:'tms3.png', tms4:'tms4.png', tms5:'tms5.png', tms6:'tms6.png',
       dr1:'dr1.png', dr2:'dr2.png', dr3:'dr3.png', dr4:'dr4.png', dr5:'dr5.png', dr6:'dr6.png', dr7:'dr7.png', dr8:'dr8.png',
-      air1:'air1.png', air2:'air2.png', air3:'air3.png', air4:'air4.png', air5:'air5.png',
+      air1:'air1.png', air2:'air2.png', air3:'air3.png', airA:'airA.png', air4:'air4.png', air5:'air5.png',
+
       ul1:'UL1.PNG', ul2:'UL2.PNG', ul3:'UL3.png',
       pk1:'PK1.png', pk2:'PK2.png', pk3:'PK3.png', pk4:'PK4.png', pk5:'PK5.png', pk6:'PK6.png', pk7:'PK7.png', pk8:'PK8.png'
     };
     this.overhead=this._createOverheadGauge();
     document.querySelector('.gamewrap').appendChild(this.overhead.root);
-
-    this._activeSpikes=null;
   }
 
   _getFramePath(key, i=0){ const v=this.frames[key]; return Array.isArray(v)? v[Math.max(0,Math.min(v.length-1,i))] : v; }
@@ -66,121 +68,110 @@ class Player extends CharacterBase{
     this.overhead.fill.style.width=((ratio*100)|0)+'%';
   }
 
+  /* 共通：当たり箱 */
   currentHitbox(){
     if(!(this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='skill3'||this.state==='skill4'||this.state==='ult') || !this._actionSeq) return null;
     const cur=this._actionSeq[this._actionIndex]; if(!cur) return null;
-    if(this.state.startsWith('skill') || this.state==='ult'){
-      const W=86,H=64; const x=this.x + this.face*(this.w*0.2);
-      return {x, y:this.y, w:W, h:H, power:cur.power||0, dir:this.face, lift:cur.lift||0, kbMul:cur.kbMul||1.6, kbuMul:cur.kbuMul||1.3};
-    }
-    if(cur.kind==='hit' || cur.kind==='sp'){
-      const w=52, h=42, x=this.x + this.face*(this.w*0.3 + w*0.5), y=this.y - 6;
-      return {x,y,w,h, power:cur.power||0, dir:this.face, lift:cur.lift||1, kbMul:cur.kbMul||1, kbuMul:cur.kbuMul||1};
-    }
-    return null;
+    const W=86,H=64; const x=this.x + this.face*(this.w*0.2);
+    return {x, y:this.y, w:W, h:H,
+      power:cur.power||0, dir:this.face,
+      lift:cur.lift||0, kbMul:cur.kbMul||1.6, kbuMul:cur.kbuMul||1.3
+    };
   }
 
   update(dt,input,world,enemies){
     input.beginFrame(); this._posOverhead();
 
-    if(this._inULT){
-      this.state='ult';
-      this._tickULT(dt);
-      input.edge.a1=input.edge.a2Press=input.edge.skillRelease=input.edge.skill2=input.edge.p=input.edge.air=input.edge.ultPress=input.edge.ultRelease=input.edge.ult2=false;
-      input.btn.a1=input.btn.a2=input.btn.skill=input.btn.skill2=input.btn.p=input.btn.air=input.btn.ult=input.btn.ult2=false;
-    }
-
+    // SAタイマー
     if(this.saT>0) this.saT=Math.max(0,this.saT-dt);
     if(this.a2LockoutT>0) this.a2LockoutT=Math.max(0,this.a2LockoutT-dt);
 
-    if(this.comboGraceT>0){
-      this.comboGraceT=Math.max(0,this.comboGraceT-dt);
-      if(this.comboGraceT===0 && this.state==='idle'){ this.comboStep=0; }
-    }
-
-    if(this.state!=='atk' && !this.state.startsWith('skill') && this.state!=='ult' && this._actionSeq){ this._actionSeq=null; }
-
-    // CD表示
-    const skBtn=document.getElementById('btnSK');
-    const sk2Btn=document.getElementById('btnSK2');
-    const pBtn=document.getElementById('btnP');
-    const airBtn=document.getElementById('btnAIR');
-    const ultBtn=document.getElementById('btnULT');
-    const ult2Btn=document.getElementById('btnULT2');
-    const dec=(t,el)=>{ if(el){ if(t>0){ el.setAttribute('disabled',''); } else el.removeAttribute('disabled'); } };
-    this.skillCDT=Math.max(0,this.skillCDT-dt); dec(this.skillCDT,skBtn);
-    this.skill2CDT=Math.max(0,this.skill2CDT-dt); dec(this.skill2CDT,sk2Btn);
-    this.skill3CDT=Math.max(0,this.skill3CDT-dt); dec(this.skill3CDT,pBtn);
-    this.skill4CDT=Math.max(0,this.skill4CDT-dt); dec(this.skill4CDT,airBtn);
-    this.ultCDT=Math.max(0,this.ultCDT-dt); dec(this.ultCDT,ultBtn); dec(this.ultCDT,ult2Btn);
+    // クールダウンUI
+    const dec=(t,id)=>{ const el=document.getElementById(id); if(!el) return; if(t>0) el.setAttribute('disabled',''); else el.removeAttribute('disabled'); };
+    this.skillCDT=Math.max(0,this.skillCDT-dt);   dec(this.skillCDT,'btnSK');
+    this.skill2CDT=Math.max(0,this.skill2CDT-dt); dec(this.skill2CDT,'btnSK2');
+    this.skill3CDT=Math.max(0,this.skill3CDT-dt); dec(this.skill3CDT,'btnP');
+    this.skill4CDT=Math.max(0,this.skill4CDT-dt); dec(this.skill4CDT,'btnAIR');
+    this.ultCDT   =Math.max(0,this.ultCDT-dt);    dec(this.ultCDT,'btnULT'); dec(this.ultCDT,'btnULT2');
 
     if(this.dead){ this.updatePhysics(dt); if(this.fade<=0){ this._respawn(world); } world.updateTimer(dt); return; }
 
-    // Skill1：既存（チャージ→リリース）
-    if(!this._inULT){
-      if(input.edge.skillRelease && this.skillCDT<=0){
-        input.edge.skillRelease=false;
-        this._startSkill1FixedTurns(8, {speed:1.5});
-      }
-    } else this._showGauge(false);
+    // 既存スキル1（●）はそのまま：チャージ→解放
+    if(input.edge.skillRelease && this.skillCDT<=0){
+      input.edge.skillRelease=false;
+      this._startSkill1FixedTurns(8, {speed:1.5});
+    }
 
-    // Skill2（◎）
-    if(!this._inULT && input.edge.skill2 && this.skill2CDT<=0){ input.edge.skill2=false; this._startSkill2_TornadoTriple(); }
-    // Skill3（P）
-    if(!this._inULT && input.edge.p && this.skill3CDT<=0){ input.edge.p=false; this._startSkill3_DrillLoop(); }
-    // Skill4（A）
-    if(!this._inULT && input.edge.air && this.skill4CDT<=0){ input.edge.air=false; this._startSkill4_AirRush(); }
+    // === 新：スキル②（◎）その場回転 + SA ===
+    if(input.edge.skill2 && this.skill2CDT<=0){
+      input.edge.skill2=false;
+      this._startSkill2_OnSpotSpin();
+    }
 
-    // ULT1（U）＝短押し固定
-    if(!this._inULT && input.edge.ultRelease && this.ultCDT<=0){
+    // === 新：スキル③（P）高速回転（弱KB） ===
+    if(input.edge.p && this.skill3CDT<=0){
+      input.edge.p=false;
+      this._startSkill3_DrillWeak();
+    }
+
+    // === 新：スキル④（A）長尺高速 + SA ===
+    if(input.edge.air && this.skill4CDT<=0){
+      input.edge.air=false;
+      this._startSkill4_AirLong();
+    }
+
+    // ULT1（U）は従来のまま／U2（別ボタン）
+    if(input.edge.ultRelease && this.ultCDT<=0){
       input.edge.ultPress=false; input.edge.ultRelease=false; input.btn.ult=false; input.ultChargeT=0;
       this._startULT_RushCombo();
     }
-    // ULT2（U2）＝独立ボタン
-    if(!this._inULT && input.edge.ult2 && this.ultCDT<=0){
+    if(input.edge.ult2 && this.ultCDT<=0){
       input.edge.ult2=false; input.btn.ult2=false;
       this._startULT2_PKCombo();
     }
 
-    // 実行中
+    // 実行中（攻撃/スキル/ULT）
     if(this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='skill3'||this.state==='skill4'||this.state==='ult'){
       const hb=this.currentHitbox();
       if(hb){
         for(const e of enemies){
           if(!e || e.dead || e.invulnT>0) continue;
-          if(rectsOverlap({x:hb.x,y:hb.y,w:hb.w,h:hb.h}, e.aabb())){
-            const hit=e.hurt(hb.power, hb.dir, {lift:hb.lift, kbMul:hb.kbMul, kbuMul:hb.kbuMul}, this.effects);
-            if(hit && rectsOverlap(this.aabb(), e.aabb())){ e.x = this.x + hb.dir*(this.w*0.55); }
+          const aa=e.aabb(); if(rectsOverlap({x:hb.x,y:hb.y,w:hb.w,h:hb.h}, aa)){
+            // 非SAの敵に回転吹っ飛びの味付け（フラグ）
+            const notSA = !e.superArmor;
+            const boost = (this.state==='skill4')? {kbMul:1.45,kbuMul:1.45,lift:1.1}  // Aは超強め
+                        : (this.state==='skill2')? {kbMul:1.35,kbuMul:1.4,lift:1.4}   // その場回転はハイジャンプ
+                        : null;
+            const opts={
+              lift: (boost?.lift ?? hb.lift),
+              kbMul: (boost?.kbMul ?? hb.kbMul),
+              kbuMul:(boost?.kbuMul ?? hb.kbuMul)
+            };
+            const hit = e.hurt(hb.power, hb.dir, opts, this.effects);
+            if(hit && notSA){ e._twirlT = Math.max(e._twirlT||0, 0.45); }
           }
         }
       }
-      const dt2 = (this._inULT ? dt*this._ultSpeed : dt);
-      this._updateAction(dt2,world,input);
+      this._updateAction(dt,world,input);
       world.updateTimer(dt);
       return;
     }
 
-    // 通常入力
-    if(!this._inULT){
-      if(input.edge.a1 || input.btn.a1){ if(this.comboStep>=3 && this.comboGraceT<=0){ this.comboStep=0; } this.bufferA1=false; this._startA1(); return; }
-      if(input.edge.a2Press && this.a2LockoutT<=0){ input.edge.a2Press=false; this._startA2(); return; }
-    }
+    // A1/A2（通常）
+    if(input.edge.a1 || input.btn.a1){ if(this.comboStep>=3 && this.comboGraceT<=0){ this.comboStep=0; } this.bufferA1=false; this._startA1(); return; }
+    if(input.edge.a2Press && this.a2LockoutT<=0){ input.edge.a2Press=false; this._startA2(); return; }
 
-    // 移動
-    if(!this._inULT){
-      let ax=0; if(input.left){ ax-=MOVE; this.face=-1; } if(input.right){ ax+=MOVE; this.face=1; }
-      this.vx = ax!==0 ? (ax>0?MOVE:-MOVE) : 0;
-      if(input.consumeJump() && this.jumpsLeft>0){ this.vy=-JUMP_V; this.onGround=false; this.jumpsLeft--; }
-    } else { this.vx=0; }
-
+    // 通常移動
+    let ax=0; if(input.left){ ax-=MOVE; this.face=-1; } if(input.right){ ax+=MOVE; this.face=1; }
+    this.vx = ax!==0 ? (ax>0?MOVE:-MOVE) : 0;
+    if(input.consumeJump() && this.jumpsLeft>0){ this.vy=-JUMP_V; this.onGround=false; this.jumpsLeft--; }
     this.updatePhysics(dt);
     if(this.onGround) this.jumpsLeft=this.maxJumps;
     this.state = !this.onGround ? 'jump' : (Math.abs(this.vx)>1?'run':'idle');
-
     world.updateTimer(dt);
   }
 
-  // ===== 既存・新スキル群（省略せずフル） =====
+  /* ========= 既存の近接/Skill1（省略せず維持） ========= */
   _startA1(){
     this.state='atk'; this.animT=0; this.comboStep=Math.min(this.comboStep+1,3);
     const seq=[ {kind:'prep',dur:0.08,frame:'k1prep',fx:80,power:0} ];
@@ -218,35 +209,68 @@ class Player extends CharacterBase{
     } }
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0; this._showGauge(false);
   }
-  _startSkill2_TornadoTriple(){
+
+  /* ========= 新スキル ========= */
+
+  // ◎ その場高速回転（SA）：tms1→tmsA→tms2→tms3→tms4→tmsA→tms5→tms6 ×3ループ
+  _startSkill2_OnSpotSpin(){
     this.state='skill2'; this.animT=0; this.skill2CDT=8.0;
-    const fs=['tms1','tms2','tms3','tms4','tms5','tms6']; const seq=[];
+    const order=['tms1','tmsA','tms2','tms3','tms4','tmsA','tms5','tms6'];
+    const seq=[];
     for(let loop=0; loop<3; loop++){
-      for(let i=0;i<fs.length;i++){
-        const hard = (fs[i]==='tms6');
-        seq.push({kind:'hit', dur: hard?0.12:0.08, frame:fs[i], fx: hard? 220: 140, power: hard? 20: 10, lift: hard? 1.0: 0.2, kbMul: hard? 1.25: 0.9, kbuMul: hard? 1.25: 0.9});
+      for(const f of order){
+        const fin = (f==='tms6');
+        // その場＝fxを0に、ヒット硬め
+        seq.push({
+          kind:'hit', dur: fin?0.12:0.08, frame:f, fx: 0,
+          power: fin? 20 : 10,
+          lift: fin? 1.2 : 1.0,
+          kbMul: fin? 1.6 : 1.35,
+          kbuMul: fin? 1.6 : 1.4
+        });
       }
     }
-    this._actionSeq=seq; this._actionIndex=0; this._actionTime=0; this.saT=0.2;
-  }
-  _startSkill3_DrillLoop(){
-    this.state='skill3'; this.animT=0; this.skill3CDT=10.0;
-    const intro=['dr1','dr2','dr3','dr4']; const loop=['dr5','dr6','dr7','dr8']; const seq=[];
-    for(const f of intro){ seq.push({kind:'hit',dur:0.08,frame:f,fx:120,power:15, lift:0.2, kbMul:0.85, kbuMul:0.85}); }
-    for(let r=0;r<3;r++){ for(const f of loop){ seq.push({kind:'hit',dur:0.08,frame:f,fx:150,power:15, lift:0.25, kbMul:0.85, kbuMul:0.85}); } }
-    this._actionSeq=seq; this._actionIndex=0; this._actionTime=0; this.saT=0.18;
-  }
-  _startSkill4_AirRush(){
-    this.state='skill4'; this.animT=0; this.skill4CDT=6.0;
-    const order=['air1','air2','air3','air4','air5','air2','air3','air4','air5','air2','air3','air4','air5']; const seq=[];
-    for(const f of order){ seq.push({kind:'hit', dur:0.06, frame:f, fx:200, power:20, lift:0.8, kbMul:1.2, kbuMul:1.2}); }
-    this._actionSeq=seq; this._actionIndex=0; this._actionTime=0; this.saT=0.22;
+    this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
+    this.saT = 0.6;                           // 発動中SA
   }
 
+  // P 高速回転：dr1→dr2→dr3→dr4（導入）→ [dr5..dr8]×4（弱めKB）
+  _startSkill3_DrillWeak(){
+    this.state='skill3'; this.animT=0; this.skill3CDT=9.0;
+    const intro=['dr1','dr2','dr3','dr4'];
+    const loop =['dr5','dr6','dr7','dr8'];
+    const seq=[];
+    for(const f of intro){ seq.push({kind:'hit', dur:0.08, frame:f, fx:120, power:15, lift:0.2, kbMul:0.85, kbuMul:0.85}); }
+    for(let r=0;r<4;r++){ for(const f of loop){ seq.push({kind:'hit', dur:0.08, frame:f, fx:150, power:15, lift:0.25, kbMul:0.85, kbuMul:0.85}); } }
+    this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
+    this.saT = Math.max(this.saT, 0.15);      // ちょい耐性
+  }
+
+  // A 高速長尺（SA）：…airAを含む長い並び（超強KB）
+  _startSkill4_AirLong(){
+    this.state='skill4'; this.animT=0; this.skill4CDT=10.0;
+    const base=['air1','air2','air3','airA','air4','air5'];
+    const seqOrder=[
+      ...base, 'air2','air3','airA','air4','air5',
+      'air2','air3','airA','air4','air5',
+      'air1','air2','air3','airA','air4','air5',
+      'air2','air3','airA','air4','air5',
+      'air2','air3','airA','air4','air5'
+    ];
+    const seq=[];
+    for(const f of seqOrder){
+      seq.push({kind:'hit', dur:0.06, frame:f, fx:220, power:30, lift:1.0, kbMul:1.45, kbuMul:1.45});
+    }
+    this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
+    this.saT = 0.9;                           // 発動中SAしっかり
+  }
+
+  /* ========= ULT ========= */
+
   _startULT_RushCombo(){
-    this._inULT=true; this._ultQueue=['A1R','S1','S2']; this._ultPhase=''; this._ultTimer=0; this._ultLockInput=true;
+    // 既存のULT1（簡易ラッシュ）はそのまま
+    this._inULT=true; this._ultQueue=['A1R','S1']; this._ultPhase=''; this._ultTimer=0; this._ultLockInput=true;
     this.ultCDT=6.0; this.saT=0.5; this.state='ult'; this.animT=0;
-    this.effects.addSpark(this.x + this.face*10, this.y-14, true);
     this._advanceULTPhase();
   }
   _advanceULTPhase(){
@@ -254,7 +278,6 @@ class Player extends CharacterBase{
     if(!next){ this._finishULT(); return; }
     if(next==='A1R'){ this._startA1RushSequence(); return; }
     if(next==='S1'){ this._startSkill1FixedTurns(8, {speed:1.5}); return; }
-    if(next==='S2'){ this._startSkill2_TornadoTriple(); return; }
   }
   _startA1RushSequence(){
     this.state='atk'; this.animT=0;
@@ -266,63 +289,45 @@ class Player extends CharacterBase{
     ];
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
-  _tickULT(dt){
-    this.saT = Math.max(this.saT, 0.1);
-    this._ultTimer += dt;
-    if(this._ultTimer >= this._ultTimeLimit){ this._finishULT(); return; }
-    if(!this._actionSeq){ this._advanceULTPhase(); }
-  }
   _finishULT(){
     this._inULT=false; this._ultQueue=null; this._ultPhase=''; this._ultTimer=0; this._ultLockInput=false;
     this.vx=0; this.state='idle';
-    this.effects.shake(0.18,8); this.effects.addSpark(this.x + this.face*16, this.y-18, true);
-    this.bufferA1=false; this.comboStep=0; this.comboGraceT=0; this.a2LockoutT=0;
   }
 
+  // ULT②（U2） PK1→…→PK8
   _startULT2_PKCombo(){
     this._inULT=true; this.state='ult'; this.animT=0; this._ultLockInput=true;
     this.ultCDT=10.0; this.saT=0.6; this._ultTimer=0; this._ultTimeLimit=7.0;
     const seq=[
       {kind:'hit', dur:0.14, frame:'pk1', fx:160, power:20, lift:0.3, kbMul:1.0, kbuMul:1.0},
-      {kind:'pose',dur:0.18, frame:'pk2', fx:220, power:0,   shake:0.05},
-      {kind:'hit', dur:0.16, frame:'pk3', fx:220, power:30,  lift:0.6, kbMul:1.05, kbuMul:1.05},
+      {kind:'pose',dur:0.18, frame:'pk2', fx:220, power:0},
+      {kind:'hit', dur:0.16, frame:'pk3', fx:220, power:30, lift:0.6, kbMul:1.05, kbuMul:1.05},
       {kind:'pose',dur:0.10, frame:'pk4', fx:120, power:0},
-      {kind:'hit', dur:0.16, frame:'pk5', fx:240, power:50,  lift:0.9, kbMul:1.15, kbuMul:1.15},
+      {kind:'hit', dur:0.16, frame:'pk5', fx:240, power:50, lift:0.9, kbMul:1.15, kbuMul:1.15},
       {kind:'pose',dur:0.10, frame:'pk6', fx:160, power:0},
-      {kind:'hit', dur:0.20, frame:'pk7', fx:280, power:80,  lift:1.4, kbMul:1.4,  kbuMul:1.4},
+      {kind:'hit', dur:0.20, frame:'pk7', fx:280, power:80, lift:1.4, kbMul:1.4, kbuMul:1.4},
       {kind:'pose',dur:1.00, frame:'pk8', fx:0,   power:0}
     ];
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
 
+  /* ========= 汎用実行ループ ========= */
   _updateAction(dt,world,input){
     const cur=this._actionSeq?.[this._actionIndex];
+
+    // SA微維持
     if(this.state==='skill2' || this.state==='skill3' || this.state==='skill4'){ this.saT = Math.max(this.saT, 0.08); }
+
     if(cur?.fx){ this.x += this.face * cur.fx * dt; }
-    if(cur?.shake){ this.world.effects.shake(cur.shake, 6); }
-
-    if(this._actionSeq && this.state==='atk' && cur?.after==='enableChase' && !this._inULT){
-      this._chaseWindowT = (this._chaseWindowT||0) + dt;
-      if(this._chaseWindowT>0.18 && !this._chaseEnabled){ this._chaseEnabled=true; }
-      if(this._chaseEnabled && input.edge.a2Press && !this._chaseConsumed){
-        input.edge.a2Press=false; this._startA2Chase(); return;
-      }
-    }
-
-    this._shakeOX = (this.state==='skill2' || this.state==='skill3' || this.state==='skill4' || this.state==='ult') && cur ? Math.sin(performance.now()/25)*2 : 0;
-
-    this.vx = 0; this.updatePhysics(dt);
+    this.vx = 0;
+    this.updatePhysics(dt);
 
     if(this._actionSeq){
       this._actionTime+=dt;
       if(this._actionTime>=cur.dur){
         this._actionIndex++; this._actionTime=0;
         if(this._actionIndex>=this._actionSeq.length){
-          if(this.state==='atk' && this.comboStep>0 && !this._inULT){ this.comboGraceT=this.comboGraceMax; }
-          if(!this._inULT) this.state='idle';
-          this._actionSeq=null;
-          if(this._inULT && this._ultQueue){ /* next */ }
-          else if(this._inULT && !this._ultQueue){ this._finishULT(); }
+          this.state='idle'; this._actionSeq=null;
         }
       }
     }
@@ -337,7 +342,7 @@ class Player extends CharacterBase{
     const fill=document.getElementById('hpfill'); const num=document.getElementById('hpnum');
     if(fill&&num){ fill.style.width='100%'; num.textContent=this.hp; }
     this.x=world.camX+80; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.vx=0; this.vy=0;
-    this.jumpsLeft=this.maxJumps; this.saT=0; this._activeSpikes=null;
+    this.jumpsLeft=this.maxJumps; this.saT=0;
   }
 
   draw(ctx,world){
@@ -345,43 +350,37 @@ class Player extends CharacterBase{
     if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
     if(this.face<0 && !this.dead) ctx.scale(-1,1);
 
-    let img=null, ox=this._shakeOX||0;
+    let img=null;
     if(this.state==='idle'){ img=this._imgByKey('idle',0); }
     else if(this.state==='run'){
-      const speed=Math.abs(this.vx);
-      const rate = lerp(6, 11, clamp(speed/MOVE, 0, 1));
+      const rate = lerp(6, 11, clamp(Math.abs(this.vx)/MOVE, 0, 1));
       const i=Math.floor(this.animT*rate)%this.frames.run.length;
       img=this._imgByKey('run',i);
     }
     else if(this.state==='jump'){ img=this._imgByKey('run',0); }
-    else if((this.state==='atk'||this.state.startsWith('skill')||this.state==='ult') && this._actionSeq){
+    else if((this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='skill3'||this.state==='skill4'||this.state==='ult') && this._actionSeq){
       const cur=this._actionSeq[this._actionIndex]; const key=cur.frame; img=this.world.assets.img(this.frames[key]?this._getFramePath(key,0):key);
     } else img=this._imgByKey('idle',0);
 
     if(img){
       const scale=this.h/img.height, w=img.width*scale, h=this.h;
-      ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2+ox), Math.round(-h/2), Math.round(w), Math.round(h));
+      ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
     }
     ctx.restore();
   }
 
+  // SA効果（被弾時）
   hurt(amount,dir,opts,effects){
-    if(this._inULT){
-      const safeOpts = {...(opts||{}), kbMul:0, kbuMul:0};
-      const hit = CharacterBase.prototype.hurt.call(this,amount,dir,safeOpts,effects);
-      if(hit && !this.dead){ this.state='ult'; this.invulnT = Math.max(this.invulnT, 0.08); }
-      const fill=document.getElementById('hpfill'); const num=document.getElementById('hpnum');
-      if(fill&&num){ num.textContent=this.hp; fill.style.width=Math.max(0,Math.min(100,(this.hp/this.maxhp)*100))+'%'; }
-      return hit;
+    if(this.state==='skill2' || this.state==='skill4'){  // 発動中SA
+      opts = {...(opts||{}), kbMul:0.2, kbuMul:0.2};
     }
-    if(this.state==='skill2'||this.state==='skill3'||this.state==='skill4' || this.saT>0){ opts = {...(opts||{}), kbMul:0.2, kbuMul:0.2}; }
     const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
     if(hit){
       const fill=document.getElementById('hpfill'); const num=document.getElementById('hpnum');
       if(fill&&num){ num.textContent=this.hp; fill.style.width=Math.max(0,Math.min(100,(this.hp/this.maxhp)*100))+'%'; }
-      this.bufferA1=false; this.comboStep=0; this.comboGraceT=0; this.a2LockoutT=0;
-      if(!(this.state==='skill2'||this.state==='skill3'||this.state==='skill4')){
-        this._actionSeq=null; this._actionIndex=0; this._actionTime=0; this.overhead?.root && (this.overhead.root.style.display='none'); this.jumpsLeft=this.maxJumps; this.state='idle';
+      if(!(this.state==='skill2' || this.state==='skill4')){
+        this._actionSeq = null; this._actionIndex = 0; this._actionTime = 0;
+        this.bufferA1 = false; this.comboStep = 0; this.comboGraceT = 0; this.a2LockoutT = 0;
       }
     }
     return hit;
