@@ -1,4 +1,4 @@
-// game.js — World / Game / Boot
+// game.js — World / Game / Boot（U弾＝超回転吹っ飛び対応、LE.pngをプリロード）
 (function(){
 'use strict';
 
@@ -52,8 +52,6 @@ class World{
   }
 }
 
-const updateHPUI=(hp,maxhp)=>{ const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=hp; fill.style.width=Math.max(0,Math.min(100,(hp/maxhp)*100))+'%'; };
-
 /* ================================ */
 class Game{
   constructor(){
@@ -79,7 +77,7 @@ class Game{
       'dr1.png','dr2.png','dr3.png','dr4.png','dr5.png','dr6.png','dr7.png','dr8.png',
       'air1.png','air2.png','air3.png','airA.png','air4.png','air5.png',
       'PK1.png','PK2.png','PK3.png','PK4.png','PK5.png','PK6.png','PK7.png','PK8.png',
-      'kem.png','EN.png', // ★ 追加読み込み
+      'kem.png','LE.png', // ★ LE.png を使用
 
       // 敵
       'teki1.png','teki2.png','teki3.png','teki7.png',
@@ -93,7 +91,7 @@ class Game{
     this.world=new World(this.assets,this.canvas,this.effects);
     this.player=new Player(this.assets,this.world,this.effects);
 
-    // 追加ボタン（A / P / U2）
+    // 追加ボタン（A / P / U2）— HTML側のIDを使う
     const bindEdge=(id, edgeKey)=>{
       const el=document.getElementById(id); if(!el) return;
       const down=()=>{ this.input.edge[edgeKey]=true; this.input.btn[edgeKey]=true; };
@@ -104,17 +102,12 @@ class Game{
       el.addEventListener('touchstart',e=>{e.preventDefault();down();},{passive:false});
       el.addEventListener('touchend',  e=>{e.preventDefault();up();},{passive:false});
     };
-    if(!this.input.edge.air)  this.input.edge.air=false;
-    if(!this.input.edge.p)    this.input.edge.p=false;
-    if(!this.input.edge.ult2) this.input.edge.ult2=false;
-    if(!this.input.btn.air)  this.input.btn.air=false;
-    if(!this.input.btn.p)    this.input.btn.p=false;
-    if(!this.input.btn.ult2) this.input.btn.ult2=false;
+    ['air','p','ult2'].forEach(k=>{ if(!this.input.edge[k]) this.input.edge[k]=false; if(!this.input.btn[k]) this.input.btn[k]=false; });
     bindEdge('btnAIR','air');
     bindEdge('btnP','p');
     bindEdge('btnULT2','ult2');
 
-    // 敵：1体ずつ
+    // 敵（1体ずつ）
     const spawnX = 680;
     this.enemyOrder = [
       ()=>[ new Kozou(this.world,this.effects,this.assets,spawnX) ],
@@ -137,12 +130,11 @@ class Game{
       if(this.effects.hitstop>0){ this.effects.update(dt); this.world.updateCam(this.player); this.world.draw(this.player,this.enemies); requestAnimationFrame(loop); return; }
 
       const input=this.input;
-      // U 溜め表示用（actorsで参照）
       window._inputUltT = input.ultChargeT || 0;
 
       this.player.update(dt,this.input,this.world,this.enemies);
 
-      // 敵更新＆当たり（既存）
+      // 敵更新＆接触
       for(const e of this.enemies){
         e.update(dt,this.player);
 
@@ -202,7 +194,7 @@ class Game{
         }
       }
 
-      // プレイヤー側の弾
+      // プレイヤー弾（U弾の特別処理含む）
       if(this.world._skillBullets){
         for(const p of this.world._skillBullets){
           p.update(dt);
@@ -210,41 +202,47 @@ class Game{
             if(!p.dead && !e.dead && rectsOverlap(p.aabb(), e.aabb())){
               p.dead=true;
               const dir = (e.x>=p.x)? 1 : -1;
-              const hit=e.hurt(p.power, dir, {lift:0.3,kbMul:0.9,kbuMul:0.9}, this.effects);
-              if(hit) this.effects.addSpark(e.x, e.y-10, p.power>=40);
+              if(p instanceof UltBlast){
+                // UL3命中：超絶回転吹っ飛び
+                e.hurt(p.power, dir, {lift:1.5, kbMul:3.0, kbuMul:2.6}, this.effects);
+                e.vx = dir*820; e.vy = -820;     // 直接上書きでさらに飛ばす
+                e._twirlT = Math.max(e._twirlT||0, 1.4);
+                this.effects.shake(0.18,8);
+              }else{
+                const hit=e.hurt(p.power, dir, {lift:0.3,kbMul:0.9,kbuMul:0.9}, this.effects);
+                if(hit) this.effects.addSpark(e.x, e.y-10, p.power>=40);
+              }
             }
           }
         }
         this.world._skillBullets = this.world._skillBullets.filter(p=>!p.dead && p.life>0);
       }
 
-      // 撃破整理→次へ
+      // 撃破整理→次
       this.enemies=this.enemies.filter(e=>!(e.dead && e.fade<=0));
       if(this.enemies.length===0 && this.enemyIndex < this.enemyOrder.length-1){
         this.enemyIndex++;
         this.enemies.push(...this.enemyOrder[this.enemyIndex]());
       }
 
-      // めり込み解消（既存）
+      // めり込み解消
       for(const e of this.enemies){
         if(e.dead || this.player.dead) continue;
         const a=this.player.aabb(), b=e.aabb();
         if(!rectsOverlap(a,b)) continue;
-        const dx = (this.player.x - e.x);
-        const dy = (this.player.y - e.y);
-        const overlapX = (a.w + b.w)/2 - Math.abs(dx);
-        const overlapY = (a.h + b.h)/2 - Math.abs(dy);
+        const dx=(this.player.x - e.x), dy=(this.player.y - e.y);
+        const overlapX=(a.w+b.w)/2 - Math.abs(dx), overlapY=(a.h+b.h)/2 - Math.abs(dy);
         if(overlapY < overlapX){
-          const dirY = dy>=0? 1 : -1;
-          this.player.y += dirY * overlapY * 0.9;
-          e.y         -= dirY * overlapY * 0.1;
+          const dirY = dy>=0?1:-1;
+          this.player.y += dirY*overlapY*0.9;
+          e.y         -= dirY*overlapY*0.1;
           if(dirY<0){ this.player.vy = Math.max(this.player.vy, 0); } else { this.player.vy = Math.min(this.player.vy, 0); }
         } else {
-          const dirX = dx>=0? 1 : -1;
-          this.player.x += dirX * overlapX * 0.6;
-          e.x           -= dirX * overlapX * 0.4;
-          this.player.vx += dirX * 20;
-          e.vx          -= dirX * 20;
+          const dirX = dx>=0?1:-1;
+          this.player.x += dirX*overlapX*0.6;
+          e.x           -= dirX*overlapX*0.4;
+          this.player.vx += dirX*20;
+          e.vx          -= dirX*20;
         }
       }
 
