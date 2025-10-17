@@ -10,7 +10,7 @@ const {
 } = window.__GamePieces__;
 
 const {
-  Player, // actors-player.js
+  Player,
   WaruMOB, Kozou, MOBGiant, GabuKing, Screw, IceRobo
 } = window.__Actors__;
 
@@ -66,18 +66,20 @@ class Game{
     const imgs=[
       // 背景
       'MOBA.png','back1.png',
+
       // Player基礎
       'M1-1.png','M1-2.png','M1-3.png','M1-4.png',
       'K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png',
       'h1.png','h2.png','h3.png','h4.png','J.png',
       'Y1.png','Y2.png','Y3.png','Y4.png',
-      'UL1.PNG','UL2.PNG','UL3.png','kem.png',
+      'UL1.PNG','UL2.PNG','UL3.png',
 
-      // 新プレイヤー用
+      // 新プレイヤー素材
       'tms1.png','tmsA.png','tms2.png','tms3.png','tms4.png','tms5.png','tms6.png',
       'dr1.png','dr2.png','dr3.png','dr4.png','dr5.png','dr6.png','dr7.png','dr8.png',
       'air1.png','air2.png','air3.png','airA.png','air4.png','air5.png',
       'PK1.png','PK2.png','PK3.png','PK4.png','PK5.png','PK6.png','PK7.png','PK8.png',
+      'kem.png','EN.png', // ★ 追加読み込み
 
       // 敵
       'teki1.png','teki2.png','teki3.png','teki7.png',
@@ -89,10 +91,9 @@ class Game{
     ];
     await this.assets.load(imgs);
     this.world=new World(this.assets,this.canvas,this.effects);
-
     this.player=new Player(this.assets,this.world,this.effects);
 
-    // 追加ボタン（A/P/U2）ブリッジ
+    // 追加ボタン（A / P / U2）
     const bindEdge=(id, edgeKey)=>{
       const el=document.getElementById(id); if(!el) return;
       const down=()=>{ this.input.edge[edgeKey]=true; this.input.btn[edgeKey]=true; };
@@ -103,9 +104,9 @@ class Game{
       el.addEventListener('touchstart',e=>{e.preventDefault();down();},{passive:false});
       el.addEventListener('touchend',  e=>{e.preventDefault();up();},{passive:false});
     };
-    if(!this.input.edge.air) this.input.edge.air=false;
-    if(!this.input.edge.p)   this.input.edge.p=false;
-    if(!this.input.edge.ult2)this.input.edge.ult2=false;
+    if(!this.input.edge.air)  this.input.edge.air=false;
+    if(!this.input.edge.p)    this.input.edge.p=false;
+    if(!this.input.edge.ult2) this.input.edge.ult2=false;
     if(!this.input.btn.air)  this.input.btn.air=false;
     if(!this.input.btn.p)    this.input.btn.p=false;
     if(!this.input.btn.ult2) this.input.btn.ult2=false;
@@ -113,7 +114,7 @@ class Game{
     bindEdge('btnP','p');
     bindEdge('btnULT2','ult2');
 
-    // 出現順（1体ずつ）
+    // 敵：1体ずつ
     const spawnX = 680;
     this.enemyOrder = [
       ()=>[ new Kozou(this.world,this.effects,this.assets,spawnX) ],
@@ -126,6 +127,7 @@ class Game{
     this.enemyIndex = 0;
     this.enemies = this.enemyOrder[this.enemyIndex]();
 
+    const updateHPUI=(hp,maxhp)=>{ const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=hp; fill.style.width=Math.max(0,Math.min(100,(hp/maxhp)*100))+'%'; };
     updateHPUI(this.player.hp,this.player.maxhp);
     this.lastT=now();
 
@@ -135,10 +137,12 @@ class Game{
       if(this.effects.hitstop>0){ this.effects.update(dt); this.world.updateCam(this.player); this.world.draw(this.player,this.enemies); requestAnimationFrame(loop); return; }
 
       const input=this.input;
+      // U 溜め表示用（actorsで参照）
       window._inputUltT = input.ultChargeT || 0;
 
       this.player.update(dt,this.input,this.world,this.enemies);
 
+      // 敵更新＆当たり（既存）
       for(const e of this.enemies){
         e.update(dt,this.player);
 
@@ -198,6 +202,7 @@ class Game{
         }
       }
 
+      // プレイヤー側の弾
       if(this.world._skillBullets){
         for(const p of this.world._skillBullets){
           p.update(dt);
@@ -213,13 +218,14 @@ class Game{
         this.world._skillBullets = this.world._skillBullets.filter(p=>!p.dead && p.life>0);
       }
 
+      // 撃破整理→次へ
       this.enemies=this.enemies.filter(e=>!(e.dead && e.fade<=0));
-
       if(this.enemies.length===0 && this.enemyIndex < this.enemyOrder.length-1){
         this.enemyIndex++;
         this.enemies.push(...this.enemyOrder[this.enemyIndex]());
       }
 
+      // めり込み解消（既存）
       for(const e of this.enemies){
         if(e.dead || this.player.dead) continue;
         const a=this.player.aabb(), b=e.aabb();
