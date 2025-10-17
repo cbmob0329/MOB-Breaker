@@ -1,4 +1,4 @@
-// actors-player.js — Aの煙を極小&周囲のみ / ◎のLEを半身サイズ&被り防止 / U弾サイズ=溜め見た目に一致
+// actors-player.js — Aの煙=濃い小粒を左右のみ/被りなし・◎は左右へ射出・U2全体攻撃は当たり不要で全員HIT
 (function(){
 'use strict';
 
@@ -8,6 +8,36 @@ const {
   constants:{ MOVE, JUMP_V, GROUND_TOP_Y, FOOT_PAD },
   utils:{ clamp, lerp, rectsOverlap }
 } = window.__GamePieces__;
+
+/* ---------- LEレコード弾（左右に飛ぶ） ---------- */
+class LeRecordProjectile extends Projectile{
+  constructor(player, dir){
+    const world=player.world;
+    const img=world.assets.img('LE.png');
+    const x = player.x + dir*(player.w*0.7); // 体の外側から生成（被り防止）
+    const y = player.y - player.h*0.1;
+    super(world, x, y, dir, img, 60);
+    // サイズ：プレイヤー身長の50%相当（視認性を保ちつつ邪魔にしない）
+    const targetH = player.h*0.5;
+    if(img){
+      const s = targetH/img.height;
+      this.w = Math.round(img.width * s);
+      this.h = Math.round(img.height* s);
+    }else{
+      this.w = Math.round(player.h*0.5*0.9);
+      this.h = Math.round(player.h*0.5);
+    }
+    this.vx = 420 * dir;
+    this.vy = 0;
+    this.life = 1.0; // まっすぐ短時間で退場
+    this.power = 60;
+    this._applied = false;
+  }
+  update(dt){
+    if(this.dead) return;
+    super.update(dt);
+  }
+}
 
 /* ================================ */
 class Player extends CharacterBase{
@@ -35,17 +65,16 @@ class Player extends CharacterBase{
 
     // U1 溜め
     this.isUltCharging=false;
-    this._ultChargeMax=1.5; // 半分に短縮済み
-
-    // ◎レコード
-    this._orbitAngle=0;
-    this._orbitHitCool=0.18;
+    this._ultChargeMax=1.5; // ため時間 半分
 
     // U2
     this._trail=[];
     this._pendingU2AOE=false;
     this._u2aoeDone=false;
     this._u2ShakeT=0;
+
+    // ◎ LE弾のスポーン制御
+    this._leShotSpawned=false;
 
     this.frames={
       idle:['M1-1.png'],
@@ -57,7 +86,7 @@ class Player extends CharacterBase{
       y1:'Y1.png', y2:'Y2.png', y3:'Y3.png', y4:'Y4.png',
       ul1:'UL1.PNG', ul2:'UL2.PNG', ul3:'UL3.png',
 
-      // ◎
+      // ◎（演出用スプライト）
       tms:['tms1.png','tmsA.png','tms2.png','tms3.png','tms4.png','tmsA.png','tms5.png','tms6.png'],
       // P
       drIn:['dr1.png','dr2.png','dr3.png','dr4.png'],
@@ -174,37 +203,15 @@ class Player extends CharacterBase{
         }
       }
 
-      // ◎ レコード周回（LE.png）— プレイヤー半身サイズ、被り防止の半径で表示・HIT
-      if(this.state==='skill2'){
-        this._orbitAngle += dt*10;
-        const tex=this.world.assets.img('LE.png');
-        const R = Math.max(this.w*0.3, (this.w*0.6)/2 + (this.h*0.5)/2 + 6); // プレイヤー外周+レコード半径+余白
-        const nowT=performance.now()/1000;
-        for(const e of enemies){
-          if(!e || e.dead) continue;
-          let touched=false;
-          for(let i=0;i<3;i++){
-            const ang=this._orbitAngle+i*2.094395102;
-            const px=this.x+Math.cos(ang)*R, py=this.y+Math.sin(ang)*R;
-            const b=e.aabb();
-            // レコード実寸相当（半身≈32px）で接触見る
-            const recR = (this.h*0.5)*0.5;
-            const dx=Math.abs(px-b.x), dy=Math.abs(py-b.y);
-            if(dx < (b.w/2 + recR*0.6) && dy < (b.h/2 + recR*0.6)){ touched=true; break; }
-          }
-          if(touched){
-            const last=e._lastRecHitT||0;
-            if(nowT-last>=this._orbitHitCool){
-              e._lastRecHitT=nowT;
-              const dir=(e.x>=this.x)?1:-1;
-              e.hurt(60,dir,{lift:1.2,kbMul:2.4,kbuMul:2.0},this.effects);
-              if(!e.superArmor) e._twirlT=Math.max(e._twirlT||0,0.8);
-            }
-          }
-        }
+      // ◎：発動直後に左右へLE弾を1発ずつ発生（重複防止フラグ）
+      if(this.state==='skill2' && !this._leShotSpawned){
+        this._leShotSpawned = true;
+        const L = new LeRecordProjectile(this, -1);
+        const R = new LeRecordProjectile(this,  1);
+        (this.world._skillBullets||(this.world._skillBullets=[])).push(L,R);
       }
 
-      // U2：AOE発動
+      // U2：AOE（PK8）発動（全員ヒット／当たり不要）
       if(this._pendingU2AOE){
         this._pendingU2AOE=false;
         if(!this._u2aoeDone){
@@ -214,6 +221,7 @@ class Player extends CharacterBase{
           for(const e of enemies){
             if(!e || e.dead) continue;
             const dir=(e.x>=this.x)?1:-1;
+            // ★判定不要で全員HIT
             e.hurt(100,dir,{lift:1.6,kbMul:2.6,kbuMul:2.2},this.effects);
             e.vx = dir*720; e.vy = -720;
             e._twirlT=Math.max(e._twirlT||0,1.2);
@@ -284,11 +292,12 @@ class Player extends CharacterBase{
     this._showGauge(false);
   }
 
-  /* ---------- ◎（LEレコード） ---------- */
+  /* ---------- ◎（LEレコード＝左右に飛ぶ弾を発生） ---------- */
   _startSpinSkill2(){
     if(this.skill2CDT>0) return;
     this.state='skill2'; this.animT=0; this.skill2CDT=10.0;
     this.saT = 1.8;
+    this._leShotSpawned=false;
     const order=this.frames.tms; const seq=[];
     for(let loop=0; loop<3; loop++){
       for(let i=0;i<order.length;i++){
@@ -297,7 +306,6 @@ class Player extends CharacterBase{
       }
     }
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
-    this._orbitAngle=0;
   }
 
   /* ---------- P ---------- */
@@ -312,7 +320,7 @@ class Player extends CharacterBase{
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
 
-  /* ---------- A（煙：超控えめ/周囲のみ） ---------- */
+  /* ---------- A（煙：左右のみ・濃いめ小粒・被りなし） ---------- */
   _startAIR(){
     if(this.airCDT>0) return;
     this.state='air'; this.animT=0; this.airCDT=12.0;
@@ -320,7 +328,8 @@ class Player extends CharacterBase{
     const seq=[]; const arr=this.frames.airSeq;
     for(let i=0;i<arr.length;i++){
       const f=arr[i];
-      seq.push({kind:'hit', dur:0.10, frame:f, fx:0, power:60, lift:1.0, kbMul:2.2, kbuMul:2.0, tag:'air'});
+      // その場・少しゆっくり（0.12s/コマ）
+      seq.push({kind:'hit', dur:0.12, frame:f, fx:0, power:60, lift:1.0, kbMul:2.2, kbuMul:2.0, tag:'air'});
     }
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
@@ -336,7 +345,7 @@ class Player extends CharacterBase{
     this._actionIndex=0; this._actionTime=0;
     this.ultCDT=3.0;
 
-    // UltBlast は 0..3.0 を基準にサイズ計算するので、溜め最大(=this._ultChargeMax)が 3.0 に対応するよう正規化
+    // ため最大(this._ultChargeMax)→UltBlast基準(0..3.0)へ正規化
     const csClamped = Math.min(this._ultChargeMax, chargeSec);
     const csScaledForProjectile = csClamped * (3.0 / this._ultChargeMax);
 
@@ -361,7 +370,7 @@ class Player extends CharacterBase{
       {kind:'hit', dur:0.12, frame:P[4], fx:200, power:50, lift:0.8, kbMul:1.4, kbuMul:1.2},
       {kind:'pose',dur:0.10, frame:P[5], fx:140, power:0},
       {kind:'hit', dur:0.18, frame:P[6], fx:240, power:80, lift:1.4, kbMul:2.2, kbuMul:1.9, tag:'u2fin'},
-      {kind:'pose',dur:1.00, frame:P[7], fx:0, power:0, tag:'u2aoe'}
+      {kind:'pose',dur:1.00, frame:P[7], fx:0, power:0, tag:'u2aoe'} // ← ここで全員にHIT（判定不要）
     ];
     this._actionIndex=0; this._actionTime=0;
   }
@@ -382,6 +391,12 @@ class Player extends CharacterBase{
 
     if(cur?.tag==='u2aoe' && !this._u2aoeSeen){
       this._u2aoeSeen=true; this._pendingU2AOE=true;
+    }
+
+    // 追撃窓（A2追い打ち）※既存仕様維持
+    if(this._actionSeq && this.state==='atk' && cur?.after==='enableChase'){
+      this._chaseWindowT = (this._chaseWindowT||0) + dt;
+      if(this._chaseWindowT>0.18 && !this._chaseEnabled){ this._chaseEnabled=true; }
     }
 
     this.vx = 0; this.updatePhysics(dt);
@@ -406,7 +421,7 @@ class Player extends CharacterBase{
     const fill=document.getElementById('hpfill'); const num=document.getElementById('hpnum');
     if(fill&&num){ fill.style.width='100%'; num.textContent=this.hp; }
     this.x=world.camX+80; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.vx=0; this.vy=0;
-    this.jumpsLeft=this.maxJumps; this.saT=0; this.isUltCharging=false; this._trail.length=0; this._u2ShakeT=0;
+    this.jumpsLeft=this.maxJumps; this.saT=0; this.isUltCharging=false; this._trail.length=0; this._u2ShakeT=0; this._leShotSpawned=false;
   }
 
   draw(ctx,world){
@@ -463,35 +478,22 @@ class Player extends CharacterBase{
       }
     }
 
-    // A：煙（数=2 / 半径=小 / 透明度低め / 周囲のみ）
+    // A：煙（左右のみ・濃いめ小粒・被りなし）
     if(this.state==='air'){
       const kem=this.world.assets.img('kem.png');
       if(kem){
-        const n=2, r=14;
-        for(let i=0;i<n;i++){
-          const ang=(performance.now()/300 + i/n*2*Math.PI);
-          const px=Math.cos(ang)*r, py=Math.sin(ang)*r - 10; // 体に被らないよう少し外周&上寄せ
-          const a=0.16 + 0.10*Math.sin(performance.now()/300 + i);
-          const s=0.12 + 0.03*Math.sin(performance.now()/320 + i);
-          ctx.save(); ctx.globalAlpha=a; ctx.translate(Math.round(px), Math.round(py)); ctx.scale(s,s);
-          ctx.drawImage(kem, Math.round(-kem.width/2), Math.round(-kem.height/2)); ctx.restore();
-        }
-      }
-    }
-
-    // ◎：LE.png（プレイヤー半身サイズで外周回転＝被り防止）
-    if(this.state==='skill2'){
-      const tex=this.world.assets.img('LE.png');
-      if(tex){
-        const targetH = this.h*0.5;                 // 半身サイズ ≈ 32px
-        const s = targetH / tex.height;
-        const R = Math.max(this.w*0.3, (this.w*0.6)/2 + (targetH/2) + 6);
-        for(let i=0;i<3;i++){
-          const ang = this._orbitAngle + i*2.094395102;
-          const px = Math.cos(ang)*R, py=Math.sin(ang)*R;
-          ctx.save(); ctx.translate(Math.round(px), Math.round(py)); ctx.rotate(ang*3);
-          const ww=tex.width*s, hh=tex.height*s;
-          ctx.globalAlpha=0.95; ctx.drawImage(tex, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh));
+        // 体の左右外側（被り禁止）に2つだけ、濃いめ＆小さめ
+        const offsets=[-1, +1];
+        for(const sgn of offsets){
+          const px = sgn*(this.w*0.7);   // 体から十分外側
+          const py = -this.h*0.15;       // 少し上寄せ
+          const alpha = 0.35 + 0.05*Math.sin(performance.now()/350 + sgn);
+          const sc = 0.10 + 0.02*Math.sin(performance.now()/400 + sgn);
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.translate(Math.round(px), Math.round(py));
+          ctx.scale(sc, sc);
+          ctx.drawImage(kem, Math.round(-kem.width/2), Math.round(-kem.height/2));
           ctx.restore();
         }
       }
@@ -530,6 +532,6 @@ class Player extends CharacterBase{
   }
 }
 
-window.__Actors__ = Object.assign({}, window.__Actors__||{}, { Player });
+window.__Actors__ = Object.assign({}, window.__Actors__||{}, { Player, LeRecordProjectile });
 
 })();
