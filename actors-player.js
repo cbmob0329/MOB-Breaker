@@ -1,4 +1,4 @@
-// actors-player.js — Button-Images + Input Cancel + AIR small-smoke + 3x wing-only damage
+// actors-player.js — AIR: 本体連続ヒットを復活 + 小煙＆WingSlashを併用
 (function(){
 'use strict';
 
@@ -37,7 +37,7 @@ class WingSlash extends Projectile{
     const img=world.assets.img('wing.png');
     const x = player.x + dir*(player.w*0.9);
     const y = player.y - player.h*0.2;
-    super(world, x, y, dir, img, 40);
+    super(world, x, y, dir, img, 40); // 指定：威力40
     const targetH = Math.round(player.h*0.35);
     if(img){
       const s = targetH/img.height;
@@ -69,7 +69,7 @@ class AirCrawlSmoke{
   constructor(player, side){
     this.player=player; this.side=side;
     this.t=0; this.life=0.42 + Math.random()*0.25;
-    // プレイヤーと被らない位置：左右へオフセット大きめ
+    // プレイヤーに被らない：左右へ十分にオフセット
     this.xOff = side*(player.w*0.95 + 10 + Math.random()*12);
     this.speed = 24 + Math.random()*14;
     this.scale = 0.055 + Math.random()*0.02;   // 小さめ
@@ -141,7 +141,7 @@ class Player extends CharacterBase{
       // P
       drIn:['dr1.png','dr2.png','dr3.png','dr4.png'],
       drLp:['dr5.png','dr6.png','dr7.png','dr8.png'],
-      // A（アニメ表示用。ヒットは出さない）
+      // A（画面表示＆本体ヒット）
       airSeq:[
         'air1.png','air2.png','air3.png','airA.png','air4.png','air5.png',
         'air2.png','air3.png','airA.png','air4.png','air5.png',
@@ -158,7 +158,6 @@ class Player extends CharacterBase{
     document.querySelector('.gamewrap').appendChild(this.overhead.root);
   }
 
-  /* ---------- HUD etc.（同） ---------- */
   _getFramePath(key, i=0){ const v=this.frames[key]; return Array.isArray(v)? v[Math.max(0,Math.min(v.length-1,i))] : v; }
   _imgByKey(key,i=0){ return this.world.assets.img(this._getFramePath(key,i)); }
   _createOverheadGauge(){
@@ -179,15 +178,13 @@ class Player extends CharacterBase{
     this.overhead.fill.style.width=((ratio*100)|0)+'%';
   }
 
-  /* ---------- HB（本体HBは技により使う） ---------- */
   currentHitbox(){
-    if(!(this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='skillP'||this.state==='ult'||this.state==='ult2') || !this._actionSeq) return null;
+    if(!(this.state==='atk'||this.state==='skill'||this.state==='skill2'||this.state==='skillP'||this.state==='air'||this.state==='ult'||this.state==='ult2') || !this._actionSeq) return null;
     const cur=this._actionSeq[this._actionIndex]; if(!cur) return null;
     const W=86,H=64; const x=this.x + this.face*(this.w*0.2);
     return {x, y:this.y, w:W, h:H, power:cur.power||0, dir:this.face, lift:cur.lift||0, kbMul:cur.kbMul||1.6, kbuMul:cur.kbuMul||1.3, tag:cur.tag||''};
   }
 
-  /* ================== update ================== */
   update(dt,input,world,enemies){
     input.beginFrame(); this._posOverhead();
     if(this.saT>0) this.saT=Math.max(0,this.saT-dt);
@@ -233,17 +230,15 @@ class Player extends CharacterBase{
       input.ultChargeT=0; input.edge.ultRelease=false;
     }
 
-    /* 実行中：ヒット処理（AIRは本体当たり判定なし） */
+    /* 実行中：ヒット処理（AIRも本体HBを当てる） */
     if(['atk','skill','skill2','skillP','air','ult','ult2'].includes(this.state)){
-      if(this.state!=='air'){  // AIRはbody hitbox無し
-        const hb=this.currentHitbox();
-        if(hb){
-          for(const e of enemies){
-            if(!e || e.dead || e.invulnT>0) continue;
-            if(rectsOverlap({x:hb.x,y:hb.y,w:hb.w,h:hb.h}, e.aabb())){
-              const hit=e.hurt(hb.power, hb.dir, {lift:hb.lift, kbMul:hb.kbMul, kbuMul:hb.kbuMul}, this.effects);
-              if(hit && (this.state==='skill2') && !e.superArmor){ e._twirlT = Math.max(e._twirlT||0, 0.6); }
-            }
+      const hb=this.currentHitbox();
+      if(hb){
+        for(const e of enemies){
+          if(!e || e.dead || e.invulnT>0) continue;
+          if(rectsOverlap({x:hb.x,y:hb.y,w:hb.w,h:hb.h}, e.aabb())){
+            const hit=e.hurt(hb.power, hb.dir, {lift:hb.lift, kbMul:hb.kbMul, kbuMul:hb.kbuMul}, this.effects);
+            if(hit && (this.state==='skill2') && !e.superArmor){ e._twirlT = Math.max(e._twirlT||0, 0.6); }
           }
         }
       }
@@ -335,7 +330,6 @@ class Player extends CharacterBase{
     world.updateTimer(dt);
   }
 
-  /* Cancel helper */
   _cancelInto(starter){
     this._cancelLock = true;
     this._actionSeq=null; this._actionIndex=0; this._actionTime=0;
@@ -344,7 +338,6 @@ class Player extends CharacterBase{
     queueMicrotask(()=>{ this._cancelLock=false; });
   }
 
-  /* 通常アクション（既存） */
   _startA1(){
     this.state='atk'; this.animT=0; this.comboStep=Math.min(this.comboStep+1,3);
     const seq=[ {kind:'prep',dur:0.08,frame:'k1prep',fx:80,power:0} ];
@@ -403,11 +396,11 @@ class Player extends CharacterBase{
     if(this.airCDT>0) return;
     this.state='air'; this.animT=0; this.airCDT=12.0; this.saT = 2.0;
     this._airSmokes.length=0; this._airWingEmitFlags=[false,false,false];
-    // アニメ表示だけ（本体Hitは出さない）
+    // 本体も連続ヒット（威力30、吹っ飛ばし強め）
     const seq=[]; const arr=this.frames.airSeq;
     for(let i=0;i<arr.length;i++){
       const f=arr[i];
-      seq.push({kind:'pose', dur:0.12, frame:f, fx:0, power:0});
+      seq.push({kind:'hit', dur:0.12, frame:f, fx:0, power:30, lift:0.8, kbMul:1.9, kbuMul:1.6, tag:'airBody'});
     }
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
@@ -527,7 +520,6 @@ class Player extends CharacterBase{
     ctx.restore();
   }
 
-  // 被弾
   hurt(amount,dir,opts,effects){
     if(this.state==='skill2' || this.state==='air' || this.saT>0){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
     const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
