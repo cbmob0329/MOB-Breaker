@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
+  <title>MOB Side Action – Button Images + AIR wing fix</title>
+  <meta name="theme-color" content="#0b0c10" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="root">
+  <div id="phone">
+    <div class="grid">
+      <div class="gamewrap">
+        <header class="hud">
+          <div class="chip">残機 <strong id="lives">3</strong></div>
+          <div class="chip">HP <span class="bar"><i id="hpfill" style="width:100%"></i></span> <strong id="hpnum">1000</strong></div>
+          <div class="chip name">MOBYOKI</div>
+          <div class="chip timer">Time <strong id="time">00:00</strong></div>
+        </header>
+        <canvas id="game" width="420" height="480" aria-label="Game Canvas"></canvas>
+      </div>
+
+      <div class="controls">
+        <!-- 左スティック -->
+        <div class="stickArea" id="stickArea" aria-label="Move Stick">
+          <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
+        </div>
+
+        <!-- 右ボタン群（円形＋画像） -->
+        <div class="buttons">
+          <!-- 上段 -->
+          <button class="btn circle attack1" id="btnA1" aria-label="攻撃① ■">
+            <img src="btmaru.png" alt="■" />
+          </button>
+          <button class="btn circle attack2" id="btnA2" aria-label="攻撃② ▲">
+            <img src="btsan.png" alt="▲" />
+          </button>
+          <button class="btn circle skill1" id="btnSK" aria-label="スキル① 〇">
+            <img src="btspin.png" alt="〇" />
+          </button>
+
+          <!-- 中段 -->
+          <button class="btn circle skill2" id="btnSK2" aria-label="スキル② ◎">
+            <img src="bttms.png" alt="◎" />
+          </button>
+          <button class="btn circle pbtn" id="btnP" aria-label="Pボタン">
+            <img src="btspin2.png" alt="P" />
+          </button>
+          <button class="btn circle air" id="btnAIR" aria-label="A(AIR)ボタン">
+            <img src="btair.png" alt="A" />
+          </button>
+
+          <!-- 下段（ULT×2 + ジャンプ） -->
+          <button class="btn circle ult" id="btnULT" aria-label="ULT①">
+            <img src="btult.png" alt="U1" />
+          </button>
+          <button class="btn circle ult2" id="btnULT2" aria-label="ULT②">
+            <img src="btult2.png" alt="U2" />
+          </button>
+          <button class="btn circle jump" id="btnJMP" aria-label="ジャンプ">
+            <img src="btjump.png" alt="Jump" />
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 1) Core -->
+<script src="script-core.js"></script>
+<!-- 2) Enemies & Base Actor Set -->
+<script src="actors.js"></script>
+<!-- 3) Player (このファイルで上書き) -->
+<script src="actors-player.js"></script>
+<!-- 4) World/Game -->
+<script src="game.js"></script>
+</body>
+</html>
