@@ -1,4 +1,4 @@
-// game.js — World / Game / Boot（wing.pngプリロード + 描画順をプレイヤー後に）
+// game.js — World / Game / Boot（新プレイヤー資産＋新ボタン連携）
 (function(){
 'use strict';
 
@@ -10,8 +10,8 @@ const {
 } = window.__GamePieces__;
 
 const {
-  Player,
-  WaruMOB, IceRobo, /*IceRoboMini 削除済み*/, Kozou, MOBGiant, GabuKing, Screw
+  // Player は actors-player.js で定義
+  WaruMOB, Kozou, MOBGiant, GabuKing, Screw, IceRobo
 } = window.__Actors__;
 
 /* ================================
@@ -47,10 +47,9 @@ class World{
     }
     ctx.fillStyle='#0b0f17'; const yTop=Math.floor(GROUND_TOP_Y); ctx.fillRect(0,yTop-1,this.gameW,1);
 
-    // 描画順：敵 → プレイヤー → スキル弾 → エフェクト（WingSlashを前面に）
+    if(this._skillBullets){ for(const p of this._skillBullets) p.draw(ctx); }
     for(const e of enemies) e.draw(ctx,this);
     player.draw(ctx,this);
-    if(this._skillBullets){ for(const p of this._skillBullets) p.draw(ctx); } // ←後段へ移動
     this.effects.draw(ctx,this);
   }
 }
@@ -71,7 +70,7 @@ class Game{
     const imgs=[
       // 背景
       'MOBA.png','back1.png',
-      // Player
+      // Player基礎
       'M1-1.png','M1-2.png','M1-3.png','M1-4.png',
       'K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png',
       'h1.png','h2.png','h3.png','h4.png',
@@ -79,12 +78,17 @@ class Game{
       'Y1.png','Y2.png','Y3.png','Y4.png',
       'UL1.PNG','UL2.PNG','UL3.png',
       'kem.png',
-      'wing.png',          // ★ 追加：WingSlash用
-      'LE.png',            // （別スキル用。見えているならOK）
+
+      // === 新プレイヤー用 追加画像 ===
+      'tms1.png','tmsA.png','tms2.png','tms3.png','tms4.png','tms5.png','tms6.png',
+      'dr1.png','dr2.png','dr3.png','dr4.png','dr5.png','dr6.png','dr7.png','dr8.png',
+      'air1.png','air2.png','air3.png','airA.png','air4.png','air5.png',
+      'PK1.png','PK2.png','PK3.png','PK4.png','PK5.png','PK6.png','PK7.png','PK8.png',
+
       // 既存敵/弱
       'teki1.png','teki2.png','teki3.png','teki7.png',
-      'IC.png','IC2.png','IC3.png','IC4.png', // 使っていなければ未参照でもOK
       'SL.png','SL2.png','SL3.png','SL4.png','SL5.png','SL6.png','SL7.png','SL8.png',
+
       // ボス群
       'I1.png','I2.png','I3.png','I4.png','I5.png','I6.png','I7.png','I8.png',
       'P1.png','P2.png','P3.png','P4.png','P5.png','P6.png','P7.png','P10.png',
@@ -93,31 +97,43 @@ class Game{
     ];
     await this.assets.load(imgs);
     this.world=new World(this.assets,this.canvas,this.effects);
-    this.player=new Player(this.assets,this.world,this.effects);
 
-    const spawnX = 680;
+    // Player は actors-player.js の最新版
+    this.player=new window.__Actors__.Player(this.assets,this.world,this.effects);
 
-    // グループ生成ヘルパ
-    const group = (Ctor, count, baseX, gap)=>()=> {
-      const arr=[];
-      for(let i=0;i<count;i++){
-        arr.push(new Ctor(this.world,this.effects,this.assets, baseX + i*gap));
-      }
-      return arr;
+    // ==== 新ボタン（A / P / U2）ブリッジ ====
+    // script-core.js を変更せず edge.* を発火させる
+    const bindEdge=(id, edgeKey)=>{
+      const el=document.getElementById(id);
+      if(!el) return;
+      const down=()=>{ this.input.edge[edgeKey]=true; this.input.btn[edgeKey]=true; };
+      const up  =()=>{ this.input.btn[edgeKey]=false; };
+      el.addEventListener('pointerdown',e=>{e.preventDefault();down();el.setPointerCapture?.(e.pointerId);});
+      el.addEventListener('pointerup',  e=>{e.preventDefault();up();el.releasePointerCapture?.(e.pointerId);});
+      el.addEventListener('pointercancel',()=>{up();});
+      el.addEventListener('touchstart',e=>{e.preventDefault();down();},{passive:false});
+      el.addEventListener('touchend',  e=>{e.preventDefault();up();},{passive:false});
     };
+    // edge.air / edge.p / edge.ult2 を追加的に使う
+    if(!this.input.edge.air) this.input.edge.air=false;
+    if(!this.input.edge.p)   this.input.edge.p=false;
+    if(!this.input.edge.ult2)this.input.edge.ult2=false;
+    if(!this.input.btn.air)  this.input.btn.air=false;
+    if(!this.input.btn.p)    this.input.btn.p=false;
+    if(!this.input.btn.ult2) this.input.btn.ult2=false;
+    bindEdge('btnAIR','air');
+    bindEdge('btnP','p');
+    bindEdge('btnULT2','ult2');
 
-    // ウェーブ構成（弱い順 & 1体ずつなどはここで調整可能）
+    // ==== 出現順（弱い→強いを各1体ずつ） ====
+    const spawnX = 680;
     this.enemyOrder = [
-      group(Kozou,   1, spawnX, 55),
-      group(WaruMOB, 1, spawnX, 60),
-      // 中盤
-      ()=>[
-        new GabuKing(this.world,this.effects,this.assets,spawnX+220),
-        new Screw(this.world,this.effects,this.assets,spawnX+320)
-      ],
-      // 後半
-      ()=>[ new IceRobo(this.world,this.effects,this.assets,spawnX+360) ],
-      ()=>[ new MOBGiant(this.world,this.effects,this.assets,spawnX+420) ]
+      ()=>[ new Kozou(this.world,this.effects,this.assets,spawnX) ],
+      ()=>[ new WaruMOB(this.world,this.effects,this.assets,spawnX+40) ],
+      ()=>[ new GabuKing(this.world,this.effects,this.assets,spawnX+160) ],
+      ()=>[ new Screw(this.world,this.effects,this.assets,spawnX+240) ],
+      ()=>[ new IceRobo(this.world,this.effects,this.assets,spawnX+320) ],
+      ()=>[ new MOBGiant(this.world,this.effects,this.assets,spawnX+420) ],
     ];
 
     this.enemyIndex = 0;
@@ -136,7 +152,7 @@ class Game{
 
       this.player.update(dt,this.input,this.world,this.enemies);
 
-      // 敵更新 & 当たり（※省略せず既存ロジックを維持）
+      // 敵更新 & 当たり
       for(const e of this.enemies){
         e.update(dt,this.player);
 
@@ -149,6 +165,27 @@ class Game{
             }
           }
         }
+
+        // Kozou の石
+        if(e.constructor && e.constructor.name==='Kozou'){
+          for(const p of e.projectiles){
+            if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
+              p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0.15, kbMul:0.7, kbuMul:0.7}, this.effects);
+              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
+            }
+          }
+        }
+
+        // GabuKing の弾（保険）
+        if(e.constructor && e.constructor.name==='GabuKing'){
+          for(const b of e.bullets){
+            if(!b.dead && this.player.invulnT<=0 && rectsOverlap(b.aabb(), this.player.aabb())){
+              b.dead=true; const hit=this.player.hurt(b.power, b.dir, {lift:1.3, kbMul:1.2, kbuMul:1.2}, this.effects);
+              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
+            }
+          }
+        }
+
         // IceRobo のダッシュ & 玉
         if(e.constructor && e.constructor.name==='IceRobo'){
           if(e.state==='dash'){
@@ -165,24 +202,7 @@ class Game{
             }
           }
         }
-        // Kozou の石
-        if(e.constructor && e.constructor.name==='Kozou'){
-          for(const p of e.projectiles){
-            if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
-              p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0.15, kbMul:0.7, kbuMul:0.7}, this.effects);
-              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
-            }
-          }
-        }
-        // GabuKing の弾（保険）
-        if(e.constructor && e.constructor.name==='GabuKing'){
-          for(const b of e.bullets){
-            if(!b.dead && this.player.invulnT<=0 && rectsOverlap(b.aabb(), this.player.aabb())){
-              b.dead=true; const hit=this.player.hurt(b.power, b.dir, {lift:1.3, kbMul:1.2, kbuMul:1.2}, this.effects);
-              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
-            }
-          }
-        }
+
         // 巨神のダッシュ & 玉
         if(e.constructor && e.constructor.name==='MOBGiant'){
           if(e.state==='dash'){
@@ -201,7 +221,7 @@ class Game{
         }
       }
 
-      // プレイヤー生成の弾・スパイク（敵へ）
+      // プレイヤーの弾・スパイク（敵へ）
       if(this.world._skillBullets){
         for(const p of this.world._skillBullets){
           p.update(dt);
@@ -220,7 +240,7 @@ class Game{
       // 撃破整理
       this.enemies=this.enemies.filter(e=>!(e.dead && e.fade<=0));
 
-      // 次ウェーブ
+      // 次ウェーブ（1体ずつ）
       if(this.enemies.length===0 && this.enemyIndex < this.enemyOrder.length-1){
         this.enemyIndex++;
         this.enemies.push(...this.enemyOrder[this.enemyIndex]());
