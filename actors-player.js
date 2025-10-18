@@ -1,4 +1,4 @@
-// actors-player.js — AIRの煙座標修正（world.ctxで描画）+ WingSlash維持
+// actors-player.js — AIR: 本体連続ヒットを復活 + 小煙＆WingSlashを併用
 (function(){
 'use strict';
 
@@ -9,7 +9,7 @@ const {
   utils:{ clamp, lerp, rectsOverlap }
 } = window.__GamePieces__;
 
-/* ===== ◎で使う飛びレコード / Aで使う斬撃・小煙 ===== */
+/* ===== AIR用：LE発射（◎で使用）/ wing斬撃 / 小煙 ===== */
 class LeRecordProjectile extends Projectile{
   constructor(player, dir){
     const world=player.world;
@@ -23,8 +23,8 @@ class LeRecordProjectile extends Projectile{
       this.w = Math.round(img.width * s);
       this.h = Math.round(img.height* s);
     }else{
-      this.w = Math.round(targetH*1.2);
-      this.h = targetH;
+      this.w = Math.round(player.h*0.5*0.9);
+      this.h = Math.round(player.h*0.5);
     }
     this.vx = 420 * dir;
     this.vy = 0;
@@ -49,16 +49,9 @@ class WingSlash extends Projectile{
     }
     this.vx = 0; this.vy = 0; this.life = 0.16; this._trail=[];
   }
-  update(dt){
-    if(this.dead) return;
-    this._trail.push({x:this.x, y:this.y, t:0});
-    if(this._trail.length>6) this._trail.shift();
-    for(const tr of this._trail) tr.t += dt;
-    super.update(dt);
-  }
+  update(dt){ if(this.dead) return; this._trail.push({x:this.x, y:this.y, t:0}); if(this._trail.length>6) this._trail.shift(); for(const tr of this._trail) tr.t += dt; super.update(dt); }
   draw(ctx){
     const img=this.img; if(!img||this.dead) return;
-    // 残像
     for(let i=0;i<this._trail.length;i++){
       const tr=this._trail[i], k=1 - i/this._trail.length;
       ctx.save(); ctx.translate(tr.x-this.world.camX, tr.y-this.world.camY);
@@ -67,7 +60,6 @@ class WingSlash extends Projectile{
       ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
       ctx.restore();
     }
-    // 本体
     ctx.save(); ctx.translate(this.x-this.world.camX, this.y-this.world.camY); if(this.dir<0) ctx.scale(-1,1);
     const s=this.h/img.height, w=img.width*s, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
     ctx.restore();
@@ -77,9 +69,9 @@ class AirCrawlSmoke{
   constructor(player, side){
     this.player=player; this.side=side;
     this.t=0; this.life=0.42 + Math.random()*0.25;
-    // プレイヤーに被らない：左右へオフセット
+    // プレイヤーに被らない：左右へ十分にオフセット
     this.xOff = side*(player.w*0.95 + 10 + Math.random()*12);
-    this.speed = 24 + Math.random()*14; // 地を這う
+    this.speed = 24 + Math.random()*14;
     this.scale = 0.055 + Math.random()*0.02;   // 小さめ
     this.alphaBase = 0.62;                      // 濃いめ
   }
@@ -87,17 +79,10 @@ class AirCrawlSmoke{
   alive(){ return this.t < this.life; }
   draw(ctx, world){
     const img=world.assets.img('kem.png'); if(!img) return;
-    const p=this.player;
-    const x = p.x + this.xOff - world.camX;
-    const y = Math.floor(GROUND_TOP_Y) - world.camY - 2;
+    const p=this.player; const x=p.x + this.xOff - world.camX; const y=Math.floor(GROUND_TOP_Y) - world.camY - 2;
     const k=1 - this.t/this.life; const a=this.alphaBase*(0.5+0.5*k);
-    ctx.save();
-    ctx.translate(Math.round(x), Math.round(y));
-    ctx.scale(this.scale, this.scale);
-    ctx.globalAlpha=a;
-    ctx.imageSmoothingEnabled=false;
-    ctx.drawImage(img, Math.round(-img.width/2), Math.round(-img.height/2));
-    ctx.restore();
+    ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.scale(this.scale, this.scale); ctx.globalAlpha=a;
+    ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-img.width/2), Math.round(-img.height/2)); ctx.restore();
   }
 }
 
@@ -129,10 +114,10 @@ class Player extends CharacterBase{
     this.isUltCharging=false;
     this._ultChargeMax=1.5;
 
-    // U2
+    // U2関連
     this._trail=[]; this._pendingU2AOE=false; this._u2aoeDone=false; this._u2ShakeT=0;
 
-    // ◎
+    // ◎ LE 弾
     this._leShotSpawned=false;
 
     // A
@@ -156,7 +141,7 @@ class Player extends CharacterBase{
       // P
       drIn:['dr1.png','dr2.png','dr3.png','dr4.png'],
       drLp:['dr5.png','dr6.png','dr7.png','dr8.png'],
-      // A（本体HB有り）
+      // A（画面表示＆本体ヒット）
       airSeq:[
         'air1.png','air2.png','air3.png','airA.png','air4.png','air5.png',
         'air2.png','air3.png','airA.png','air4.png','air5.png',
@@ -208,7 +193,7 @@ class Player extends CharacterBase{
     if(!['atk','skill','skill2','skillP','air','ult','ult2'].includes(this.state) && this._actionSeq){ this._actionSeq=null; }
     if(this.a2LockoutT>0) this.a2LockoutT=Math.max(0,this.a2LockoutT-dt);
 
-    // ボタンUI
+    // UI disable
     const skBtn=document.getElementById('btnSK');
     const sk2Btn=document.getElementById('btnSK2');
     const pBtn=document.getElementById('btnP');
@@ -245,7 +230,7 @@ class Player extends CharacterBase{
       input.ultChargeT=0; input.edge.ultRelease=false;
     }
 
-    /* 実行中（AIRも本体HBを当てる） */
+    /* 実行中：ヒット処理（AIRも本体HBを当てる） */
     if(['atk','skill','skill2','skillP','air','ult','ult2'].includes(this.state)){
       const hb=this.currentHitbox();
       if(hb){
@@ -271,7 +256,7 @@ class Player extends CharacterBase{
         if(input.edge.ult2 && this.ult2CDT<=0){ this._cancelInto(()=>this._startULT2()); return; }
       }
 
-      // ◎：LEは左右1回ずつ
+      // ◎：LE弾は左右に一度
       if(this.state==='skill2' && !this._leShotSpawned){
         this._leShotSpawned = true;
         const L = new LeRecordProjectile(this, -1);
@@ -279,18 +264,18 @@ class Player extends CharacterBase{
         (this.world._skillBullets||(this.world._skillBullets=[])).push(L,R);
       }
 
-      // A：wing×3（15%/50%/85%）＋小煙（少数）
+      // A：煙とwing（3回）
       if(this.state==='air'){
         const prog = (this._actionSeq && this._actionSeq.length>0)? (this._actionIndex/this._actionSeq.length) : 0;
         const marks = [0.15, 0.50, 0.85];
         marks.forEach((m, i)=>{
           if(!this._airWingEmitFlags[i] && prog>=m){
             this._airWingEmitFlags[i]=true;
-            // wing左右
+            // wing：左右へ同時
             const L = new WingSlash(this, -1);
             const R = new WingSlash(this,  1);
             (this.world._skillBullets||(this.world._skillBullets=[])).push(L,R);
-            // 小煙（左右に“数個だけ”）
+            // 煙：左右に“数個だけ”
             for(let s=0;s<2;s++){
               this._airSmokes.push(new AirCrawlSmoke(this, -1));
               this._airSmokes.push(new AirCrawlSmoke(this,  1));
@@ -304,7 +289,7 @@ class Player extends CharacterBase{
         this._airSmokes.length=0; this._airWingEmitFlags=[false,false,false];
       }
 
-      // U2：全体当たり（PK8）
+      // U2：全体当たり
       if(this._pendingU2AOE){
         this._pendingU2AOE=false;
         if(!this._u2aoeDone){
@@ -324,7 +309,7 @@ class Player extends CharacterBase{
       return;
     }
 
-    /* 非実行時の入力 */
+    /* 待機中の入力 */
     if(input.edge.a1) this.bufferA1=true;
     if(input.edge.air && this.airCDT<=0){ input.edge.air=false; this.bufferA1=false; this._startAIR(); return; }
     if(input.edge.p && this.pCDT<=0){ input.edge.p=false; this.bufferA1=false; this._startP(); return; }
@@ -451,18 +436,10 @@ class Player extends CharacterBase{
 
   _updateAction(dt,world,input){
     const cur=this._actionSeq?.[this._actionIndex];
-
     if(this.state==='skill2' || this.state==='air'){ this.saT = Math.max(this.saT, 0.08); }
     if(cur?.fx){ this.x += this.face * cur.fx * dt; }
-
-    if(this.state==='ult2'){
-      this._trail.push({x:this.x, y:this.y, t:0});
-      if(this._trail.length>12) this._trail.shift();
-      for(const tr of this._trail) tr.t += dt;
-    } else this._trail.length=0;
-
+    if(this.state==='ult2'){ this._trail.push({x:this.x, y:this.y, t:0}); if(this._trail.length>12) this._trail.shift(); for(const tr of this._trail) tr.t += dt; } else this._trail.length=0;
     if(cur?.tag==='u2aoe' && !this._u2aoeSeen){ this._u2aoeSeen=true; this._pendingU2AOE=true; }
-
     this.vx = 0; this.updatePhysics(dt);
 
     if(this._actionSeq){
@@ -500,22 +477,15 @@ class Player extends CharacterBase{
 
     let img=null;
     if(this.state==='idle'){ img=this._imgByKey('idle',0); }
-    else if(this.state==='run'){
-      const rate = lerp(6, 11, clamp(Math.abs(this.vx)/MOVE, 0, 1));
-      const i=Math.floor(this.animT*rate)%this.frames.run.length;
-      img=this._imgByKey('run',i);
-    }
+    else if(this.state==='run'){ const rate = lerp(6, 11, clamp(Math.abs(this.vx)/MOVE, 0, 1)); const i=Math.floor(this.animT*rate)%this.frames.run.length; img=this._imgByKey('run',i); }
     else if(this.state==='jump'){ img=this._imgByKey('run',0); }
     else if(['atk','skill','skill2','skillP','air','ult','ult2'].includes(this.state) && this._actionSeq){
       const cur=this._actionSeq[this._actionIndex]; const key=cur.frame; img=this.world.assets.img(this.frames[key]?this._getFramePath(key,0):key);
     } else img=this._imgByKey('idle',0);
 
-    if(img){
-      const scale=this.h/img.height, w=img.width*scale, h=this.h;
-      ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
-    }
+    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); }
 
-    // U溜め中：UL3 可変サイズ（残像あり）
+    // U溜め中：UL3 可変サイズ
     if(this.isUltCharging){
       const ul3=this.world.assets.img(this.frames.ul3);
       if(ul3){
@@ -533,14 +503,21 @@ class Player extends CharacterBase{
       }
     }
 
-    ctx.restore();
+    // A：小煙（非ダメージ）
+    if(this.state==='air' && this._airSmokes.length){ for(const s of this._airSmokes) s.draw(ctx, this.world); }
 
-    // ▼▼▼ 重要：AIRの小煙は「未変換の world.ctx」に描く（座標ズレ防止）
-    if(this.state==='air' && this._airSmokes.length){
-      for(const s of this._airSmokes) s.draw(this.world.ctx, this.world);
+    // U2：残像
+    if(this.state==='ult2' && this._trail.length && img){
+      for(let i=0;i<this._trail.length;i++){
+        const tr=this._trail[i], k=1 - i/this._trail.length;
+        ctx.save(); ctx.translate(tr.x-this.x, tr.y-this.y); ctx.globalAlpha=0.12*k;
+        const scale=this.h/img.height, w=img.width*scale, h=this.h;
+        ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
+        ctx.restore();
+      }
     }
 
-    // U2：残像は上の人物描画で処理済み（world.ctx不要）
+    ctx.restore();
   }
 
   hurt(amount,dir,opts,effects){
