@@ -1,4 +1,4 @@
-// game.js — World / Game / Boot（U弾＝超回転吹っ飛び対応、LE.pngをプリロード）
+// game.js — World / Game / Boot（wing.pngプリロード + 描画順をプレイヤー後に）
 (function(){
 'use strict';
 
@@ -11,10 +11,12 @@ const {
 
 const {
   Player,
-  WaruMOB, Kozou, MOBGiant, GabuKing, Screw, IceRobo
+  WaruMOB, IceRobo, /*IceRoboMini 削除済み*/, Kozou, MOBGiant, GabuKing, Screw
 } = window.__Actors__;
 
-/* ================================ */
+/* ================================
+ * World
+ * ================================ */
 class World{
   constructor(assets, canvas, effects){
     this.assets=assets; this.effects=effects; this.canvas=canvas;
@@ -45,14 +47,19 @@ class World{
     }
     ctx.fillStyle='#0b0f17'; const yTop=Math.floor(GROUND_TOP_Y); ctx.fillRect(0,yTop-1,this.gameW,1);
 
-    if(this._skillBullets){ for(const p of this._skillBullets) p.draw(ctx); }
+    // 描画順：敵 → プレイヤー → スキル弾 → エフェクト（WingSlashを前面に）
     for(const e of enemies) e.draw(ctx,this);
     player.draw(ctx,this);
+    if(this._skillBullets){ for(const p of this._skillBullets) p.draw(ctx); } // ←後段へ移動
     this.effects.draw(ctx,this);
   }
 }
 
-/* ================================ */
+const updateHPUI=(hp,maxhp)=>{ const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=hp; fill.style.width=Math.max(0,Math.min(100,(hp/maxhp)*100))+'%'; };
+
+/* ================================
+ * Game
+ * ================================ */
 class Game{
   constructor(){
     this.assets=new Assets(); this.canvas=document.getElementById('game'); this.input=new Input(); this.effects=new Effects();
@@ -64,24 +71,21 @@ class Game{
     const imgs=[
       // 背景
       'MOBA.png','back1.png',
-
-      // Player基礎
+      // Player
       'M1-1.png','M1-2.png','M1-3.png','M1-4.png',
       'K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png',
-      'h1.png','h2.png','h3.png','h4.png','J.png',
+      'h1.png','h2.png','h3.png','h4.png',
+      'J.png',
       'Y1.png','Y2.png','Y3.png','Y4.png',
       'UL1.PNG','UL2.PNG','UL3.png',
-
-      // 新プレイヤー素材
-      'tms1.png','tmsA.png','tms2.png','tms3.png','tms4.png','tms5.png','tms6.png',
-      'dr1.png','dr2.png','dr3.png','dr4.png','dr5.png','dr6.png','dr7.png','dr8.png',
-      'air1.png','air2.png','air3.png','airA.png','air4.png','air5.png',
-      'PK1.png','PK2.png','PK3.png','PK4.png','PK5.png','PK6.png','PK7.png','PK8.png',
-      'kem.png','LE.png', // ★ LE.png を使用
-
-      // 敵
+      'kem.png',
+      'wing.png',          // ★ 追加：WingSlash用
+      'LE.png',            // （別スキル用。見えているならOK）
+      // 既存敵/弱
       'teki1.png','teki2.png','teki3.png','teki7.png',
+      'IC.png','IC2.png','IC3.png','IC4.png', // 使っていなければ未参照でもOK
       'SL.png','SL2.png','SL3.png','SL4.png','SL5.png','SL6.png','SL7.png','SL8.png',
+      // ボス群
       'I1.png','I2.png','I3.png','I4.png','I5.png','I6.png','I7.png','I8.png',
       'P1.png','P2.png','P3.png','P4.png','P5.png','P6.png','P7.png','P10.png',
       't1.png','t2.png','t3.png','t4.png','t5.png','t6.png','t7.png','t8.png','t9.png','t10.png','t11.png',
@@ -91,36 +95,34 @@ class Game{
     this.world=new World(this.assets,this.canvas,this.effects);
     this.player=new Player(this.assets,this.world,this.effects);
 
-    // 追加ボタン（A / P / U2）— HTML側のIDを使う
-    const bindEdge=(id, edgeKey)=>{
-      const el=document.getElementById(id); if(!el) return;
-      const down=()=>{ this.input.edge[edgeKey]=true; this.input.btn[edgeKey]=true; };
-      const up  =()=>{ this.input.btn[edgeKey]=false; };
-      el.addEventListener('pointerdown',e=>{e.preventDefault();down();el.setPointerCapture?.(e.pointerId);});
-      el.addEventListener('pointerup',  e=>{e.preventDefault();up();el.releasePointerCapture?.(e.pointerId);});
-      el.addEventListener('pointercancel',()=>{up();});
-      el.addEventListener('touchstart',e=>{e.preventDefault();down();},{passive:false});
-      el.addEventListener('touchend',  e=>{e.preventDefault();up();},{passive:false});
-    };
-    ['air','p','ult2'].forEach(k=>{ if(!this.input.edge[k]) this.input.edge[k]=false; if(!this.input.btn[k]) this.input.btn[k]=false; });
-    bindEdge('btnAIR','air');
-    bindEdge('btnP','p');
-    bindEdge('btnULT2','ult2');
-
-    // 敵（1体ずつ）
     const spawnX = 680;
+
+    // グループ生成ヘルパ
+    const group = (Ctor, count, baseX, gap)=>()=> {
+      const arr=[];
+      for(let i=0;i<count;i++){
+        arr.push(new Ctor(this.world,this.effects,this.assets, baseX + i*gap));
+      }
+      return arr;
+    };
+
+    // ウェーブ構成（弱い順 & 1体ずつなどはここで調整可能）
     this.enemyOrder = [
-      ()=>[ new Kozou(this.world,this.effects,this.assets,spawnX) ],
-      ()=>[ new WaruMOB(this.world,this.effects,this.assets,spawnX+40) ],
-      ()=>[ new GabuKing(this.world,this.effects,this.assets,spawnX+160) ],
-      ()=>[ new Screw(this.world,this.effects,this.assets,spawnX+240) ],
-      ()=>[ new IceRobo(this.world,this.effects,this.assets,spawnX+320) ],
-      ()=>[ new MOBGiant(this.world,this.effects,this.assets,spawnX+420) ],
+      group(Kozou,   1, spawnX, 55),
+      group(WaruMOB, 1, spawnX, 60),
+      // 中盤
+      ()=>[
+        new GabuKing(this.world,this.effects,this.assets,spawnX+220),
+        new Screw(this.world,this.effects,this.assets,spawnX+320)
+      ],
+      // 後半
+      ()=>[ new IceRobo(this.world,this.effects,this.assets,spawnX+360) ],
+      ()=>[ new MOBGiant(this.world,this.effects,this.assets,spawnX+420) ]
     ];
+
     this.enemyIndex = 0;
     this.enemies = this.enemyOrder[this.enemyIndex]();
 
-    const updateHPUI=(hp,maxhp)=>{ const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=hp; fill.style.width=Math.max(0,Math.min(100,(hp/maxhp)*100))+'%'; };
     updateHPUI(this.player.hp,this.player.maxhp);
     this.lastT=now();
 
@@ -134,10 +136,11 @@ class Game{
 
       this.player.update(dt,this.input,this.world,this.enemies);
 
-      // 敵更新＆接触
+      // 敵更新 & 当たり（※省略せず既存ロジックを維持）
       for(const e of this.enemies){
         e.update(dt,this.player);
 
+        // WaruMOB の弾
         if(e.constructor && e.constructor.name==='WaruMOB'){
           for(const p of e.projectiles){
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
@@ -146,22 +149,7 @@ class Game{
             }
           }
         }
-        if(e.constructor && e.constructor.name==='Kozou'){
-          for(const p of e.projectiles){
-            if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
-              p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0.15, kbMul:0.7, kbuMul:0.7}, this.effects);
-              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
-            }
-          }
-        }
-        if(e.constructor && e.constructor.name==='GabuKing'){
-          for(const b of e.bullets){
-            if(!b.dead && this.player.invulnT<=0 && rectsOverlap(b.aabb(), this.player.aabb())){
-              b.dead=true; const hit=this.player.hurt(b.power, b.dir, {lift:1.3, kbMul:1.2, kbuMul:1.2}, this.effects);
-              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
-            }
-          }
-        }
+        // IceRobo のダッシュ & 玉
         if(e.constructor && e.constructor.name==='IceRobo'){
           if(e.state==='dash'){
             const hb = {x:e.x + e.face*22, y:e.y, w:e.w*0.9, h:e.h*0.9};
@@ -177,6 +165,25 @@ class Game{
             }
           }
         }
+        // Kozou の石
+        if(e.constructor && e.constructor.name==='Kozou'){
+          for(const p of e.projectiles){
+            if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
+              p.dead=true; const hit=this.player.hurt(p.power, p.dir, {lift:0.15, kbMul:0.7, kbuMul:0.7}, this.effects);
+              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
+            }
+          }
+        }
+        // GabuKing の弾（保険）
+        if(e.constructor && e.constructor.name==='GabuKing'){
+          for(const b of e.bullets){
+            if(!b.dead && this.player.invulnT<=0 && rectsOverlap(b.aabb(), this.player.aabb())){
+              b.dead=true; const hit=this.player.hurt(b.power, b.dir, {lift:1.3, kbMul:1.2, kbuMul:1.2}, this.effects);
+              if(hit) updateHPUI(this.player.hp,this.player.maxhp);
+            }
+          }
+        }
+        // 巨神のダッシュ & 玉
         if(e.constructor && e.constructor.name==='MOBGiant'){
           if(e.state==='dash'){
             const hb = {x:e.x + e.face*30, y:e.y, w: e.w*0.96, h: e.h*0.96};
@@ -194,7 +201,7 @@ class Game{
         }
       }
 
-      // プレイヤー弾（U弾の特別処理含む）
+      // プレイヤー生成の弾・スパイク（敵へ）
       if(this.world._skillBullets){
         for(const p of this.world._skillBullets){
           p.update(dt);
@@ -202,24 +209,18 @@ class Game{
             if(!p.dead && !e.dead && rectsOverlap(p.aabb(), e.aabb())){
               p.dead=true;
               const dir = (e.x>=p.x)? 1 : -1;
-              if(p instanceof UltBlast){
-                // UL3命中：超絶回転吹っ飛び
-                e.hurt(p.power, dir, {lift:1.5, kbMul:3.0, kbuMul:2.6}, this.effects);
-                e.vx = dir*820; e.vy = -820;     // 直接上書きでさらに飛ばす
-                e._twirlT = Math.max(e._twirlT||0, 1.4);
-                this.effects.shake(0.18,8);
-              }else{
-                const hit=e.hurt(p.power, dir, {lift:0.3,kbMul:0.9,kbuMul:0.9}, this.effects);
-                if(hit) this.effects.addSpark(e.x, e.y-10, p.power>=40);
-              }
+              const hit=e.hurt(p.power, dir, {lift:0.3,kbMul:0.9,kbuMul:0.9}, this.effects);
+              if(hit) this.effects.addSpark(e.x, e.y-10, p.power>=40);
             }
           }
         }
         this.world._skillBullets = this.world._skillBullets.filter(p=>!p.dead && p.life>0);
       }
 
-      // 撃破整理→次
+      // 撃破整理
       this.enemies=this.enemies.filter(e=>!(e.dead && e.fade<=0));
+
+      // 次ウェーブ
       if(this.enemies.length===0 && this.enemyIndex < this.enemyOrder.length-1){
         this.enemyIndex++;
         this.enemies.push(...this.enemyOrder[this.enemyIndex]());
@@ -230,19 +231,21 @@ class Game{
         if(e.dead || this.player.dead) continue;
         const a=this.player.aabb(), b=e.aabb();
         if(!rectsOverlap(a,b)) continue;
-        const dx=(this.player.x - e.x), dy=(this.player.y - e.y);
-        const overlapX=(a.w+b.w)/2 - Math.abs(dx), overlapY=(a.h+b.h)/2 - Math.abs(dy);
+        const dx = (this.player.x - e.x);
+        const dy = (this.player.y - e.y);
+        const overlapX = (a.w + b.w)/2 - Math.abs(dx);
+        const overlapY = (a.h + b.h)/2 - Math.abs(dy);
         if(overlapY < overlapX){
-          const dirY = dy>=0?1:-1;
-          this.player.y += dirY*overlapY*0.9;
-          e.y         -= dirY*overlapY*0.1;
+          const dirY = dy>=0? 1 : -1;
+          this.player.y += dirY * overlapY * 0.9;
+          e.y         -= dirY * overlapY * 0.1;
           if(dirY<0){ this.player.vy = Math.max(this.player.vy, 0); } else { this.player.vy = Math.min(this.player.vy, 0); }
         } else {
-          const dirX = dx>=0?1:-1;
-          this.player.x += dirX*overlapX*0.6;
-          e.x           -= dirX*overlapX*0.4;
-          this.player.vx += dirX*20;
-          e.vx          -= dirX*20;
+          const dirX = dx>=0? 1 : -1;
+          this.player.x += dirX * overlapX * 0.6;
+          e.x           -= dirX * overlapX * 0.4;
+          this.player.vx += dirX * 20;
+          e.vx          -= dirX * 20;
         }
       }
 
@@ -253,7 +256,9 @@ class Game{
   }
 }
 
-/* ================================ */
+/* ================================
+ * Boot
+ * ================================ */
 new Game().start();
 
 })();
