@@ -1,4 +1,4 @@
-// actors-player.js — Aの煙=小さく地面を這う/wing.pngを左右に3連続（威力40）/◎=LE発射/U2全体HIT 維持
+// actors-player.js — Button-Image Ready + Input Cancel (non-ULT) + prior effects kept
 (function(){
 'use strict';
 
@@ -9,15 +9,15 @@ const {
   utils:{ clamp, lerp, rectsOverlap }
 } = window.__GamePieces__;
 
-/* ---------- ◎: LEレコード弾（左右に飛ぶ） ---------- */
+/* ===== 既存の補助クラス（LE発射 / AIR wing / AIR 煙） ===== */
 class LeRecordProjectile extends Projectile{
   constructor(player, dir){
     const world=player.world;
     const img=world.assets.img('LE.png');
-    const x = player.x + dir*(player.w*0.7); // 体の外側から（被り防止）
+    const x = player.x + dir*(player.w*0.7);
     const y = player.y - player.h*0.1;
     super(world, x, y, dir, img, 60);
-    const targetH = player.h*0.5; // プレイヤーの半分程度
+    const targetH = player.h*0.5;
     if(img){
       const s = targetH/img.height;
       this.w = Math.round(img.width * s);
@@ -31,16 +31,13 @@ class LeRecordProjectile extends Projectile{
     this.life = 1.0;
   }
 }
-
-/* ---------- A: wing斬撃（左右に3連続/残像） ---------- */
 class WingSlash extends Projectile{
   constructor(player, dir){
     const world=player.world;
     const img=world.assets.img('wing.png');
     const x = player.x + dir*(player.w*0.9);
     const y = player.y - player.h*0.2;
-    super(world, x, y, dir, img, 40); // 威力40
-    // 小さめ（身長の35%）
+    super(world, x, y, dir, img, 40);
     const targetH = Math.round(player.h*0.35);
     if(img){
       const s = targetH/img.height;
@@ -50,79 +47,45 @@ class WingSlash extends Projectile{
       this.w = Math.round(targetH*1.2);
       this.h = targetH;
     }
-    this.vx = 0;                 // その場に“出る”斬撃
-    this.vy = 0;
-    this.life = 0.16;            // 短命でパッと出て消える
-    this._trail = [];
+    this.vx = 0; this.vy = 0; this.life = 0.16; this._trail=[];
   }
-  update(dt){
-    if(this.dead) return;
-    // 残像
-    this._trail.push({x:this.x, y:this.y, t:0});
-    if(this._trail.length>6) this._trail.shift();
-    for(const tr of this._trail) tr.t += dt;
-    super.update(dt);
-  }
+  update(dt){ if(this.dead) return; this._trail.push({x:this.x, y:this.y, t:0}); if(this._trail.length>6) this._trail.shift(); for(const tr of this._trail) tr.t += dt; super.update(dt); }
   draw(ctx){
-    const img=this.img; if(!img || this.dead) return;
-    // 残像
+    const img=this.img; if(!img||this.dead) return;
     for(let i=0;i<this._trail.length;i++){
       const tr=this._trail[i], k=1 - i/this._trail.length;
       ctx.save(); ctx.translate(tr.x-this.world.camX, tr.y-this.world.camY);
-      if(this.dir<0) ctx.scale(-1,1);
-      ctx.globalAlpha=0.12*k;
+      if(this.dir<0) ctx.scale(-1,1); ctx.globalAlpha=0.12*k;
       const s=this.h/img.height, w=img.width*s, h=this.h;
-      ctx.imageSmoothingEnabled=false;
-      ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
+      ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
       ctx.restore();
     }
-    // 本体
-    ctx.save(); ctx.translate(this.x-this.world.camX, this.y-this.world.camY);
-    if(this.dir<0) ctx.scale(-1,1);
-    const s=this.h/img.height, w=img.width*s, h=this.h;
-    ctx.imageSmoothingEnabled=false;
-    ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
+    ctx.save(); ctx.translate(this.x-this.world.camX, this.y-this.world.camY); if(this.dir<0) ctx.scale(-1,1);
+    const s=this.h/img.height, w=img.width*s, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
     ctx.restore();
   }
 }
-
-/* ---------- A: 地面這い煙（非ダメージ・描画専用） ---------- */
 class AirCrawlSmoke{
   constructor(player, side){
-    this.player=player;
-    this.side = side; // -1:左 / +1:右
+    this.player=player; this.side=side;
     this.t=0; this.life=0.5 + Math.random()*0.4;
-    this.xOff = side*(player.w*0.9 + Math.random()*12); // 体から外側
-    this.yOff = (Math.floor(GROUND_TOP_Y) - player.y) - 6; // 地面付近
-    this.speed = 28 + Math.random()*18; // 地面を這う水平移動
-    this.scale = 0.08 + Math.random()*0.025; // 小さめ
-    this.alphaBase = 0.42; // 濃いめ指定
+    this.xOff = side*(player.w*0.9 + Math.random()*12);
+    this.speed = 28 + Math.random()*18;
+    this.scale = 0.08 + Math.random()*0.025;
+    this.alphaBase = 0.42;
   }
-  update(dt){
-    this.t += dt;
-    // 地面を這う：外側へじわっと
-    this.xOff += this.side * this.speed * dt;
-  }
+  update(dt){ this.t+=dt; this.xOff += this.side * this.speed * dt; }
   alive(){ return this.t < this.life; }
   draw(ctx, world){
-    const img = world.assets.img('kem.png'); if(!img) return;
-    const p = this.player;
-    const x = p.x + this.xOff - world.camX;
-    const y = Math.floor(GROUND_TOP_Y) - world.camY - 2; // 地面上
-    const k = 1 - this.t/this.life;
-    const a = this.alphaBase * (0.5 + 0.5*k);
-    ctx.save();
-    ctx.translate(Math.round(x), Math.round(y));
-    ctx.scale(this.scale, this.scale);
-    ctx.globalAlpha = a;
-    ctx.imageSmoothingEnabled=false;
-    // 地面沿いに描画（上下オフセットしない）
-    ctx.drawImage(img, Math.round(-img.width/2), Math.round(-img.height/2));
-    ctx.restore();
+    const img=world.assets.img('kem.png'); if(!img) return;
+    const p=this.player; const x=p.x + this.xOff - world.camX; const y=Math.floor(GROUND_TOP_Y) - world.camY - 2;
+    const k=1 - this.t/this.life; const a=this.alphaBase*(0.5+0.5*k);
+    ctx.save(); ctx.translate(Math.round(x), Math.round(y)); ctx.scale(this.scale, this.scale); ctx.globalAlpha=a;
+    ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-img.width/2), Math.round(-img.height/2)); ctx.restore();
   }
 }
 
-/* ================================ */
+/* ================= Player ================= */
 class Player extends CharacterBase{
   constructor(assets, world, effects){
     super(56,64);
@@ -148,20 +111,19 @@ class Player extends CharacterBase{
 
     // U1 溜め
     this.isUltCharging=false;
-    this._ultChargeMax=1.5; // ため時間 短縮
+    this._ultChargeMax=1.5;
 
-    // U2
-    this._trail=[];
-    this._pendingU2AOE=false;
-    this._u2aoeDone=false;
-    this._u2ShakeT=0;
+    // U2関連
+    this._trail=[]; this._pendingU2AOE=false; this._u2aoeDone=false; this._u2ShakeT=0;
 
-    // ◎ LE弾のスポーン制御
+    // ◎ LE 弾
     this._leShotSpawned=false;
 
-    // A 追加演出
-    this._airSmokes=[];           // 地面這い煙
-    this._airWingEmitFlags=[false,false,false]; // 3連射の発射済みフラグ
+    // A
+    this._airSmokes=[]; this._airWingEmitFlags=[false,false,false];
+
+    // 入力キャンセル管理
+    this._cancelLock=false;
 
     this.frames={
       idle:['M1-1.png'],
@@ -178,7 +140,7 @@ class Player extends CharacterBase{
       // P
       drIn:['dr1.png','dr2.png','dr3.png','dr4.png'],
       drLp:['dr5.png','dr6.png','dr7.png','dr8.png'],
-      // A（順序固定・その場）
+      // A
       airSeq:[
         'air1.png','air2.png','air3.png','airA.png','air4.png','air5.png',
         'air2.png','air3.png','airA.png','air4.png','air5.png',
@@ -233,14 +195,13 @@ class Player extends CharacterBase{
     if(!['atk','skill','skill2','skillP','air','ult','ult2'].includes(this.state) && this._actionSeq){ this._actionSeq=null; }
     if(this.a2LockoutT>0) this.a2LockoutT=Math.max(0,this.a2LockoutT-dt);
 
-    // UIボタン
+    // UIボタン（disable表示）
     const skBtn=document.getElementById('btnSK');
     const sk2Btn=document.getElementById('btnSK2');
     const pBtn=document.getElementById('btnP');
     const airBtn=document.getElementById('btnAIR');
     const ultBtn=document.getElementById('btnULT');
     const u2Btn=document.getElementById('btnULT2');
-
     if(this.skillCDT>0){ this.skillCDT=Math.max(0,this.skillCDT-dt); skBtn?.setAttribute('disabled',''); } else skBtn?.removeAttribute('disabled');
     if(this.skill2CDT>0){ this.skill2CDT=Math.max(0,this.skill2CDT-dt); sk2Btn?.setAttribute('disabled',''); } else sk2Btn?.removeAttribute('disabled');
     if(this.pCDT>0){ this.pCDT=Math.max(0,this.pCDT-dt); pBtn?.setAttribute('disabled',''); } else pBtn?.removeAttribute('disabled');
@@ -275,7 +236,7 @@ class Player extends CharacterBase{
       input.ultChargeT=0; input.edge.ultRelease=false;
     }
 
-    // 実行中
+    /* ====== 実行中（ヒット処理） ====== */
     if(['atk','skill','skill2','skillP','air','ult','ult2'].includes(this.state)){
       const hb=this.currentHitbox();
       if(hb){
@@ -283,11 +244,24 @@ class Player extends CharacterBase{
           if(!e || e.dead || e.invulnT>0) continue;
           if(rectsOverlap({x:hb.x,y:hb.y,w:hb.w,h:hb.h}, e.aabb())){
             const hit=e.hurt(hb.power, hb.dir, {lift:hb.lift, kbMul:hb.kbMul, kbuMul:hb.kbuMul}, this.effects);
-            if(hit && (this.state==='air' || this.state==='skill2') && !e.superArmor){
-              e._twirlT = Math.max(e._twirlT||0, 0.6);
-            }
+            if(hit && (this.state==='air' || this.state==='skill2') && !e.superArmor){ e._twirlT = Math.max(e._twirlT||0, 0.6); }
           }
         }
+      }
+
+      /* ====== 連携キャンセル（非ULTのみ許可） ====== */
+      if(!this._cancelLock && this.state!=='ult' && this.state!=='ult2'){
+        // 発動優先順位（押された順に“即”拾う）
+        if(input.edge.air && this.airCDT<=0){ this._cancelInto(()=>this._startAIR()); return; }
+        if(input.edge.p   && this.pCDT<=0){   this._cancelInto(()=>this._startP());   return; }
+        if(input.edge.skill2 && this.skill2CDT<=0){ this._cancelInto(()=>this._startSpinSkill2()); return; }
+        if(input.edge.skillRelease && this.skillCDT<=0 && input.skillChargeT>0){
+          const t=input.skillChargeT; input.skillChargeT=0; this._cancelInto(()=>this._startSkill1Release(t)); return;
+        }
+        if(input.edge.a2Press && this.a2LockoutT<=0){ this._cancelInto(()=>this._startA2()); return; }
+        if(input.edge.a1){ this._cancelInto(()=>this._startA1()); return; }
+        if(input.edge.ult2 && this.ult2CDT<=0){ this._cancelInto(()=>this._startULT2()); return; } // U2は明示的に許可するならここを外す/残すで調整
+        // ※U1溜め開始は別系統なので現行のまま
       }
 
       // ◎：LE弾（左右1発ずつ）
@@ -298,20 +272,16 @@ class Player extends CharacterBase{
         (this.world._skillBullets||(this.world._skillBullets=[])).push(L,R);
       }
 
-      // A：地面這い煙の生成（過密防止で最大4つ）
+      // A：地面這い煙（最大4）、wing 3連射のトリガ管理
       if(this.state==='air'){
-        // 0.06sごとに片側1つ、最大4（左右合計）
         this._airSmokeTick = (this._airSmokeTick||0) + dt;
         if(this._airSmokes.length<4 && this._airSmokeTick>=0.06){
           this._airSmokeTick=0;
           const side = (Math.random()<0.5? -1:+1);
           this._airSmokes.push(new AirCrawlSmoke(this, side));
         }
-        // 更新＆掃除
         for(const s of this._airSmokes) s.update(dt);
         this._airSmokes = this._airSmokes.filter(s=>s.alive());
-
-        // wing 3連射：シーケンス進捗でトリガ
         const prog = (this._actionSeq && this._actionSeq.length>0)? (this._actionIndex/this._actionSeq.length) : 0;
         const marks = [0.15, 0.50, 0.85];
         marks.forEach((m, i)=>{
@@ -323,24 +293,20 @@ class Player extends CharacterBase{
           }
         });
       } else {
-        this._airSmokes.length=0;
-        this._airWingEmitFlags=[false,false,false];
-        this._airSmokeTick=0;
+        this._airSmokes.length=0; this._airWingEmitFlags=[false,false,false]; this._airSmokeTick=0;
       }
 
-      // U2：AOE（PK8）発動（全員ヒット／当たり不要）
+      // U2：AOE（PK8）
       if(this._pendingU2AOE){
         this._pendingU2AOE=false;
         if(!this._u2aoeDone){
           this._u2aoeDone=true;
-          this._u2ShakeT=1.0;                // 1秒プレイヤー揺らす
-          this.effects.shake(0.35,12);       // 画面シェイク
+          this._u2ShakeT=1.0; this.effects.shake(0.35,12);
           for(const e of enemies){
-            if(!e || e.dead) continue;
+            if(!e||e.dead) continue;
             const dir=(e.x>=this.x)?1:-1;
             e.hurt(100,dir,{lift:1.6,kbMul:2.6,kbuMul:2.2},this.effects);
-            e.vx = dir*720; e.vy = -720;
-            e._twirlT=Math.max(e._twirlT||0,1.2);
+            e.vx = dir*720; e.vy = -720; e._twirlT=Math.max(e._twirlT||0,1.2);
           }
         }
       }
@@ -350,7 +316,7 @@ class Player extends CharacterBase{
       return;
     }
 
-    // 入力（待機時）
+    /* ====== 待機中の入力 ====== */
     if(input.edge.a1) this.bufferA1=true;
     if(input.edge.air && this.airCDT<=0){ input.edge.air=false; this.bufferA1=false; this._startAIR(); return; }
     if(input.edge.p && this.pCDT<=0){ input.edge.p=false; this.bufferA1=false; this._startP(); return; }
@@ -371,7 +337,19 @@ class Player extends CharacterBase{
     world.updateTimer(dt);
   }
 
-  /* ---------- 通常 ---------- */
+  /* ---------- Cancel helper ---------- */
+  _cancelInto(starter){
+    // 現在の行動を解体して直ちに新行動へ
+    this._cancelLock = true;
+    this._actionSeq=null; this._actionIndex=0; this._actionTime=0;
+    // A の残演出などを掃除
+    this._airSmokes.length=0; this._airWingEmitFlags=[false,false,false]; this._leShotSpawned=false;
+    starter();
+    // 1フレームだけ多重キャンセルを抑止
+    queueMicrotask(()=>{ this._cancelLock=false; });
+  }
+
+  /* ---------- 通常攻撃/行動 ---------- */
   _startA1(){
     this.state='atk'; this.animT=0; this.comboStep=Math.min(this.comboStep+1,3);
     const seq=[ {kind:'prep',dur:0.08,frame:'k1prep',fx:80,power:0} ];
@@ -390,8 +368,6 @@ class Player extends CharacterBase{
     this._actionIndex=0; this._actionTime=0; this.a2LockoutT = 0.35;
     this._chaseWindowT = 0; this._chaseEnabled=false; this._chaseConsumed=false;
   }
-
-  /* ---------- ●（既存） ---------- */
   _startSkill1Release(t){
     this.state='skill'; this.animT=0; this.skillCDT=5.0;
     const c=clamp(t,0,1.0);
@@ -404,16 +380,11 @@ class Player extends CharacterBase{
       const pow = base*(i===1?1:0.6); const lift=(i===1?1:0);
       seq.push({kind:'sp',dur:0.06,frame:frames[i],fx:80,power:pow,lift, kbMul:kbm, kbuMul:kbum});
     }
-    this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
-    this._showGauge(false);
+    this._actionSeq=seq; this._actionIndex=0; this._actionTime=0; this._showGauge(false);
   }
-
-  /* ---------- ◎（LE弾を左右へ） ---------- */
   _startSpinSkill2(){
     if(this.skill2CDT>0) return;
-    this.state='skill2'; this.animT=0; this.skill2CDT=10.0;
-    this.saT = 1.8;
-    this._leShotSpawned=false;
+    this.state='skill2'; this.animT=0; this.skill2CDT=10.0; this.saT = 1.8; this._leShotSpawned=false;
     const order=this.frames.tms; const seq=[];
     for(let loop=0; loop<3; loop++){
       for(let i=0;i<order.length;i++){
@@ -423,8 +394,6 @@ class Player extends CharacterBase{
     }
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
-
-  /* ---------- P ---------- */
   _startP(){
     if(this.pCDT>0) return;
     this.state='skillP'; this.animT=0; this.pCDT=9.0;
@@ -435,49 +404,30 @@ class Player extends CharacterBase{
     }
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
-
-  /* ---------- A（その場・ゆっくり/SA/煙＆wing追加） ---------- */
   _startAIR(){
     if(this.airCDT>0) return;
-    this.state='air'; this.animT=0; this.airCDT=12.0;
-    this.saT = 2.0;
-    this._airSmokes.length=0;
-    this._airWingEmitFlags=[false,false,false];
-    this._airSmokeTick=0;
-
+    this.state='air'; this.animT=0; this.airCDT=12.0; this.saT = 2.0;
+    this._airSmokes.length=0; this._airWingEmitFlags=[false,false,false]; this._airSmokeTick=0;
     const seq=[]; const arr=this.frames.airSeq;
     for(let i=0;i<arr.length;i++){
       const f=arr[i];
-      // その場・少しゆっくり（0.12s/コマ）
-      // ※A自体のヒットは従来どおり（強めノックバック）
       seq.push({kind:'hit', dur:0.12, frame:f, fx:0, power:60, lift:1.0, kbMul:2.2, kbuMul:2.0, tag:'air'});
     }
     this._actionSeq=seq; this._actionIndex=0; this._actionTime=0;
   }
-
-  /* ---------- U1（発射サイズ=溜め見た目に一致） ---------- */
   _releaseULT(chargeSec){
     if(this.ultCDT>0) return;
     this.state='ult'; this.animT=0;
-    this._actionSeq=[
-      {kind:'pose',dur:0.22,frame:'ul2',fx:40},
-      {kind:'post',dur:0.58,frame:'ul2',fx:20}
-    ];
-    this._actionIndex=0; this._actionTime=0;
-    this.ultCDT=3.0;
-
+    this._actionSeq=[ {kind:'pose',dur:0.22,frame:'ul2',fx:40}, {kind:'post',dur:0.58,frame:'ul2',fx:20} ];
+    this._actionIndex=0; this._actionTime=0; this.ultCDT=3.0;
     const csClamped = Math.min(this._ultChargeMax, chargeSec);
-    const csScaledForProjectile = csClamped * (3.0 / this._ultChargeMax); // UltBlastの0..3.0に合わせる
-
+    const csScaled = csClamped * (3.0 / this._ultChargeMax);
     const img=this.world.assets.img(this.frames.ul3);
     const ox=this.face*30, oy=-12;
-    const blast=new UltBlast(this.world, this.x+ox, this.y+oy, this.face, img, csScaledForProjectile);
+    const blast=new UltBlast(this.world, this.x+ox, this.y+oy, this.face, img, csScaled);
     (this.world._skillBullets||(this.world._skillBullets=[])).push(blast);
-    this.saT=0; this._showGauge(false);
-    this.effects.addSpark(this.x+ox, this.y-14, true);
+    this.saT=0; this._showGauge(false); this.effects.addSpark(this.x+ox, this.y-14, true);
   }
-
-  /* ---------- U2 ---------- */
   _startULT2(){
     if(this.ult2CDT>0) return;
     this.state='ult2'; this.animT=0; this.ult2CDT=12.0; this._u2aoeDone=false;
@@ -490,7 +440,7 @@ class Player extends CharacterBase{
       {kind:'hit', dur:0.12, frame:P[4], fx:200, power:50, lift:0.8, kbMul:1.4, kbuMul:1.2},
       {kind:'pose',dur:0.10, frame:P[5], fx:140, power:0},
       {kind:'hit', dur:0.18, frame:P[6], fx:240, power:80, lift:1.4, kbMul:2.2, kbuMul:1.9, tag:'u2fin'},
-      {kind:'pose',dur:1.00, frame:P[7], fx:0, power:0, tag:'u2aoe'} // 当たり不要・全員HIT
+      {kind:'pose',dur:1.00, frame:P[7], fx:0, power:0, tag:'u2aoe'}
     ];
     this._actionIndex=0; this._actionTime=0;
   }
@@ -498,23 +448,11 @@ class Player extends CharacterBase{
   /* ---------- 進行 ---------- */
   _updateAction(dt,world,input){
     const cur=this._actionSeq?.[this._actionIndex];
-
     if(this.state==='skill2' || this.state==='air'){ this.saT = Math.max(this.saT, 0.08); }
     if(cur?.fx){ this.x += this.face * cur.fx * dt; }
-
-    // U2 残像
-    if(this.state==='ult2'){
-      this._trail.push({x:this.x, y:this.y, t:0});
-      if(this._trail.length>12) this._trail.shift();
-      for(const tr of this._trail) tr.t += dt;
-    } else this._trail.length=0;
-
-    if(cur?.tag==='u2aoe' && !this._u2aoeSeen){
-      this._u2aoeSeen=true; this._pendingU2AOE=true;
-    }
-
+    if(this.state==='ult2'){ this._trail.push({x:this.x, y:this.y, t:0}); if(this._trail.length>12) this._trail.shift(); for(const tr of this._trail) tr.t += dt; } else this._trail.length=0;
+    if(cur?.tag==='u2aoe' && !this._u2aoeSeen){ this._u2aoeSeen=true; this._pendingU2AOE=true; }
     this.vx = 0; this.updatePhysics(dt);
-
     if(this._actionSeq){
       this._actionTime+=dt;
       if(this._actionTime>=cur.dur){
@@ -522,9 +460,7 @@ class Player extends CharacterBase{
         if(this._actionIndex>=this._actionSeq.length){
           if(this.state==='atk' && this.comboStep>0){ this.comboGraceT=this.comboGraceMax; if(this.comboStep>=3){ this.comboStep=0; this.bufferA1=false; } }
           this.state='idle'; this._actionSeq=null; this._u2aoeSeen=false;
-          // Aの後処理
-          if(this._airSmokes.length){ this._airSmokes.length=0; }
-          this._airWingEmitFlags=[false,false,false];
+          this._airSmokes.length=0; this._airWingEmitFlags=[false,false,false];
         }
       }
     }
@@ -540,45 +476,27 @@ class Player extends CharacterBase{
     this.x=world.camX+80; this.y=Math.floor(GROUND_TOP_Y)-this.h/2+FOOT_PAD; this.vx=0; this.vy=0;
     this.jumpsLeft=this.maxJumps; this.saT=0; this.isUltCharging=false;
     this._trail.length=0; this._u2ShakeT=0; this._leShotSpawned=false;
-    this._airSmokes.length=0; this._airWingEmitFlags=[false,false,false];
+    this._airSmokes.length=0; this._airWingEmitFlags=[false,false,false]; this._cancelLock=false;
   }
 
   draw(ctx,world){
     ctx.save(); ctx.translate(this.x-world.camX, this.y-world.camY);
-
-    // U溜め中：左右高速揺れ
-    if(this.isUltCharging){
-      const t=performance.now()/100;
-      const ox=Math.sin(t*2.8)*6;
-      ctx.translate(ox,0);
-    }
-    // U2：PK8中はプレイヤー自身も揺らす
-    if(this._u2ShakeT>0){
-      const a=6*this._u2ShakeT;
-      ctx.translate((Math.random()*2-1)*a,(Math.random()*2-1)*a*0.6);
-    }
-
+    if(this.isUltCharging){ const t=performance.now()/100; const ox=Math.sin(t*2.8)*6; ctx.translate(ox,0); }
+    if(this._u2ShakeT>0){ const a=6*this._u2ShakeT; ctx.translate((Math.random()*2-1)*a,(Math.random()*2-1)*a*0.6); }
     if(this.dead){ ctx.globalAlpha=this.fade; ctx.rotate(this.spinAngle); }
     if(this.face<0 && !this.dead) ctx.scale(-1,1);
 
     let img=null;
     if(this.state==='idle'){ img=this._imgByKey('idle',0); }
-    else if(this.state==='run'){
-      const rate = lerp(6, 11, clamp(Math.abs(this.vx)/MOVE, 0, 1));
-      const i=Math.floor(this.animT*rate)%this.frames.run.length;
-      img=this._imgByKey('run',i);
-    }
+    else if(this.state==='run'){ const rate = lerp(6, 11, clamp(Math.abs(this.vx)/MOVE, 0, 1)); const i=Math.floor(this.animT*rate)%this.frames.run.length; img=this._imgByKey('run',i); }
     else if(this.state==='jump'){ img=this._imgByKey('run',0); }
     else if(['atk','skill','skill2','skillP','air','ult','ult2'].includes(this.state) && this._actionSeq){
       const cur=this._actionSeq[this._actionIndex]; const key=cur.frame; img=this.world.assets.img(this.frames[key]?this._getFramePath(key,0):key);
     } else img=this._imgByKey('idle',0);
 
-    if(img){
-      const scale=this.h/img.height, w=img.width*scale, h=this.h;
-      ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
-    }
+    if(img){ const scale=this.h/img.height, w=img.width*scale, h=this.h; ctx.imageSmoothingEnabled=false; ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h)); }
 
-    // U溜め中：UL3を大きく（見た目）＋残像
+    // U溜め中：UL3 視覚
     if(this.isUltCharging){
       const ul3=this.world.assets.img(this.frames.ul3);
       if(ul3){
@@ -586,8 +504,7 @@ class Player extends CharacterBase{
         const mul = lerp(0.7, 3.2, clamp(t/this._ultChargeMax,0,1));
         const hh=60*mul, ww=60*mul; const oxh = this.face*26, oyh=-14;
         for(let i=0;i<3;i++){
-          const f=(3-i)/3; ctx.save(); ctx.globalAlpha=0.20*f;
-          ctx.translate(oxh - i*6*this.face, oyh);
+          const f=(3-i)/3; ctx.save(); ctx.globalAlpha=0.20*f; ctx.translate(oxh - i*6*this.face, oyh);
           if(this.face<0) ctx.scale(-1,1);
           ctx.drawImage(ul3, Math.round(-ww/2), Math.round(-hh/2), Math.round(ww), Math.round(hh));
           ctx.restore();
@@ -597,17 +514,14 @@ class Player extends CharacterBase{
       }
     }
 
-    // A：地面を這う小粒の煙を描画（非ダメージ・プレイヤー非被り）
-    if(this.state==='air' && this._airSmokes.length){
-      for(const s of this._airSmokes) s.draw(ctx, this.world);
-    }
+    // A：煙
+    if(this.state==='air' && this._airSmokes.length){ for(const s of this._airSmokes) s.draw(ctx, this.world); }
 
     // U2：残像
     if(this.state==='ult2' && this._trail.length && img){
       for(let i=0;i<this._trail.length;i++){
         const tr=this._trail[i], k=1 - i/this._trail.length;
-        ctx.save(); ctx.translate(tr.x-this.x, tr.y-this.y);
-        ctx.globalAlpha=0.12*k;
+        ctx.save(); ctx.translate(tr.x-this.x, tr.y-this.y); ctx.globalAlpha=0.12*k;
         const scale=this.h/img.height, w=img.width*scale, h=this.h;
         ctx.drawImage(img, Math.round(-w/2), Math.round(-h/2), Math.round(w), Math.round(h));
         ctx.restore();
@@ -617,7 +531,7 @@ class Player extends CharacterBase{
     ctx.restore();
   }
 
-  // 被弾
+  // 被弾（SA中はキャンセルしない＝従来維持）
   hurt(amount,dir,opts,effects){
     if(this.state==='skill2' || this.state==='air' || this.saT>0){ opts = {...(opts||{}), kbMul:0.1, kbuMul:0.1}; }
     const hit = CharacterBase.prototype.hurt.call(this,amount,dir,opts,effects);
@@ -635,6 +549,6 @@ class Player extends CharacterBase{
   }
 }
 
-window.__Actors__ = Object.assign({}, window.__Actors__||{}, { Player, LeRecordProjectile, WingSlash });
+window.__Actors__ = Object.assign({}, window.__Actors__||{}, { Player, LeRecordProjectile, WingSlash, AirCrawlSmoke });
 
 })();
