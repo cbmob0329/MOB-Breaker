@@ -1,14 +1,10 @@
 :root{
-  /* 端末に合わせて高さを柔軟化（スマホで切れない） */
-  --stage-w: 92vw;            /* 横は画面幅に対して可変 */
-  --stage-h: 94vh;            /* 縦も可変 */
-  --hud-bg:#0b0f17cc; --fg:#e9eef7; --grid-gap:10px;
+  --stage-w:420px;
+  --stage-h:720px;
+  --hud-bg:#0b0f17cc;
+  --fg:#e9eef7;
+  --grid-gap:10px;
 }
-
-@media (min-width: 480px){
-  :root{ --stage-w:420px; --stage-h:720px; } /* タブレット/PC時は従来サイズ */
-}
-
 html,body{
   height:100%;margin:0;padding:0;overflow:hidden;background:#0a0d13;color:var(--fg);
   font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,Arial,sans-serif;
@@ -17,56 +13,50 @@ html,body{
 *{box-sizing:border-box}
 #root{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:10px}
 #phone{
-  width:var(--stage-w);height:var(--stage-h);position:relative;overflow:hidden;background:#060910;
-  border:1px solid #0f1726;border-radius:20px;box-shadow:0 12px 48px rgba(0,0,0,.55);touch-action:none;margin:0 auto
+  width:var(--stage-w);height:var(--stage-h);position:relative;overflow:hidden;background:#060910;border:1px solid #0f1726;
+  border-radius:20px;box-shadow:0 12px 48px rgba(0,0,0,.55);touch-action:none;margin:0 auto
 }
-
-/* 上:ゲーム / 下:操作。操作エリアは自動高さ（小画面でも切れない） */
-.grid{
-  position:absolute;inset:0;display:grid;grid-template-rows: 1fr auto;gap:var(--grid-gap);padding:var(--grid-gap)
-}
+.grid{position:absolute;inset:0;display:grid;grid-template-rows: 1fr 240px;gap:var(--grid-gap);padding:var(--grid-gap)}
 .gamewrap{position:relative;border-radius:14px;overflow:hidden;background:#05070c;outline:1px solid #0e1522}
 canvas#game{display:block;width:100%;height:100%}
-
-/* 操作エリア：パディング縮小・中身は縦並び→横詰めでも収まる */
 .controls{
   position:relative;border-radius:14px;background:var(--hud-bg);outline:1px solid #0e1522;backdrop-filter: blur(6px);
-  padding:10px;display:grid;grid-template-columns: 1fr 1fr;gap:10px
+  padding:12px;display:grid;grid-template-columns: 1fr 1fr;gap:12px
 }
 
-/* スティック：コンパクト化 */
+/* 左スティック（やや小型化） */
 .stickArea{position:relative;border-radius:12px;background:#0a121f;outline:1px solid #152033;display:grid;place-items:center;touch-action:none}
-.stick{width:100px;height:100px;border-radius:50%;background:#0d1828;outline:2px solid #22324d;position:relative}
-.stickThumb{
-  width:56px;height:56px;border-radius:50%;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-  background:#1a2a45;outline:2px solid #2e4a73;box-shadow:inset 0 0 0 4px #0c1422
-}
+.stick{width:110px;height:110px;border-radius:50%;background:#0d1828;outline:2px solid #22324d;position:relative}
+.stickThumb{width:58px;height:58px;border-radius:50%;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  background:#1a2a45;outline:2px solid #2e4a73;box-shadow:inset 0 0 0 4px #0c1422}
 
-/* 右側ボタン：3x2 → 円形＆押しやすい寸法に調整。小画面で自動縮小 */
+/* 右側ボタン：3列×3行（ULT行＋ジャンプ） */
 .buttons{
-  display:grid;grid-template-columns:repeat(3,minmax(64px,1fr));grid-template-rows:repeat(2,1fr);gap:10px;
-  align-content:stretch;justify-items:stretch
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  grid-auto-rows:minmax(64px, 1fr);
+  gap:12px;align-content:stretch;justify-items:stretch
 }
 .btn{
-  border:none;border-radius:9999px; /* 全ボタン円形 */
-  background:#0d1828;outline:2px solid #22324d;color:var(--fg);
-  font-size:20px;display:grid;place-items:center;touch-action:none;
-  box-shadow:inset 0 -4px 0 rgba(255,255,255,.04);transition:transform .15s ease,opacity .15s ease;
-  min-height:64px; aspect-ratio: 1/1;  /* 完全な円を維持 */
+  border:none;border-radius:14px;background:#0d1828;outline:2px solid #22324d;color:var(--fg);
+  font-size:24px;display:grid;place-items:center;touch-action:none;box-shadow:inset 0 -4px 0 rgba(255,255,255,.04);
+  transition:opacity .15s ease;min-height:64px
 }
+.btn.circle{border-radius:999px}
 .btn:active{transform:scale(.98)}
 .btn[disabled]{opacity:.35;pointer-events:none}
+.btn img{display:block;width:72%;height:72%;object-fit:contain;image-rendering:pixelated}
 
-/* 機能別カラー */
-.btn.attack1{background:#112033} /* ■ */
-.btn.attack2{background:#1a2436} /* ▲ */
-.btn.skill1 {background:#132a22} /* ● */
-.btn.skill2 {background:#1f2433} /* ◎(回転) */
-.btn.ult    {background:#2b2030} /* U1 */
-.btn.jump   {background:#25202b} /* × */
-.btn.air    {background:#1d263d} /* A(高速技) */
-.btn.p      {background:#18312a} /* P(回転2) */
-.btn.ult2   {background:#3a2232} /* U2 */
+/* 役割別ベース色（画像メインなので淡く） */
+.btn.attack1{background:#112033}
+.btn.attack2{background:#1a2436}
+.btn.skill1 {background:#132a22}
+.btn.skill2 {background:#1f2433}
+.btn.pbtn   {background:#16222f}
+.btn.air    {background:#1c2030}
+.btn.ult    {background:#2b2030}
+.btn.ult2   {background:#2b2030}
+.btn.jump   {background:#25202b}
 
 /* HUD */
 header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex;gap:10px;align-items:center;z-index:10;pointer-events:none}
@@ -75,19 +65,15 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
 .bar>i{position:absolute;left:0;top:0;bottom:0;border-radius:999px;background:linear-gradient(90deg,#ff9a9e,#ff6b6b)}
 .timer{margin-left:auto}
 .name{margin-left:6px;opacity:.85}
-
-/* 頭上ゲージ */
 .overhead{position:absolute;left:50%;transform:translateX(-50%);display:none;gap:6px;align-items:center;pointer-events:none}
 .gauge{width:96px;height:6px;border-radius:999px;outline:1px solid #1a263d;background:#0a1220;overflow:hidden}
 .gauge>i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#69d0ff,#a0ffe6)}
 
-/* さらに背が低い端末でも切れないよう微調整 */
-@media (max-height: 680px){
-  .stick{width:88px;height:88px}
-  .stickThumb{width:50px;height:50px}
-  .btn{min-height:56px;font-size:18px}
+@media (max-height: 720px){
+  :root{ --stage-h: 660px; }
+  .grid{grid-template-rows: 1fr 250px}
 }
-@media (max-height: 600px){
-  .btn{min-height:52px}
-  .bar{--w:130px}
+@media (max-width: 430px){
+  :root{ --stage-w: 392px; }
+  .btn img{width:68%;height:68%}
 }
