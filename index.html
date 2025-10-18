@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1" />
-  <title>MOB Side Action – Player Rev</title>
+  <title>MOB Side Action – Button Images + Input Cancel</title>
   <meta name="theme-color" content="#0b0c10" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -22,33 +22,60 @@
       </div>
 
       <div class="controls">
-        <!-- 左：スティック（小型化） -->
+        <!-- 左スティック -->
         <div class="stickArea" id="stickArea" aria-label="Move Stick">
           <div class="stick"><div class="stickThumb" id="stickThumb"></div></div>
         </div>
 
-        <!-- 右：4x2 の円形ボタン -->
+        <!-- 右ボタン群（円形＋画像） -->
         <div class="buttons">
-          <!-- 1段目 -->
-          <button class="btn attack1" id="btnA1"  aria-label="攻撃① ■">■</button>
-          <button class="btn attack2" id="btnA2"  aria-label="攻撃② ▲">▲</button>
-          <button class="btn skill1"  id="btnSK"  aria-label="スキル① ●">●</button>
-          <button class="btn skill2"  id="btnSK2" aria-label="スキル② ◎">◎</button>
-          <!-- 2段目 -->
-          <button class="btn air"     id="btnAIR" aria-label="スキル④ A">A</button>
-          <button class="btn pskill"  id="btnP"   aria-label="スキル③ P">P</button>
-          <button class="btn ult"     id="btnULT"  aria-label="ULT1 U">U</button>
-          <button class="btn ult2"    id="btnULT2" aria-label="ULT2 U2">U2</button>
+          <!-- 上段 -->
+          <button class="btn circle attack1" id="btnA1" aria-label="攻撃① ■">
+            <img src="btmaru.png" alt="■" />
+          </button>
+          <button class="btn circle attack2" id="btnA2" aria-label="攻撃② ▲">
+            <img src="btsan.png" alt="▲" />
+          </button>
+          <button class="btn circle skill1" id="btnSK" aria-label="スキル① 〇">
+            <img src="btspin.png" alt="〇" />
+          </button>
+
+          <!-- 中段 -->
+          <button class="btn circle skill2" id="btnSK2" aria-label="スキル② ◎">
+            <img src="bttms.png" alt="◎" />
+          </button>
+          <button class="btn circle pbtn" id="btnP" aria-label="Pボタン">
+            <img src="btspin2.png" alt="P" />
+          </button>
+          <button class="btn circle air" id="btnAIR" aria-label="A(AIR)ボタン">
+            <img src="btair.png" alt="A" />
+          </button>
+
+          <!-- 下段（ULTを独立行） -->
+          <button class="btn circle ult" id="btnULT" aria-label="ULT①">
+            <img src="btult.png" alt="U1" />
+          </button>
+          <button class="btn circle ult2" id="btnULT2" aria-label="ULT②">
+            <img src="btult2.png" alt="U2" />
+          </button>
+
+          <!-- ジャンプ ×（Aと位置を交換済み仕様のまま）-->
+          <button class="btn circle jump" id="btnJMP" aria-label="ジャンプ ×">
+            ×
+          </button>
         </div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- スクリプト -->
+<!-- 1) Core -->
 <script src="script-core.js"></script>
-<script src="actors.js"></script>         <!-- 既存の敵たち -->
-<script src="actors-player.js"></script>  <!-- この回答の Part2 で上書き -->
+<!-- 2) Enemies & Base Actor Set -->
+<script src="actors.js"></script>
+<!-- 3) Player (このファイルで上書き) -->
+<script src="actors-player.js"></script>
+<!-- 4) World/Game -->
 <script src="game.js"></script>
 </body>
 </html>
