@@ -1,4 +1,4 @@
-// game.js — World / Game / Boot（新プレイヤー資産＋新ボタン連携）
+// game.js — World / Game / Boot
 (function(){
 'use strict';
 
@@ -10,13 +10,11 @@ const {
 } = window.__GamePieces__;
 
 const {
-  // Player は actors-player.js で定義
+  Player, // actors-player.js
   WaruMOB, Kozou, MOBGiant, GabuKing, Screw, IceRobo
 } = window.__Actors__;
 
-/* ================================
- * World
- * ================================ */
+/* ================================ */
 class World{
   constructor(assets, canvas, effects){
     this.assets=assets; this.effects=effects; this.canvas=canvas;
@@ -56,9 +54,7 @@ class World{
 
 const updateHPUI=(hp,maxhp)=>{ const fill=document.getElementById('hpfill'); document.getElementById('hpnum').textContent=hp; fill.style.width=Math.max(0,Math.min(100,(hp/maxhp)*100))+'%'; };
 
-/* ================================
- * Game
- * ================================ */
+/* ================================ */
 class Game{
   constructor(){
     this.assets=new Assets(); this.canvas=document.getElementById('game'); this.input=new Input(); this.effects=new Effects();
@@ -73,23 +69,19 @@ class Game{
       // Player基礎
       'M1-1.png','M1-2.png','M1-3.png','M1-4.png',
       'K1-1.png','K1-2.png','K1-3.png','K1-4.png','K1-5.png',
-      'h1.png','h2.png','h3.png','h4.png',
-      'J.png',
+      'h1.png','h2.png','h3.png','h4.png','J.png',
       'Y1.png','Y2.png','Y3.png','Y4.png',
-      'UL1.PNG','UL2.PNG','UL3.png',
-      'kem.png',
+      'UL1.PNG','UL2.PNG','UL3.png','kem.png',
 
-      // === 新プレイヤー用 追加画像 ===
+      // 新プレイヤー用
       'tms1.png','tmsA.png','tms2.png','tms3.png','tms4.png','tms5.png','tms6.png',
       'dr1.png','dr2.png','dr3.png','dr4.png','dr5.png','dr6.png','dr7.png','dr8.png',
       'air1.png','air2.png','air3.png','airA.png','air4.png','air5.png',
       'PK1.png','PK2.png','PK3.png','PK4.png','PK5.png','PK6.png','PK7.png','PK8.png',
 
-      // 既存敵/弱
+      // 敵
       'teki1.png','teki2.png','teki3.png','teki7.png',
       'SL.png','SL2.png','SL3.png','SL4.png','SL5.png','SL6.png','SL7.png','SL8.png',
-
-      // ボス群
       'I1.png','I2.png','I3.png','I4.png','I5.png','I6.png','I7.png','I8.png',
       'P1.png','P2.png','P3.png','P4.png','P5.png','P6.png','P7.png','P10.png',
       't1.png','t2.png','t3.png','t4.png','t5.png','t6.png','t7.png','t8.png','t9.png','t10.png','t11.png',
@@ -98,14 +90,11 @@ class Game{
     await this.assets.load(imgs);
     this.world=new World(this.assets,this.canvas,this.effects);
 
-    // Player は actors-player.js の最新版
-    this.player=new window.__Actors__.Player(this.assets,this.world,this.effects);
+    this.player=new Player(this.assets,this.world,this.effects);
 
-    // ==== 新ボタン（A / P / U2）ブリッジ ====
-    // script-core.js を変更せず edge.* を発火させる
+    // 追加ボタン（A/P/U2）ブリッジ
     const bindEdge=(id, edgeKey)=>{
-      const el=document.getElementById(id);
-      if(!el) return;
+      const el=document.getElementById(id); if(!el) return;
       const down=()=>{ this.input.edge[edgeKey]=true; this.input.btn[edgeKey]=true; };
       const up  =()=>{ this.input.btn[edgeKey]=false; };
       el.addEventListener('pointerdown',e=>{e.preventDefault();down();el.setPointerCapture?.(e.pointerId);});
@@ -114,7 +103,6 @@ class Game{
       el.addEventListener('touchstart',e=>{e.preventDefault();down();},{passive:false});
       el.addEventListener('touchend',  e=>{e.preventDefault();up();},{passive:false});
     };
-    // edge.air / edge.p / edge.ult2 を追加的に使う
     if(!this.input.edge.air) this.input.edge.air=false;
     if(!this.input.edge.p)   this.input.edge.p=false;
     if(!this.input.edge.ult2)this.input.edge.ult2=false;
@@ -125,7 +113,7 @@ class Game{
     bindEdge('btnP','p');
     bindEdge('btnULT2','ult2');
 
-    // ==== 出現順（弱い→強いを各1体ずつ） ====
+    // 出現順（1体ずつ）
     const spawnX = 680;
     this.enemyOrder = [
       ()=>[ new Kozou(this.world,this.effects,this.assets,spawnX) ],
@@ -135,7 +123,6 @@ class Game{
       ()=>[ new IceRobo(this.world,this.effects,this.assets,spawnX+320) ],
       ()=>[ new MOBGiant(this.world,this.effects,this.assets,spawnX+420) ],
     ];
-
     this.enemyIndex = 0;
     this.enemies = this.enemyOrder[this.enemyIndex]();
 
@@ -152,11 +139,9 @@ class Game{
 
       this.player.update(dt,this.input,this.world,this.enemies);
 
-      // 敵更新 & 当たり
       for(const e of this.enemies){
         e.update(dt,this.player);
 
-        // WaruMOB の弾
         if(e.constructor && e.constructor.name==='WaruMOB'){
           for(const p of e.projectiles){
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
@@ -165,8 +150,6 @@ class Game{
             }
           }
         }
-
-        // Kozou の石
         if(e.constructor && e.constructor.name==='Kozou'){
           for(const p of e.projectiles){
             if(!p.dead && this.player.invulnT<=0 && rectsOverlap(p.aabb(), this.player.aabb())){
@@ -175,8 +158,6 @@ class Game{
             }
           }
         }
-
-        // GabuKing の弾（保険）
         if(e.constructor && e.constructor.name==='GabuKing'){
           for(const b of e.bullets){
             if(!b.dead && this.player.invulnT<=0 && rectsOverlap(b.aabb(), this.player.aabb())){
@@ -185,8 +166,6 @@ class Game{
             }
           }
         }
-
-        // IceRobo のダッシュ & 玉
         if(e.constructor && e.constructor.name==='IceRobo'){
           if(e.state==='dash'){
             const hb = {x:e.x + e.face*22, y:e.y, w:e.w*0.9, h:e.h*0.9};
@@ -202,8 +181,6 @@ class Game{
             }
           }
         }
-
-        // 巨神のダッシュ & 玉
         if(e.constructor && e.constructor.name==='MOBGiant'){
           if(e.state==='dash'){
             const hb = {x:e.x + e.face*30, y:e.y, w: e.w*0.96, h: e.h*0.96};
@@ -221,7 +198,6 @@ class Game{
         }
       }
 
-      // プレイヤーの弾・スパイク（敵へ）
       if(this.world._skillBullets){
         for(const p of this.world._skillBullets){
           p.update(dt);
@@ -237,16 +213,13 @@ class Game{
         this.world._skillBullets = this.world._skillBullets.filter(p=>!p.dead && p.life>0);
       }
 
-      // 撃破整理
       this.enemies=this.enemies.filter(e=>!(e.dead && e.fade<=0));
 
-      // 次ウェーブ（1体ずつ）
       if(this.enemies.length===0 && this.enemyIndex < this.enemyOrder.length-1){
         this.enemyIndex++;
         this.enemies.push(...this.enemyOrder[this.enemyIndex]());
       }
 
-      // めり込み解消
       for(const e of this.enemies){
         if(e.dead || this.player.dead) continue;
         const a=this.player.aabb(), b=e.aabb();
@@ -276,9 +249,7 @@ class Game{
   }
 }
 
-/* ================================
- * Boot
- * ================================ */
+/* ================================ */
 new Game().start();
 
 })();
