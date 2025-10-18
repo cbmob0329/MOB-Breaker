@@ -4,6 +4,13 @@
   --hud-bg:#0b0f17cc;
   --fg:#e9eef7;
   --grid-gap:10px;
+
+  /* モバイルでのボタン最適値 */
+  --btn-min:58px;        /* 物理サイズの最小値 */
+  --btn-img:68%;         /* ボタン内画像の占有率（全体） */
+  --btn-img-small:62%;   /* 一部ボタン用（ジャンプなど） */
+  --stick-size:100px;    /* スティック径 */
+  --stick-thumb:54px;    /* スティックつまみ径 */
 }
 html,body{
   height:100%;margin:0;padding:0;overflow:hidden;background:#0a0d13;color:var(--fg);
@@ -16,38 +23,53 @@ html,body{
   width:var(--stage-w);height:var(--stage-h);position:relative;overflow:hidden;background:#060910;border:1px solid #0f1726;
   border-radius:20px;box-shadow:0 12px 48px rgba(0,0,0,.55);touch-action:none;margin:0 auto
 }
-.grid{position:absolute;inset:0;display:grid;grid-template-rows: 1fr 240px;gap:var(--grid-gap);padding:var(--grid-gap)}
+.grid{
+  position:absolute;inset:0;display:grid;
+  grid-template-rows: 1fr 238px;   /* 下枠を少し広げる */
+  gap:var(--grid-gap);padding:var(--grid-gap)
+}
 .gamewrap{position:relative;border-radius:14px;overflow:hidden;background:#05070c;outline:1px solid #0e1522}
 canvas#game{display:block;width:100%;height:100%}
+
+/* コントロール */
 .controls{
   position:relative;border-radius:14px;background:var(--hud-bg);outline:1px solid #0e1522;backdrop-filter: blur(6px);
-  padding:12px;display:grid;grid-template-columns: 1fr 1fr;gap:12px
+  padding:10px;display:grid;grid-template-columns: 1fr 1fr;gap:10px
 }
 
-/* 左スティック（やや小型化） */
-.stickArea{position:relative;border-radius:12px;background:#0a121f;outline:1px solid #152033;display:grid;place-items:center;touch-action:none}
-.stick{width:110px;height:110px;border-radius:50%;background:#0d1828;outline:2px solid #22324d;position:relative}
-.stickThumb{width:58px;height:58px;border-radius:50%;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-  background:#1a2a45;outline:2px solid #2e4a73;box-shadow:inset 0 0 0 4px #0c1422}
+/* 左スティック：小型化 */
+.stickArea{
+  position:relative;border-radius:12px;background:#0a121f;outline:1px solid #152033;
+  display:grid;place-items:center;touch-action:none
+}
+.stick{
+  width:var(--stick-size);height:var(--stick-size);
+  border-radius:50%;background:#0d1828;outline:2px solid #22324d;position:relative
+}
+.stickThumb{
+  width:var(--stick-thumb);height:var(--stick-thumb);
+  border-radius:50%;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  background:#1a2a45;outline:2px solid #2e4a73;box-shadow:inset 0 0 0 4px #0c1422
+}
 
 /* 右側ボタン：3列×3行（ULT行＋ジャンプ） */
 .buttons{
   display:grid;
   grid-template-columns:repeat(3,1fr);
-  grid-auto-rows:minmax(64px, 1fr);
-  gap:12px;align-content:stretch;justify-items:stretch
+  grid-auto-rows:minmax(var(--btn-min), 1fr);
+  gap:10px;align-content:stretch;justify-items:stretch
 }
 .btn{
   border:none;border-radius:14px;background:#0d1828;outline:2px solid #22324d;color:var(--fg);
-  font-size:24px;display:grid;place-items:center;touch-action:none;box-shadow:inset 0 -4px 0 rgba(255,255,255,.04);
-  transition:opacity .15s ease;min-height:64px
+  font-size:20px;display:grid;place-items:center;touch-action:none;box-shadow:inset 0 -4px 0 rgba(255,255,255,.04);
+  transition:opacity .15s ease;min-height:var(--btn-min)
 }
 .btn.circle{border-radius:999px}
 .btn:active{transform:scale(.98)}
 .btn[disabled]{opacity:.35;pointer-events:none}
-.btn img{display:block;width:72%;height:72%;object-fit:contain;image-rendering:pixelated}
+.btn img{display:block;width:var(--btn-img);height:var(--btn-img);object-fit:contain;image-rendering:pixelated}
 
-/* 役割別ベース色（画像メインなので淡く） */
+/* 役割別ベース色（淡め） */
 .btn.attack1{background:#112033}
 .btn.attack2{background:#1a2436}
 .btn.skill1 {background:#132a22}
@@ -57,6 +79,7 @@ canvas#game{display:block;width:100%;height:100%}
 .btn.ult    {background:#2b2030}
 .btn.ult2   {background:#2b2030}
 .btn.jump   {background:#25202b}
+.btn.jump img{width:var(--btn-img-small);height:var(--btn-img-small)}
 
 /* HUD */
 header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex;gap:10px;align-items:center;z-index:10;pointer-events:none}
@@ -70,10 +93,16 @@ header.hud{position:absolute;left:0;right:0;top:0;padding:10px 14px;display:flex
 .gauge>i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#69d0ff,#a0ffe6)}
 
 @media (max-height: 720px){
-  :root{ --stage-h: 660px; }
-  .grid{grid-template-rows: 1fr 250px}
+  :root{
+    --stage-h: 650px;
+    --btn-min:54px;
+    --btn-img:64%;
+    --btn-img-small:58%;
+    --stick-size:94px;
+    --stick-thumb:50px;
+  }
+  .grid{grid-template-rows: 1fr 232px}
 }
 @media (max-width: 430px){
   :root{ --stage-w: 392px; }
-  .btn img{width:68%;height:68%}
 }
